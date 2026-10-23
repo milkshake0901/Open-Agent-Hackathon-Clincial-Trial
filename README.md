@@ -4,7 +4,7 @@ Patient-centric clinical trial matching, built for the Open Agent Hackathon 2026
 
 A patient's history is scattered across referral letters, blood reports and genomic results, and trial eligibility lives in free text on ClinicalTrials.gov. TrialMatch (the app in this repo) turns the patient's Documents into dated Facts with Citations, matches them Criterion by Criterion against trials, explains every Verdict, and re-checks when a new Document arrives, because one treatment decision can rule a patient out of a trial.
 
-> **Status: scaffold.** Folders, types, signatures, schema and tests are in place; function bodies raise `NotImplementedError`. Start with [docs/architecture.md](docs/architecture.md).
+> **Status: scaffold.** Folders, types, signatures, schema and tests are in place; function bodies raise `NotImplementedError`. Developers start with [DEVELOPER.md](DEVELOPER.md), then [docs/architecture.md](docs/architecture.md).
 
 ## How it works
 
