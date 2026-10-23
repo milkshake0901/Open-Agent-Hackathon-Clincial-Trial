@@ -1,8 +1,15 @@
-# Facts are append-only; Verdicts belong to a Profile version
+# Facts are append-only; a Verdict belongs to a Trial's criteria and a Profile version
 
-A Document can arrive out of order (an old blood report uploaded after a newer one), and the product's value is showing how eligibility changes as the record grows. So Facts are never updated or deleted, "current" is derived from the latest observed-on date rather than the latest upload, each accepted Document creates a new Profile version, and every Verdict is keyed by (Trial, Profile version) rather than by Trial alone. This lets us show "excluded under v3, possible under v4 because the genomic report arrived" and keeps every Citation valid forever.
+Status: accepted, amended 2026-10-23 (Verdict key now includes the eligibility hash).
+
+A Document can arrive out of order (an old blood report uploaded after a newer one), and the product's value is showing how eligibility changes as the record grows. So Facts are never updated or deleted, "current" is derived from the latest observed-on date rather than the latest upload, each accepted Document creates a new Profile version, and every Verdict is keyed by (Trial, eligibility hash, Profile version). This lets us show "excluded under v3, possible under v4 because the genomic report arrived" and keeps every Citation valid forever.
+
+**Amendment.** The key gained the eligibility hash. When a Trial edits its eligibility text while the patient's record is unchanged, the old Verdict (judged against the old Criteria) is kept beside the new one instead of being overwritten.
+
+In the World Model these map directly: a Fact is `assert_fact` with the observed-on date as its time (later observations supersede), a Profile version is a `snapshot`, and a Verdict is a `relate` edge from patient to Trial whose earlier edges close rather than disappear.
 
 ## Considered options
 
 - Overwrite the patient's current values in place: simpler queries, but loses the before/after story and breaks old Citations.
 - Key Verdicts by Trial only: smaller table, but a Re-scan silently destroys the explanation of why a Verdict changed.
+- Key Verdicts by (Trial, Profile version): loses the old Verdict when a Trial's criteria change.
