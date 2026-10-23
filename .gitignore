@@ -1,0 +1,17 @@
+# secrets
+.env
+.env.local
+
+# real patient documents never leave the laptop
+data/raw/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# node
+node_modules/
+.next/
