@@ -1,0 +1,445 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "TrialMatch Agent Workflow (designed flow, scaffold)",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/agent-workflow.html",
+    "repository": {
+      "url": "https://github.com/milkshake0901/open-agent-hackathon-clincial-trial",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "471680a6e2e90f403936123066451ddf3f0e596f"
+    }
+  },
+  "lanes": [
+    {
+      "id": "patient",
+      "label": "Patient & API"
+    },
+    {
+      "id": "record",
+      "label": "Patient record"
+    },
+    {
+      "id": "world",
+      "label": "World Model & Zetaris"
+    },
+    {
+      "id": "matching",
+      "label": "Matching"
+    },
+    {
+      "id": "trials",
+      "label": "Trials"
+    }
+  ],
+  "phases": [
+    {
+      "id": "ingest",
+      "label": "Ingest a Document",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "commit",
+      "label": "Commit",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "match",
+      "label": "Re-scan and judge",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "intake_loop",
+      "label": "Intake ⇄ Critic, max 3",
+      "lane": "record",
+      "fromCol": 1,
+      "toCol": 2,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "upload",
+    "intake",
+    "critic",
+    "wm",
+    "rescan",
+    "matcher",
+    "evaluator",
+    "results"
+  ],
+  "nodes": [
+    {
+      "id": "upload",
+      "lane": "patient",
+      "col": 0,
+      "type": "external",
+      "label": "Upload Document",
+      "sublabel": "hash + de-identify",
+      "sources": [
+        {
+          "path": "backend/app/api/documents.py",
+          "line": 7,
+          "end_line": 11
+        },
+        {
+          "path": "backend/app/record/__init__.py",
+          "line": 38,
+          "end_line": 43,
+          "label": "register_document"
+        }
+      ]
+    },
+    {
+      "id": "confirm",
+      "lane": "patient",
+      "col": 2,
+      "type": "frontend",
+      "label": "Patient resolves",
+      "sublabel": "Conflict dialog",
+      "sources": [
+        {
+          "path": "backend/app/api/runs.py",
+          "line": 17,
+          "end_line": 20
+        },
+        {
+          "path": "backend/app/record/loop.py",
+          "line": 85,
+          "end_line": 96,
+          "label": "resume_after_confirm"
+        }
+      ]
+    },
+    {
+      "id": "results",
+      "lane": "patient",
+      "col": 5,
+      "type": "frontend",
+      "label": "Verdicts + why",
+      "sublabel": "citations, questions",
+      "sources": [
+        {
+          "path": "backend/app/api/verdicts.py",
+          "line": 13,
+          "end_line": 28
+        },
+        {
+          "path": "backend/app/api/runs.py",
+          "line": 23,
+          "end_line": 26,
+          "label": "causal trace"
+        }
+      ]
+    },
+    {
+      "id": "intake",
+      "lane": "record",
+      "col": 1,
+      "type": "backend",
+      "label": "Intake agent",
+      "sublabel": "pages → draft Facts",
+      "tag": "fast lane",
+      "sources": [
+        {
+          "path": "backend/app/record/intake.py",
+          "line": 28,
+          "end_line": 39
+        }
+      ]
+    },
+    {
+      "id": "critic",
+      "lane": "record",
+      "col": 2,
+      "type": "security",
+      "label": "Consistency critic",
+      "sublabel": "pure rule checks",
+      "sources": [
+        {
+          "path": "backend/app/record/critic.py",
+          "line": 15,
+          "end_line": 32
+        },
+        {
+          "path": "backend/app/record/loop.py",
+          "line": 47,
+          "end_line": 61,
+          "label": "decide()"
+        }
+      ]
+    },
+    {
+      "id": "wm",
+      "lane": "world",
+      "col": 3,
+      "type": "database",
+      "label": "World Model",
+      "sublabel": "facts, snapshot, relate",
+      "tag": "Meterless engine",
+      "sources": [
+        {
+          "path": "backend/app/worldmodel/timeline.py",
+          "line": 1,
+          "end_line": 40
+        },
+        {
+          "path": "backend/app/worldmodel/projector.py",
+          "line": 1,
+          "end_line": 25,
+          "label": "projects to Postgres"
+        }
+      ]
+    },
+    {
+      "id": "zetaris",
+      "lane": "world",
+      "col": 4,
+      "type": "cloud",
+      "label": "Zetaris SQL",
+      "sublabel": "agents read here",
+      "sources": [
+        {
+          "path": "backend/app/sql/reader.py",
+          "line": 31,
+          "end_line": 41
+        }
+      ]
+    },
+    {
+      "id": "rescan",
+      "lane": "matching",
+      "col": 3,
+      "type": "backend",
+      "label": "Re-scan planner",
+      "sublabel": "only missing Verdicts",
+      "sources": [
+        {
+          "path": "backend/app/matching/loop.py",
+          "line": 68,
+          "end_line": 88
+        }
+      ]
+    },
+    {
+      "id": "matcher",
+      "lane": "matching",
+      "col": 4,
+      "type": "backend",
+      "label": "Matcher agent",
+      "sublabel": "criterion by criterion",
+      "tag": "deep lane",
+      "sources": [
+        {
+          "path": "backend/app/matching/matcher.py",
+          "line": 25,
+          "end_line": 31
+        }
+      ]
+    },
+    {
+      "id": "evaluator",
+      "lane": "matching",
+      "col": 5,
+      "type": "security",
+      "label": "Evaluator agent",
+      "sublabel": "every claim cited?",
+      "tag": "judge lane",
+      "sources": [
+        {
+          "path": "backend/app/matching/evaluator.py",
+          "line": 23,
+          "end_line": 57
+        },
+        {
+          "path": "backend/app/matching/loop.py",
+          "line": 39,
+          "end_line": 65,
+          "label": "decide + judge_trial"
+        }
+      ]
+    },
+    {
+      "id": "ctgov",
+      "lane": "trials",
+      "col": 0,
+      "type": "external",
+      "label": "ClinicalTrials.gov",
+      "sublabel": "API v2",
+      "sources": [
+        {
+          "path": "backend/app/trials/ctgov.py",
+          "line": 20,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "fetcher",
+      "lane": "trials",
+      "col": 1,
+      "type": "backend",
+      "label": "Trial fetcher",
+      "sublabel": "daily, hash criteria",
+      "sources": [
+        {
+          "path": "backend/app/trials/__init__.py",
+          "line": 57,
+          "end_line": 63
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-upload-intake",
+      "from": "upload",
+      "to": "intake",
+      "label": "de-identified pages",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-intake-critic",
+      "from": "intake",
+      "to": "critic",
+      "label": "draft Facts",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-critic-retry",
+      "from": "critic",
+      "to": "intake",
+      "label": "retry",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "e-critic-confirm",
+      "from": "critic",
+      "to": "confirm",
+      "label": "Conflict",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e-confirm-wm",
+      "from": "confirm",
+      "to": "wm",
+      "label": "resolved",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "e-critic-wm",
+      "from": "critic",
+      "to": "wm",
+      "label": "accept",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-wm-rescan",
+      "from": "wm",
+      "to": "rescan",
+      "label": "new version",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-wm-zetaris",
+      "from": "wm",
+      "to": "zetaris",
+      "label": "projected tables",
+      "variant": "dashed",
+      "role": "async"
+    },
+    {
+      "id": "e-rescan-matcher",
+      "from": "rescan",
+      "to": "matcher",
+      "label": "per Trial",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-zetaris-matcher",
+      "from": "zetaris",
+      "to": "matcher",
+      "label": "Facts + Criteria",
+      "variant": "default",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight"
+    },
+    {
+      "id": "e-matcher-evaluator",
+      "from": "matcher",
+      "to": "evaluator",
+      "label": "results",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-evaluator-retry",
+      "from": "evaluator",
+      "to": "matcher",
+      "label": "retry",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "e-evaluator-results",
+      "from": "evaluator",
+      "to": "results",
+      "label": "Verdict",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e-ctgov-fetcher",
+      "from": "ctgov",
+      "to": "fetcher",
+      "label": "studies",
+      "variant": "default"
+    },
+    {
+      "id": "e-fetcher-wm",
+      "from": "fetcher",
+      "to": "wm",
+      "label": "ingest by NCT",
+      "variant": "default",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Loops and bounds",
+      "items": [
+        "Critic: retryable findings retry Intake up to 3 times; Conflicts go to the patient, never retried",
+        "Evaluator: uncited claims retry the Matcher up to 3 times, then become unknown and Doctor questions"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "World Model owns the timeline",
+      "items": [
+        "Fact = assert_fact, Profile version = snapshot, Verdict = relate patient→trial",
+        "Each engine event is projected to Postgres in the same transaction; Zetaris reads those tables"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Scaffold status",
+      "items": [
+        "Designed flow from signatures and pseudocode; bodies raise NotImplementedError",
+        "Every step is traced (trace_event, llm_call) for the Why page; not drawn"
+      ]
+    }
+  ]
+}

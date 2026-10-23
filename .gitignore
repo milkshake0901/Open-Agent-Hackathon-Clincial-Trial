@@ -15,3 +15,6 @@ __pycache__/
 # node
 node_modules/
 .next/
+
+# archify working files and evidence (the diagram itself lives in docs/diagrams/)
+.archify/

@@ -1,0 +1,155 @@
+# Developer guide
+
+How the code is laid out, how the agents work together, and the rules that keep it coherent. For the design rationale read [docs/architecture.md](docs/architecture.md); for vocabulary, [GLOSSARY.md](GLOSSARY.md).
+
+> Status: scaffold. Signatures, types and pseudocode are in place; bodies raise `NotImplementedError`. Treat the signatures as the contract. If an implementation needs something they don't allow, raise it with the team before working around it.
+
+## Agent workflow
+
+![Agent workflow: upload → Intake ⇄ Critic → World Model → Re-scan → Matcher ⇄ Evaluator → Verdicts](docs/diagrams/agent-workflow.png)
+
+Interactive version (dark/light, click a box to open its source lines): open [docs/diagrams/agent-workflow.html](docs/diagrams/agent-workflow.html) in a browser after cloning. It shows the designed flow traced from the scaffold's signatures and pseudocode.
+
+**Reading it:**
+
+1. **Upload.** `record.register_document` hashes the file, splits it into pages and de-identifies them before any model sees the text.
+2. **Intake ⇄ Critic** (max 3 attempts). Intake drafts Facts with page citations; the critic runs pure rule checks. Fixable findings go back to Intake. A Conflict with the existing record goes to the patient instead, because re-reading the same Document can't change what it says.
+3. **Commit.** Accepted Facts are written through the **World Model** (`assert_fact` per Fact, `snapshot` for the Profile version). The engine projects them into Postgres in the same transaction; Zetaris reads those tables.
+4. **Re-scan.** For a new Profile version, judge every active Trial that lacks a Verdict for (NCT, eligibility hash, version). Running it twice does nothing the second time.
+5. **Matcher ⇄ Evaluator** (max 3 attempts). The Matcher judges each Criterion against the patient's Facts, read through Zetaris. The Evaluator rejects any claim without a valid citation. After 3 attempts, unsupported claims become `unknown` and turn into Doctor questions; an uncited "met" is never stored.
+6. **Verdicts + why.** Ranked Verdicts with Citations back to the Document page, what changed since the last version, and the causal trace of how the system decided.
+7. **Trials** arrive separately: the fetcher pulls ClinicalTrials.gov through Zetaris and records them with World Model `ingest`, keyed by NCT ID. Only new or changed Trials trigger work.
+
+## Folder structure
+
+```
+.
+├── README.md                     project overview, sponsor tech, setup
+├── DEVELOPER.md                  this file
+├── GLOSSARY.md                   agreed domain terms (use these names in code and UI)
+├── .env.example                  settings template; copy to .env (never commit .env)
+├── .gitignore                    secrets, data/raw/, build output, .archify/
+├── docker-compose.yml            our Postgres on port 5433 (Zetaris runs from its own bundle)
+│
+├── backend/
+│   ├── pyproject.toml            dependencies; pytest config
+│   ├── app/
+│   │   ├── main.py               FastAPI app; builds one Ctx at startup
+│   │   ├── config.py             Settings from .env: URLs, tokens, loop bounds, lane models
+│   │   ├── ctx.py                the dependency bundle every facade takes
+│   │   │
+│   │   ├── record/               PATIENT RECORD: Documents, Facts, Profile versions, Conflicts
+│   │   │   ├── __init__.py       public API: register_document, ingest, confirm, versions, diff, ...
+│   │   │   ├── types.py          Document, Page, DraftFact, Fact, ProfileVersion, Finding, Conflict
+│   │   │   ├── pdf.py            bytes → pages of text and tables
+│   │   │   ├── deidentify.py     strips names, addresses, record numbers before any model call
+│   │   │   ├── intake.py         Intake agent (fast lane): pages → draft Facts
+│   │   │   ├── critic.py         Consistency critic: pure rule checks, retryable vs Conflict
+│   │   │   ├── loop.py           Intake ⇄ Critic state machine; commit through the World Model
+│   │   │   └── repo.py           SQL reads; writes only documents and pages
+│   │   │
+│   │   ├── trials/               TRIALS: ClinicalTrials.gov, eligibility hash, Criteria
+│   │   │   ├── __init__.py       public API: sync, trial, active_trials, criteria
+│   │   │   ├── ctgov.py          fetch via Zetaris REST table, HTTP fallback
+│   │   │   ├── criteria.py       eligibility text → Criteria (deterministic split, model fallback)
+│   │   │   └── repo.py           SQL reads
+│   │   │
+│   │   ├── matching/             MATCHING: Criterion results, Verdicts, Doctor questions, Re-scan
+│   │   │   ├── __init__.py       public API: rescan, verdict, verdicts_for_version, change_between, ...
+│   │   │   ├── types.py          CriterionResult, Citation, ValidatedResults, Verdict, ...
+│   │   │   ├── matcher.py        Matcher agent (deep lane)
+│   │   │   ├── evaluator.py      Evaluator: structure check, then judge-lane support check
+│   │   │   ├── verdict.py        pure rules: outcome from results, questions from unknowns
+│   │   │   ├── loop.py           Matcher ⇄ Evaluator state machine; Re-scan plan and run
+│   │   │   └── repo.py           SQL reads
+│   │   │
+│   │   ├── worldmodel/           METERLESS WORLD MODEL (our Python implementation)
+│   │   │   ├── __init__.py       public API: WorldModel, Provenance, timeline, ...
+│   │   │   ├── engine.py         upsert_entity, assert_fact, relate, snapshot, ingest, audit
+│   │   │   ├── stable_ids.py     deterministic ids (normalize_name, fact_id, event_id)
+│   │   │   ├── resolve.py        merge bands: ≥0.85 auto-merge, 0.82–0.85 review
+│   │   │   ├── store.py          event log: in-memory (tests) or Postgres (app)
+│   │   │   ├── projector.py      engine events → the tables Zetaris reads
+│   │   │   └── timeline.py       the ONLY mapping from domain operations to engine calls
+│   │   │
+│   │   ├── trace/                HOW THE SYSTEM REASONED
+│   │   │   ├── __init__.py       runs, append, causal tree, model-call log
+│   │   │   ├── events.py         the single list of trace event kinds
+│   │   │   └── state.py          pure reducers: events → run state
+│   │   │
+│   │   ├── llm/                  AI CONNECTION
+│   │   │   ├── __init__.py       complete(lane, ...) — the only way to call a model
+│   │   │   └── nightshift.py     Meterless Nightshift client; FakeLLM for tests
+│   │   │
+│   │   ├── sql/                  STORAGE SPLIT (ADR 0001)
+│   │   │   ├── reader.py         PgReader (UI) and ZetarisReader (agents), same queries
+│   │   │   └── writer.py         Postgres transactions
+│   │   │
+│   │   └── api/                  thin HTTP routes under /api (see docs/api.md)
+│   │       └── documents.py · patients.py · runs.py · trials.py · verdicts.py · health.py · schemas.py
+│   │
+│   └── tests/
+│       ├── test_boundaries.py    fails on imports of another module's internals
+│       └── worldmodel/
+│           └── test_conformance.py   Meterless's 8 conformance checks, ported
+│
+├── db/
+│   ├── schema.sql                Postgres tables, with the owner of each one noted at the top
+│   └── zetaris_register.sql      registers our Postgres and ClinicalTrials.gov in Zetaris (to finish)
+│
+├── docs/
+│   ├── architecture.md           design, synthesis decision, tradeoffs, open risks
+│   ├── api.md                    HTTP endpoints and response shapes
+│   ├── adr/                      decision records (0001 storage split, 0002 append-only + versioned Verdicts)
+│   ├── diagrams/                 agent-workflow.html / .png and its source .workflow.json
+│   └── setup/                    meterless-provider-prompt.md (Nightshift wiring, not yet applied)
+│
+├── frontend/                     Next.js app (not created yet; see its README for pages)
+├── data/
+│   ├── demo/                     de-identified demo Documents (committed)
+│   ├── raw/                      real Documents (gitignored; never commit)
+│   └── trials_snapshot/          saved trial results for an offline demo
+└── scripts/                      seed_demo, sync_trials, rebuild_projections (to write)
+```
+
+## Rules that keep it coherent
+
+- **Import a module's facade, never its internals.** Write `from app.record import ingest`, not `from app.record.loop import run_ingest`. `tests/test_boundaries.py` enforces this.
+- **One writer per table.** The World Model writes facts, Profile versions, trials, criteria and verdicts (via `worldmodel/timeline.py`). `record/repo.py` writes documents and pages. `app.trace` writes trace events and model calls. The owner of each table is listed at the top of `db/schema.sql`.
+- **Agents read through Zetaris.** Use `ctx.agent_reader`. The UI routes use `ctx.ui_reader` (Postgres). Both run the same query functions.
+- **Every model call goes through `app.llm.complete`** with a lane (`fast`, `deep`, `judge`). It records which model answered. Which model serves each lane is a setting (`LANE_MODELS`), decided later.
+- **Loops are bounded.** Each loop has a pure `decide()` with a closed set of outcomes and a max-attempt setting. Exhaustion is an outcome, not an exception.
+- **No model sees raw patient text.** De-identification runs in `register_document`. Real documents live only in `data/raw/`.
+- **Trace every step.** Append a trace event for each loop step so the Why page can show it.
+- **Names come from GLOSSARY.md.** If you need a new term, add it there first.
+
+## Getting started
+
+```bash
+cp .env.example .env              # fill in Zetaris API key and Nightshift token
+docker compose up -d              # our Postgres with db/schema.sql
+cd backend
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/pytest                  # boundary test passes; conformance fails until the engine exists
+.venv/bin/uvicorn app.main:app --reload
+```
+
+Zetaris and Meterless Nightshift run on your own machine (hackathon rule); install them from the Participant Setup Guide first.
+
+## Where to start
+
+1. `backend/app/worldmodel/` until `tests/worldmodel/test_conformance.py` passes 8/8. Everything else writes through it.
+2. `record/critic.py`, `record/loop.py: decide`, `matching/loop.py: decide` and `matching/verdict.py`: pure functions, easy to test.
+3. `sql/reader.py` against a running Zetaris (check how Lightning SQL handles our queries).
+4. `llm/nightshift.py` from [docs/setup/meterless-provider-prompt.md](docs/setup/meterless-provider-prompt.md).
+
+## Updating the workflow diagram
+
+The diagram is generated with [archify](https://github.com/tt-a1i/archify) (`npx skills add tt-a1i/archify -g`) from `docs/diagrams/agent-workflow.workflow.json`, whose `sources` point at the code lines behind each box. After changing the flow, update that file and run:
+
+```bash
+node <archify>/bin/archify.mjs finalize workflow docs/diagrams/agent-workflow.workflow.json \
+  docs/diagrams/agent-workflow.html --repo-root . --quality showcase --json
+```
+
+Update `meta.repository.revision` to the commit the sources refer to, and re-export the PNG from the viewer's Export menu.
