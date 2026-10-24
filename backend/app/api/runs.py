@@ -66,7 +66,7 @@ async def conflicts(run_id: str, ctx: Ctx = Depends(get_ctx)):
     return ConflictsOut(run_id=run_id, conflicts=[await _conflict_out(ctx, c) for c in found])
 
 
-def submission_accepted(outcome: record.IngestOutcome) -> IngestOutcomeOut:
+def outcome_out(outcome: record.IngestOutcome) -> IngestOutcomeOut:
     match outcome:
         case record.Committed(run_id=run_id, version=v):
             return IngestOutcomeOut(run_id=run_id, outcome="committed", document_hash=v.document_hash,
@@ -88,7 +88,7 @@ async def confirm(run_id: str, body: ConfirmIn, ctx: Ctx = Depends(get_ctx)):
         raise HTTPException(409, str(e))
     except record.InvalidResolution as e:
         raise HTTPException(422, str(e))
-    accepted = submission_accepted(outcome)
+    accepted = outcome_out(outcome)
     if isinstance(outcome, record.Committed):
         accepted.rescan = RescanSummary.of(await matching.rescan(ctx, outcome.version.id, correlation_id=outcome.run_id))
     return accepted
