@@ -6,12 +6,13 @@
 
 import { useState } from "react";
 import { api, type RunOut } from "@/lib/api";
+import { ConflictDialog } from "./conflict-dialog";
 
 const POLL_MS = 1000;
 
 type Result =
   | { kind: "added"; version: number; already: boolean }
-  | { kind: "needs_answer" }
+  | { kind: "needs_answer"; runId: string }
   | { kind: "failed"; reason: string };
 
 type Batch = { files: string[]; done: number } | null;
@@ -33,7 +34,7 @@ async function check(patientId: string, file: File): Promise<Result> {
     const state = run.state!;
     if (state.phase === "committed" && state.version_number !== null)
       return { kind: "added", version: state.version_number, already: accepted.deduplicated };
-    if (state.phase === "awaiting_patient") return { kind: "needs_answer" };
+    if (state.phase === "awaiting_patient") return { kind: "needs_answer", runId: accepted.run_id };
     return { kind: "failed", reason: state.reason ?? "It could not be checked." };
   } catch (err) {
     return { kind: "failed", reason: (err as Error).message };
@@ -93,6 +94,19 @@ export function DocumentUploads({ patientId }: { patientId: string }) {
           </div>
         )}
       </div>
+      {results.map(({ result }, i) =>
+        result.kind === "needs_answer" ? (
+          <ConflictDialog key={result.runId} runId={result.runId}
+                          onDone={(o) => setResults((rs) => rs.map((r, j) => (j !== i ? r : {
+                            ...r,
+                            result: o.outcome === "committed" && o.version_number !== null
+                              ? { kind: "added", version: o.version_number, already: false }
+                              : o.outcome === "rejected"
+                                ? { kind: "failed", reason: o.reason ?? "It could not be checked." }
+                                : r.result,
+                          })))} />
+        ) : null,
+      )}
       {results.length > 0 && (
         <ul className="flex flex-col gap-2">
           {results.map(({ name, result }, i) => (
@@ -104,7 +118,7 @@ export function DocumentUploads({ patientId }: { patientId: string }) {
                     ? `Already added (version ${result.version}).`
                     : `Added. Your record is now version ${result.version}.`
                   : result.kind === "needs_answer"
-                    ? "Something in it differs from what we have. We will ask you which is right."
+                    ? "Something in it differs from what we have. Please tell us which is right."
                     : `Not added: ${result.reason}`}
               </p>
             </li>
