@@ -48,6 +48,15 @@ class Document:
 
 
 @dataclass(frozen=True)
+class SearchPreferences:
+    """Kept on the patient, never as Facts (ADR 0003): never rendered into a Document, never in a prompt.
+    Code computes distances from the postcode (#16); models see only "site name, status, km"."""
+    postcode: str | None
+    max_travel_km: int | None        # None: no limit ("anywhere", or not answered)
+    contact: str | None              # optional email or phone for "you have new questions" notices
+
+
+@dataclass(frozen=True)
 class DraftFact:
     """What Intake proposes. Not a Fact until the critic accepts and the loop commits.
     Invariant encoded in critic: a DraftFact with page outside the Document is Retryable."""

@@ -4,6 +4,7 @@
 // hard-coded here except the one that says who is answering, whose answer switches "your" / "their".
 
 import { useEffect, useState } from "react";
+import { ReturnLink } from "./return-link";
 import { api, type Answers, type Question, type Questionnaire, type Respondent, type VersionOut } from "@/lib/api";
 
 const RESPONDENT_QUESTION = "respondent";
@@ -19,6 +20,7 @@ export function QuestionnaireForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [version, setVersion] = useState<VersionOut | null>(null);
+  const [returnToken, setReturnToken] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -56,6 +58,7 @@ export function QuestionnaireForm() {
         respondent,
         answers,
       });
+      setReturnToken(result.return_token);
       if (result.outcome !== "committed" || !result.profile_version_id) {
         throw new Error(result.reason ?? "Your answers could not be recorded yet.");
       }
@@ -67,7 +70,13 @@ export function QuestionnaireForm() {
     }
   }
 
-  if (version) return <ProfileSummary version={version} />;
+  if (version)
+    return (
+      <>
+        <ProfileSummary version={version} />
+        {returnToken && <ReturnLink token={returnToken} />}
+      </>
+    );
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>

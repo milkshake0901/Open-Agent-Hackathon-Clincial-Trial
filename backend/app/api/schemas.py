@@ -58,6 +58,13 @@ class SubmissionAccepted(BaseModel):
     profile_version_id: str | None = None
     version_number: int | None = None
     reason: str | None = None
+    return_token: str | None = None   # first submission only; the frontend shows it as /return/{token}
+
+
+class ReturnOpened(BaseModel):
+    patient_id: str
+    profile_version_id: str | None    # current version, None if nothing was committed yet
+    version_number: int | None
 
 
 class PatientIn(BaseModel):

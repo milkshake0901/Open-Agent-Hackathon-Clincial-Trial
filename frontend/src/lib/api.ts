@@ -26,6 +26,13 @@ export type SubmissionAccepted = {
   profile_version_id: string | null;
   version_number: number | null;
   reason: string | null;
+  return_token: string | null; // first submission only
+};
+
+export type ReturnOpened = {
+  patient_id: string;
+  profile_version_id: string | null;
+  version_number: number | null;
 };
 
 export type FactOut = {
@@ -67,6 +74,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  openReturnLink: (token: string) => call<ReturnOpened>(`/return/${encodeURIComponent(token)}`),
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
 };

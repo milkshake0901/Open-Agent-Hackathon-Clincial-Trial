@@ -9,6 +9,7 @@ from datetime import datetime, time, timezone
 
 from app.record.types import (
     Document, DocumentHash, Fact, FactId, FactResource, Page, PatientId, ProfileVersion, ProfileVersionId,
+    SearchPreferences,
 )
 from app.sql.reader import SqlReader
 from app.sql.writer import PgWriter, Tx
@@ -16,6 +17,19 @@ from app.sql.writer import PgWriter, Tx
 
 async def patient_exists(reader: SqlReader, patient_id: PatientId) -> bool:
     return bool(await reader.fetch(f"SELECT 1 FROM {reader.table('patient')} WHERE id = $1", (patient_id,)))
+
+
+async def search_preferences(reader: SqlReader, patient_id: PatientId) -> SearchPreferences:
+    rows = await reader.fetch(f"SELECT postcode, max_travel_km, contact FROM {reader.table('search_preference')} "
+                              "WHERE patient_id = $1", (patient_id,))
+    r = rows[0] if rows else {}
+    return SearchPreferences(postcode=r.get("postcode"), max_travel_km=r.get("max_travel_km"), contact=r.get("contact"))
+
+
+async def patient_for_token_hash(reader: SqlReader, token_hash: str) -> PatientId | None:
+    rows = await reader.fetch(f"SELECT patient_id FROM {reader.table('return_token')} WHERE token_hash = $1",
+                              (token_hash,))
+    return PatientId(rows[0]["patient_id"]) if rows else None
 
 
 async def document(reader: SqlReader, h: DocumentHash) -> Document | None:
@@ -76,6 +90,25 @@ async def version_for_document(reader: SqlReader, h: DocumentHash) -> ProfileVer
 
 async def insert_patient(tx: Tx, patient_id: PatientId, label: str) -> None:
     await tx.execute("INSERT INTO patient (id, label) VALUES ($1, $2)", (patient_id, label))
+
+
+async def upsert_search_preferences(tx: Tx, patient_id: PatientId, changes: dict) -> None:
+    """Sets only the given fields (SearchPreferences names); the others keep their stored values."""
+    cols = [c for c in ("postcode", "max_travel_km", "contact") if c in changes]
+    if not cols:
+        return
+    params = [patient_id] + [changes[c] for c in cols]
+    marks = ", ".join(f"${i + 2}" for i in range(len(cols)))
+    updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)
+    await tx.execute(f"INSERT INTO search_preference (patient_id, {', '.join(cols)}) VALUES ($1, {marks}) "
+                     f"ON CONFLICT (patient_id) DO UPDATE SET {updates}, updated_at = now()", params)
+
+
+async def insert_return_token(tx: Tx, token_hash: str, patient_id: PatientId) -> bool:
+    """False if the patient already has a return token (one per patient)."""
+    rows = await tx.fetch("INSERT INTO return_token (token_hash, patient_id) VALUES ($1, $2) "
+                          "ON CONFLICT (patient_id) DO NOTHING RETURNING patient_id", (token_hash, patient_id))
+    return bool(rows)
 
 
 async def insert_document(tx: Tx, doc: Document, *, uploaded_at: "datetime | None" = None) -> None:

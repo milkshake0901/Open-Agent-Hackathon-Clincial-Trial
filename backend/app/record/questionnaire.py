@@ -134,6 +134,12 @@ DEFINITION = Questionnaire(DEFINITION_VERSION, (
                  "Are they currently pregnant, breastfeeding or planning a pregnancy?", "single", "fact",
                  YES_NO_PREFER_NOT, help="Optional."),
     )),
+    Section("contact", "Staying in touch", (
+        Question("contact", 15, "If you'd like to hear when there are new questions to answer, leave an email or phone number.",
+                 "If you'd like to hear when there are new questions to answer, leave an email or phone number.",
+                 "text", "preference",
+                 help="Optional. Used only to tell you there is something new to look at, never to identify the patient."),
+    )),
 ))
 
 # Structured question → (resource, subject). Options listed here are answered but make no Fact.
@@ -145,6 +151,9 @@ _FACTS: dict[str, tuple[FactResource, str]] = {
     "pregnancy": (FactResource.OBSERVATION, "pregnant, breastfeeding or planning a pregnancy"),
 }
 _NO_FACT_VALUES = {"prefer_not_to_say"}
+_POSTCODE = re.compile(r"^\d{4}$")     # Australian
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE = re.compile(r"^\+?[\d ()-]+$")
 _MONTH = re.compile(r"^(\d{4})-(\d{2})$")
 _MONTHS = ("January February March April May June July August September October November December").split()
 
@@ -188,6 +197,31 @@ def normalise(answers: dict[str, Any]) -> dict[str, Any]:
         _answer_text(q, value)
         kept[qid] = value
     return kept
+
+
+def preferences(answers: dict[str, Any]) -> dict[str, Any]:
+    """The answered search preferences, validated, as SearchPreferences field → value. A skipped preference
+    is absent (so a resubmission keeps what was stored); "anywhere" is an answered travel limit of None."""
+    normalise(answers)
+    got: dict[str, Any] = {}
+    for qid in ("postcode", "max_travel_km", "contact"):
+        value = answers.get(qid)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        if not isinstance(value, str):
+            raise InvalidAnswers(f"{qid}: expected text")
+        value = value.strip()
+        if qid == "postcode" and not _POSTCODE.match(value):
+            raise InvalidAnswers("postcode: expected 4 digits")
+        if qid == "max_travel_km":
+            _answer_text(_by_id()[qid], value)
+            got[qid] = None if value == "anywhere" else int(value)
+            continue
+        if qid == "contact" and not (_EMAIL.match(value) or (_PHONE.match(value)
+                                                             and 8 <= sum(c.isdigit() for c in value) <= 15)):
+            raise InvalidAnswers("contact: expected an email or a phone number")
+        got[qid] = value
+    return got
 
 
 def render(answers: dict[str, Any], respondent: Respondent) -> tuple[Page, ...]:

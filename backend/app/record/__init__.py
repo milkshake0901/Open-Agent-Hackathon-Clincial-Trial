@@ -7,6 +7,7 @@ Postgres transactions, Zetaris read-after-write waits.
 from __future__ import annotations
 
 import hashlib
+import secrets
 import uuid
 from typing import Any
 
@@ -30,6 +31,7 @@ from app.record.types import (
     Rejected,
     Resolution,
     Respondent,
+    SearchPreferences,
     VersionDiff,
 )
 from app.trace import RunId
@@ -37,7 +39,8 @@ from app.trace import RunId
 __all__ = [
     "register_document", "ingest", "confirm", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
-    "document", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
+    "document", "issue_return_token", "patient_for_return_token",
+    "search_preferences", "SearchPreferences", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
     "PatientId", "DocumentHash", "ProfileVersionId", "FactId",
@@ -53,6 +56,30 @@ async def create_patient(ctx: Ctx, label: str) -> PatientId:
     patient_id = PatientId(f"pt_{uuid.uuid4().hex[:16]}")
     async with ctx.writer.transaction() as tx:
         await repo.insert_patient(tx, patient_id, label)
+    return patient_id
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def issue_return_token(ctx: Ctx, patient_id: PatientId) -> str | None:
+    """The private, unguessable token behind the patient's return link (no accounts or passwords). Issued
+    once per patient, on the first submission; None if the patient already has one. Only its hash is
+    stored, so it cannot be shown again."""
+    if not await repo.patient_exists(ctx.ui_reader, patient_id):
+        raise NotFound(f"patient {patient_id}")
+    token = secrets.token_urlsafe(32)
+    async with ctx.writer.transaction() as tx:
+        issued = await repo.insert_return_token(tx, _token_hash(token), patient_id)
+    return token if issued else None
+
+
+async def patient_for_return_token(ctx: Ctx, token: str) -> PatientId:
+    """The one patient a return token opens. NotFound (saying nothing about any patient) otherwise."""
+    patient_id = await repo.patient_for_token_hash(ctx.ui_reader, _token_hash(token))
+    if patient_id is None:
+        raise NotFound("return link")
     return patient_id
 
 
@@ -75,6 +102,7 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
     if respondent not in ("patient", "other"):
         raise InvalidAnswers(f"respondent must be 'patient' or 'other', got {respondent!r}")
     pages = questionnaire.render(answers, respondent)
+    preferences = questionnaire.preferences(answers)
     if not await repo.patient_exists(ctx.ui_reader, patient_id):
         raise NotFound(f"patient {patient_id}")
     now = ctx.now()
@@ -86,6 +114,7 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
     doc = Document(hash=h, patient_id=patient_id, filename=questionnaire.DOCUMENT_FILENAME, pages=pages,
                    uploaded_at=now.date(), respondent=respondent)
     async with ctx.writer.transaction() as tx:
+        await repo.upsert_search_preferences(tx, patient_id, preferences)
         await repo.insert_document(tx, doc, uploaded_at=now)
     existing = await repo.version_for_document(ctx.ui_reader, h)
     if existing is not None:
@@ -94,6 +123,12 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
     await trace.open(ctx.writer, run_id, "ingest", patient_id=patient_id, document_hash=h)
     return await loop.run_ingest(ctx, doc, run_id, ctx.settings.intake_attempts,
                                  drafter=loop.structured_drafter(drafts))
+
+
+async def search_preferences(ctx: Ctx, patient_id: PatientId) -> SearchPreferences:
+    """Postcode, travel limit and optional contact from the latest submissions that answered them (a skipped
+    preference keeps its stored value). Never a Fact; never pass any of it to a model (ADR 0003)."""
+    return await repo.search_preferences(ctx.ui_reader, patient_id)
 
 
 def questionnaire_definition() -> Questionnaire:
