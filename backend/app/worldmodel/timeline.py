@@ -8,10 +8,15 @@ World Model primitives. record, trials and matching call these; none of them cal
                                                    url="doc:<hash>#page=<n>", run_id=...))
                      observed_on IS the record time, so "current" is plain supersession (ADR 0002)
   Profile version    snapshot(entities=[patient], attrs={kind: "profile", number, document_hash, fact_ids})
-  Trial              ingest([IngestObservation(external_id=<NCT>, ...)]) → changed_ids drive the Re-scan
-  Verdict            relate(patient → trial, type="verdict", valid_from=<profile version time>,
-                            attrs={outcome, profile_version, eligibility_hash, results, questions, degraded})
-                     the old edge closes, so verdict_at(patient, trial, t) answers "what did we believe at v3"
+  Trial              ingest([IngestObservation(type="trial", external_id=<NCT>, text=<eligibility text>,
+                                               attrs={..., eligibility_hash, criteria})]) → entity trial:<NCT>;
+                     changed_ids drive the Re-scan
+  Verdict            relate(patient → trial:<NCT>, type="verdict", context="verdict:<NCT>",
+                            valid_from=<profile version time>,
+                            attrs={outcome, profile_version_id, eligibility_hash, results, questions, degraded, ...})
+                     The context keys the edge per Trial, so a Verdict on one Trial never closes another Trial's;
+                     a later Verdict on the SAME Trial (new version or hash) closes the old edge, so
+                     edges_from(patient, via="verdict", at=t) answers "what did we believe at v3"
 """
 from __future__ import annotations
 
@@ -21,7 +26,7 @@ if TYPE_CHECKING:
     from app.matching import Verdict
     from app.record import Document, DraftFact, PatientId, ProfileVersion
     from app.trace import RunId
-    from app.trials import Trial
+    from app.trials import Criterion, Trial
     from app.worldmodel.engine import IngestReport, WorldModel
 
 
@@ -69,10 +74,46 @@ async def commit_profile_version(wm: "WorldModel", patient_id: "PatientId", doc:
     return as_version(snap)
 
 
-async def record_trials(wm: "WorldModel", trials: list["Trial"], run_id: "RunId | None") -> "IngestReport":
-    raise NotImplementedError
+def trial_entity_id(nct_id: str) -> str:
+    return f"trial:{nct_id}"
+
+
+async def record_trials(wm: "WorldModel", trials: list[tuple["Trial", tuple["Criterion", ...]]],
+                        run_id: "RunId | None") -> "IngestReport":
+    """One ingest of (Trial, its Criteria) pairs keyed by NCT id. Unchanged content appends nothing (the fetch
+    time is the observation time, not content), so changed_ids are the new or edited Trials."""
+    from app.worldmodel.engine import IngestObservation, Provenance
+
+    observations = []
+    for t, criteria in trials:
+        source = Provenance(kind="api", at=t.fetched_at, by="trials",
+                            url=f"https://clinicaltrials.gov/study/{t.nct_id}", run_id=run_id)
+        observations.append(IngestObservation(
+            type="trial", external_id=t.nct_id, title=t.title, at=t.fetched_at, source=source,
+            text=t.eligibility_text, attrs={
+                "conditions": list(t.conditions), "status": t.status, "eligibility_hash": t.eligibility_hash,
+                "source": t.source,
+                "criteria": [{"id": c.id, "kind": str(c.kind), "ordinal": c.ordinal, "text": c.text}
+                             for c in criteria]}))
+    return await wm.ingest(observations, run_id=run_id)
 
 
 async def record_verdict(wm: "WorldModel", patient_id: "PatientId", verdict: "Verdict") -> None:
-    """relate(patient → trial, type="verdict"). Keyed by (Trial, eligibility hash, Profile version), ADR 0002."""
-    raise NotImplementedError
+    """relate(patient → trial, type="verdict", context per Trial). Keyed by (Trial, eligibility hash, Profile
+    version), ADR 0002: the attrs carry both, so a new version or hash opens a new edge and closes the old one."""
+    from app.worldmodel.engine import Provenance
+
+    snap = next(s for s in wm.snapshots() if s.id == verdict.profile_version_id)
+    source = Provenance(kind="agent", at=snap.at, by="matching", run_id=verdict.run_id)
+    await wm.relate(
+        from_id=patient_entity_id(patient_id), type="verdict", to_id=trial_entity_id(verdict.nct_id),
+        context=f"verdict:{verdict.nct_id}", valid_from=snap.at, source=source, attrs={
+            "nct_id": verdict.nct_id, "profile_version_id": verdict.profile_version_id,
+            "eligibility_hash": verdict.eligibility_hash, "outcome": str(verdict.outcome), "run_id": verdict.run_id,
+            "attempts": verdict.attempts, "unsupported_downgraded": verdict.unsupported_downgraded,
+            "degraded": verdict.degraded,
+            "results": [{"criterion_id": r.criterion_id, "outcome": str(r.outcome),
+                         "fact_id": r.citation.fact_id if r.citation else None, "rationale": r.rationale}
+                        for r in verdict.results],
+            "questions": [{"criterion_id": q.criterion_id, "subject": q.subject, "text": q.text}
+                          for q in verdict.questions]})

@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 
-from app import record, trace
+from app import matching, record, trace
 from app.api.deps import get_ctx
 from app.api.schemas import UploadAccepted
 from app.ctx import Ctx
@@ -18,7 +18,7 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 @router.post("/patients/{pid}/documents", status_code=202, response_model=UploadAccepted)
 async def upload(pid: str, file: UploadFile, background: BackgroundTasks, ctx: Ctx = Depends(get_ctx)):
     """record.register_document → 202 {document_hash, run_id, deduplicated};
-    background: record.ingest → on Committed, matching.rescan with the same correlation id (#12).
+    background: record.ingest → on Committed, matching.rescan with the same correlation id.
     Several files at once are several requests; the UI follows their runs together. A re-upload of the same bytes
     answers with the run that already handled them, unless that run was rejected, in which case it runs again."""
     content = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -44,9 +44,10 @@ async def upload(pid: str, file: UploadFile, background: BackgroundTasks, ctx: C
 
 async def _ingest(ctx: Ctx, h: record.DocumentHash, run_id: trace.RunId) -> None:
     try:
-        await record.ingest(ctx, h, run_id=run_id)
+        outcome = await record.ingest(ctx, h, run_id=run_id)
     except Exception:   # the run must still end, or the UI would wait on it for ever
         log.exception("ingest of %s failed", h)
         await trace.append(ctx.writer, run_id, RunRejected(actor="record", reason="the Document could not be checked"))
         raise
-    # TODO(#12): on Committed, matching.rescan(ctx, version, correlation_id=run_id).
+    if isinstance(outcome, record.Committed):
+        await matching.rescan(ctx, outcome.version.id, correlation_id=run_id)

@@ -4,10 +4,12 @@
 // hard-coded here except the one that says who is answering, whose answer switches "your" / "their".
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ReturnLink } from "./return-link";
 import { DocumentUploads } from "./uploads";
 import {
-  api, type Answers, type Question, type Questionnaire, type Respondent, type VersionDiff, type VersionOut,
+  api, trialsHref, type Answers, type Question, type Questionnaire, type Respondent, type SubmissionAccepted,
+  type VersionDiff, type VersionOut,
 } from "@/lib/api";
 
 const RESPONDENT_QUESTION = "respondent";
@@ -29,6 +31,7 @@ export function QuestionnaireForm() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [returnToken, setReturnToken] = useState<string | null>(null);
+  const [rescan, setRescan] = useState<SubmissionAccepted["rescan"]>(null);
 
   useEffect(() => {
     api
@@ -77,6 +80,7 @@ export function QuestionnaireForm() {
         ? await api.diff(patient_id, result.profile_version_id, savedVersionId)
         : null);
       setSavedVersionId(result.profile_version_id);
+      setRescan(result.rescan);
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -105,7 +109,7 @@ export function QuestionnaireForm() {
   if (version) {
     return (
       <div className="flex flex-col gap-4">
-        <ProfileSummary version={version} changes={changes} />
+        <ProfileSummary version={version} changes={changes} patientId={patientId} rescan={rescan} />
         {returnToken && <ReturnLink token={returnToken} />}
         {patientId && <DocumentUploads patientId={patientId} />}
         {editError && <p role="alert" className="text-red-700 dark:text-red-400">{editError}</p>}
@@ -160,7 +164,7 @@ function QuestionField({ question: q, respondent, value, onChange, onClear }: {
 
   if (q.kind === "single") {
     return (
-      <fieldset className="flex flex-col gap-2" aria-describedby={describedBy}>
+      <fieldset id={`Q${q.number}`} className="flex flex-col gap-2 scroll-mt-4" aria-describedby={describedBy}>
         <legend className="font-medium mb-1">
           <span className="text-muted mr-2">Q{q.number}</span>{label}
         </legend>
@@ -182,7 +186,7 @@ function QuestionField({ question: q, respondent, value, onChange, onClear }: {
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div id={`Q${q.number}`} className="flex flex-col gap-2 scroll-mt-4">
       <label htmlFor={id} className="font-medium">
         <span className="text-muted mr-2">Q{q.number}</span>{label}
       </label>
@@ -201,10 +205,29 @@ function QuestionField({ question: q, respondent, value, onChange, onClear }: {
   );
 }
 
-function ProfileSummary({ version, changes }: { version: VersionOut; changes: VersionDiff | null }) {
+function ProfileSummary({ version, changes, patientId, rescan }: {
+  version: VersionOut;
+  changes: VersionDiff | null;
+  patientId: string | null;
+  rescan: SubmissionAccepted["rescan"];
+}) {
   return (
     <section aria-labelledby="profile-heading" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
       <h2 id="profile-heading" className="text-lg font-semibold">Thank you. Your answers are saved as version {version.number}.</h2>
+      {patientId && (
+        <div className="flex flex-col gap-2">
+          <p>
+            {rescan && rescan.judged > 0
+              ? `We checked your answers against ${rescan.judged} trial${rescan.judged === 1 ? "" : "s"}.`
+              : "We could not check any trials yet."}
+            {rescan && rescan.failed > 0 && ` ${rescan.failed} could not be checked right now; we will try again.`}
+          </p>
+          <Link href={trialsHref(patientId, version.id)}
+                className="self-start min-h-12 inline-flex items-center rounded-lg bg-accent px-5 font-semibold text-white dark:text-black">
+            See trials that might fit
+          </Link>
+        </div>
+      )}
       {changes && (
         <div className="flex flex-col gap-2">
           <h3 className="font-semibold">What changed since the previous version</h3>

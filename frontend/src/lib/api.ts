@@ -26,7 +26,40 @@ export type SubmissionAccepted = {
   profile_version_id: string | null;
   version_number: number | null;
   reason: string | null;
+  rescan: { judged: number; failed: number } | null;
   return_token: string | null; // first submission only
+};
+
+export type VerdictCitation = {
+  fact_id: string;
+  document_hash: string;
+  page: number;
+  quote: string;
+  question: string | null;
+  label: string;
+};
+
+export type CriterionResultOut = {
+  criterion_id: string;
+  kind: "inclusion" | "exclusion";
+  text: string;
+  outcome: "met" | "not_met" | "unknown";
+  rationale: string;
+  citation: VerdictCitation | null;
+};
+
+export type DoctorQuestion = { criterion_id: string; nct_id: string; subject: string; text: string; unblocks: string[] };
+
+export type VerdictOut = {
+  nct_id: string;
+  title: string;
+  status: string;
+  profile_version_id: string;
+  outcome: "eligible" | "possible" | "excluded";
+  degraded: boolean;
+  attempts: number;
+  results: CriterionResultOut[];
+  questions: DoctorQuestion[];
 };
 
 export type ReturnOpened = {
@@ -116,4 +149,15 @@ export const api = {
   openReturnLink: (token: string) => call<ReturnOpened>(`/return/${encodeURIComponent(token)}`),
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
+  verdicts: (patientId: string, versionId: string) =>
+    call<{ profile_version_id: string; verdicts: VerdictOut[] }>(
+      `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
+    ),
+  doctorQuestions: (patientId: string, versionId: string) =>
+    call<DoctorQuestion[]>(
+      `/patients/${encodeURIComponent(patientId)}/questions?version=${encodeURIComponent(versionId)}`,
+    ),
 };
+
+export const trialsHref = (patientId: string, versionId: string) =>
+  `/trials?patient=${encodeURIComponent(patientId)}&version=${encodeURIComponent(versionId)}`;

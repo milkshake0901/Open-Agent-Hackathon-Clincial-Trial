@@ -1,0 +1,3922 @@
+{
+  "url": "https://clinicaltrials.gov/api/v2/studies/NCT07680790",
+  "fetched_at": "2026-10-24T12:45:22",
+  "body": {
+    "protocolSection": {
+      "identificationModule": {
+        "nctId": "NCT07680790",
+        "orgStudyIdInfo": {
+          "id": "CA244-0020"
+        },
+        "secondaryIdInfos": [
+          {
+            "id": "2026-526486-21",
+            "type": "OTHER",
+            "domain": "EU CTR"
+          },
+          {
+            "id": "U1111-1338-8955",
+            "type": "OTHER",
+            "domain": "WHO"
+          }
+        ],
+        "organization": {
+          "fullName": "Bristol-Myers Squibb",
+          "class": "INDUSTRY"
+        },
+        "briefTitle": "Study of Izalontamab Brengitecan (BMS-986507) in Combination With Osimertinib Versus Osimertinib Monotherapy or Osimertinib in Combination With Platinum-based Chemotherapy for EGFRmt Non-small Cell Lung Cancer (IZABRIGHT-Lung02)",
+        "officialTitle": "A Phase III, Randomized, Open-label Study of Izalontamab Brengitecan (BMS-986507) in Combination With Osimertinib Versus Osimertinib Monotherapy or Osimertinib in Combination With Platinum-based Chemotherapy as First-Line Therapy in Patients With EGFR-Mutant Locally Advanced or Metastatic Non-small Cell Lung Cancer"
+      },
+      "statusModule": {
+        "statusVerifiedDate": "2026-09",
+        "overallStatus": "RECRUITING",
+        "expandedAccessInfo": {
+          "hasExpandedAccess": false
+        },
+        "startDateStruct": {
+          "date": "2026-09-08",
+          "type": "ACTUAL"
+        },
+        "primaryCompletionDateStruct": {
+          "date": "2031-12-30",
+          "type": "ESTIMATED"
+        },
+        "completionDateStruct": {
+          "date": "2031-12-30",
+          "type": "ESTIMATED"
+        },
+        "studyFirstSubmitDate": "2026-06-26",
+        "studyFirstSubmitQcDate": "2026-06-26",
+        "studyFirstPostDateStruct": {
+          "date": "2026-07-02",
+          "type": "ACTUAL"
+        },
+        "lastUpdateSubmitDate": "2026-10-05",
+        "lastUpdatePostDateStruct": {
+          "date": "2026-10-08",
+          "type": "ACTUAL"
+        }
+      },
+      "sponsorCollaboratorsModule": {
+        "responsibleParty": {
+          "type": "SPONSOR"
+        },
+        "leadSponsor": {
+          "name": "Bristol-Myers Squibb",
+          "class": "INDUSTRY"
+        }
+      },
+      "oversightModule": {
+        "oversightHasDmc": true,
+        "isFdaRegulatedDrug": true,
+        "isFdaRegulatedDevice": false
+      },
+      "descriptionModule": {
+        "briefSummary": "The purpose of this study is to evaluate izalontamab brengitecan (iza-bren) combined with osimertinib in participants with previously untreated, locally advanced or metastatic EGFR-mutant NSCLC, compared to osimertinib alone or osimertinib combined with platinum-based chemotherapy"
+      },
+      "conditionsModule": {
+        "conditions": [
+          "Non-Small Cell Lung Cancer"
+        ],
+        "keywords": [
+          "NSCLC",
+          "EGFR",
+          "First line",
+          "Izalontamab brengitecan",
+          "Osimertinib",
+          "ADC",
+          "IZABRIGHT-Lung02"
+        ]
+      },
+      "designModule": {
+        "studyType": "INTERVENTIONAL",
+        "phases": [
+          "PHASE3"
+        ],
+        "designInfo": {
+          "allocation": "RANDOMIZED",
+          "interventionModel": "PARALLEL",
+          "primaryPurpose": "TREATMENT",
+          "maskingInfo": {
+            "masking": "NONE"
+          }
+        },
+        "enrollmentInfo": {
+          "count": 850,
+          "type": "ESTIMATED"
+        }
+      },
+      "armsInterventionsModule": {
+        "armGroups": [
+          {
+            "label": "Arm A",
+            "type": "EXPERIMENTAL",
+            "interventionNames": [
+              "Drug: Iza-bren",
+              "Drug: Osimertinib"
+            ]
+          },
+          {
+            "label": "Arm B",
+            "type": "ACTIVE_COMPARATOR",
+            "interventionNames": [
+              "Drug: Osimertinib",
+              "Drug: Pemetrexed",
+              "Drug: Carboplatin",
+              "Drug: Cisplatin"
+            ]
+          }
+        ],
+        "interventions": [
+          {
+            "type": "DRUG",
+            "name": "Iza-bren",
+            "description": "Specified dose on specified days",
+            "armGroupLabels": [
+              "Arm A"
+            ],
+            "otherNames": [
+              "BMS-986507",
+              "BL-B01D1",
+              "Izalontamab brengitecan"
+            ]
+          },
+          {
+            "type": "DRUG",
+            "name": "Osimertinib",
+            "description": "Specified dose on days",
+            "armGroupLabels": [
+              "Arm A",
+              "Arm B"
+            ]
+          },
+          {
+            "type": "DRUG",
+            "name": "Pemetrexed",
+            "description": "Specified dose on specified days",
+            "armGroupLabels": [
+              "Arm B"
+            ]
+          },
+          {
+            "type": "DRUG",
+            "name": "Carboplatin",
+            "description": "Specified dose on specified days",
+            "armGroupLabels": [
+              "Arm B"
+            ]
+          },
+          {
+            "type": "DRUG",
+            "name": "Cisplatin",
+            "description": "Specified dose on specified days",
+            "armGroupLabels": [
+              "Arm B"
+            ]
+          }
+        ]
+      },
+      "outcomesModule": {
+        "primaryOutcomes": [
+          {
+            "measure": "Progression-Free Survival (PFS) using blinded independent central review (BICR) assessment as defined by Response Evaluation Criteria in Solid Tumors version 1.1 (RECIST v1.1)",
+            "timeFrame": "Up to approximately 3 years"
+          }
+        ],
+        "secondaryOutcomes": [
+          {
+            "measure": "Overall Survival (OS)",
+            "timeFrame": "Up to approximately 5 years"
+          },
+          {
+            "measure": "PFS assessed by the investigator as per RECIST v1.1",
+            "timeFrame": "Up to approximately 3 years"
+          },
+          {
+            "measure": "Second Progression-Free Survival (PFS2) as assessed by the Investigator",
+            "timeFrame": "Up to approximately 5 years"
+          },
+          {
+            "measure": "Objective Response Rate (ORR) assessed by the BICR as per RECIST v1.1",
+            "timeFrame": "Up to approximately 3 years"
+          },
+          {
+            "measure": "Objective Response Rate (ORR) assessed by the investigator as per RECIST v1.1",
+            "timeFrame": "Up to approximately 3 years"
+          },
+          {
+            "measure": "Disease Control Rate (DCR) assessed by the BICR as per RECIST v1.1",
+            "timeFrame": "Up to approximately 3 years"
+          },
+          {
+            "measure": "Disease Control Rate (DCR) assessed by the investigator as per RECIST v1.1",
+            "timeFrame": "Up to approximately 3 years"
+          },
+          {
+            "measure": "Duration of Response (DOR) assessed by the BICR as per RECIST v1.1",
+            "timeFrame": "Up to approximately 3 years"
+          },
+          {
+            "measure": "Duration of Response (DOR) assessed by the investigator as per RECIST v1.1",
+            "timeFrame": "Up to approximately 3 years"
+          }
+        ]
+      },
+      "eligibilityModule": {
+        "eligibilityCriteria": "Inclusion Criteria:\n\n* Participants must have histologically or cytologically confirmed non-squamous NSCLC, newly diagnosed locally advanced (Stage IIIB/IIIC), metastatic (Stage IVA/IVB), or recurrent disease not amenable to curative surgery or definitive radiotherapy and requiring systemic treatment\n* Participants must have documented EGFR-TKI-sensitizing mutation (exon 19 deletion or exon 21 L858R substitution)\n* Participants must have measurable extracranial disease per RECIST v1.1 as assessed by the investigator\n* Participants must have ECOG Performance Status 0-1\n\nExclusion Criteria:\n\n* Participants must not have unstable, symptomatic, or uncontrolled CNS metastases, including brain, leptomeningeal disease, and/or spinal cord compression\n* Participants must not have history of ILD/pneumonitis requiring treatment with steroids (≥ Grade 2), or current or suspected ILD/pneumonitis\n* Participants must not have clinically significant cardiac disease\n* Other protocol-defined inclusion/exclusion criteria apply.",
+        "healthyVolunteers": false,
+        "sex": "ALL",
+        "minimumAge": "18 Years",
+        "stdAges": [
+          "ADULT",
+          "OLDER_ADULT"
+        ]
+      },
+      "contactsLocationsModule": {
+        "centralContacts": [
+          {
+            "name": "BMS Clinical Trials Contact Center www.BMSClinicalTrials.com",
+            "role": "CONTACT",
+            "phone": "855-907-3286",
+            "email": "Clinical.Trials@bms.com"
+          },
+          {
+            "name": "First line of the email MUST contain NCT # and Site #.",
+            "role": "CONTACT"
+          }
+        ],
+        "overallOfficials": [
+          {
+            "name": "Bristol-Myers Squibb",
+            "affiliation": "Bristol-Myers Squibb",
+            "role": "STUDY_DIRECTOR"
+          }
+        ],
+        "locations": [
+          {
+            "facility": "Local Institution - 0212",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Beverly Hills",
+            "state": "California",
+            "zip": "90211",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0212",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 34.07362,
+              "lon": -118.40036
+            }
+          },
+          {
+            "facility": "Local Institution - 0504",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Fullerton",
+            "state": "California",
+            "zip": "92835",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0504",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 33.87029,
+              "lon": -117.92534
+            }
+          },
+          {
+            "facility": "Local Institution - 0357",
+            "status": "NOT_YET_RECRUITING",
+            "city": "La Jolla",
+            "state": "California",
+            "zip": "92093",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0357",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 32.84727,
+              "lon": -117.2742
+            }
+          },
+          {
+            "facility": "Local Institution - 0520",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Boulder",
+            "state": "Colorado",
+            "zip": "80304",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0520",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.01499,
+              "lon": -105.27055
+            }
+          },
+          {
+            "facility": "Local Institution - 0527",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Fort Myers",
+            "state": "Florida",
+            "zip": "33901",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0527",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 26.62168,
+              "lon": -81.84059
+            }
+          },
+          {
+            "facility": "Local Institution - 0366",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Orlando",
+            "state": "Florida",
+            "zip": "32806",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0366",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 28.53834,
+              "lon": -81.37924
+            }
+          },
+          {
+            "facility": "Cancer Care Centers of Brevard - Rockledge",
+            "status": "RECRUITING",
+            "city": "Palm Bay",
+            "state": "Florida",
+            "zip": "32901",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Venkat Pavan Kancharla, Site 0519",
+                "role": "CONTACT",
+                "phone": "111-111-1111"
+              }
+            ],
+            "geoPoint": {
+              "lat": 28.03446,
+              "lon": -80.58866
+            }
+          },
+          {
+            "facility": "Local Institution - 0526",
+            "status": "NOT_YET_RECRUITING",
+            "city": "St. Petersburg",
+            "state": "Florida",
+            "zip": "33701",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0526",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 27.77086,
+              "lon": -82.67927
+            }
+          },
+          {
+            "facility": "Local Institution - 0524",
+            "status": "NOT_YET_RECRUITING",
+            "city": "West Palm Beach",
+            "state": "Florida",
+            "zip": "33401",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0524",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 26.71534,
+              "lon": -80.05337
+            }
+          },
+          {
+            "facility": "Local Institution - 0207",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Ottawa",
+            "state": "Illinois",
+            "zip": "61350",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0207",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 41.34559,
+              "lon": -88.84258
+            }
+          },
+          {
+            "facility": "Local Institution - 0503",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Baltimore",
+            "state": "Maryland",
+            "zip": "21202",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0503",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.29038,
+              "lon": -76.61219
+            }
+          },
+          {
+            "facility": "Local Institution - 0523",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Silver Spring",
+            "state": "Maryland",
+            "zip": "20904",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0523",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 38.99067,
+              "lon": -77.02609
+            }
+          },
+          {
+            "facility": "Local Institution - 0521",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Edina",
+            "state": "Minnesota",
+            "zip": "55435-2150",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0521",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 44.88969,
+              "lon": -93.34995
+            }
+          },
+          {
+            "facility": "Local Institution - 0364",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Saint Paul",
+            "state": "Minnesota",
+            "zip": "55102",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0364",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 44.94441,
+              "lon": -93.09327
+            }
+          },
+          {
+            "facility": "Local Institution - 0403",
+            "status": "NOT_YET_RECRUITING",
+            "city": "St Louis",
+            "state": "Missouri",
+            "zip": "63110",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0403",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 38.62727,
+              "lon": -90.19789
+            }
+          },
+          {
+            "facility": "Local Institution - 0402",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Omaha",
+            "state": "Nebraska",
+            "zip": "68198",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0402",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 41.25626,
+              "lon": -95.94043
+            }
+          },
+          {
+            "facility": "Local Institution - 0290",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Lebanon",
+            "state": "New Hampshire",
+            "zip": "03756",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0290",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 43.64229,
+              "lon": -72.25176
+            }
+          },
+          {
+            "facility": "Local Institution - 0183",
+            "status": "NOT_YET_RECRUITING",
+            "city": "New Brunswick",
+            "state": "New Jersey",
+            "zip": "08901",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0183",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.48622,
+              "lon": -74.45182
+            }
+          },
+          {
+            "facility": "Local Institution - 0153",
+            "status": "NOT_YET_RECRUITING",
+            "city": "New York",
+            "state": "New York",
+            "zip": "10021",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0153",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.71427,
+              "lon": -74.00597
+            }
+          },
+          {
+            "facility": "Local Institution - 0157",
+            "status": "NOT_YET_RECRUITING",
+            "city": "The Bronx",
+            "state": "New York",
+            "zip": "10461",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0157",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.84985,
+              "lon": -73.86641
+            }
+          },
+          {
+            "facility": "Local Institution - 0385",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Charlotte",
+            "state": "North Carolina",
+            "zip": "28204",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0385",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 35.22709,
+              "lon": -80.84313
+            }
+          },
+          {
+            "facility": "Local Institution - 0438",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Sandusky",
+            "state": "Ohio",
+            "zip": "44870",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0438",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 41.44894,
+              "lon": -82.70796
+            }
+          },
+          {
+            "facility": "Local Institution - 0404",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Portland",
+            "state": "Oregon",
+            "zip": "97213",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0404",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.52345,
+              "lon": -122.67621
+            }
+          },
+          {
+            "facility": "Local Institution - 0487",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Easton",
+            "state": "Pennsylvania",
+            "zip": "18045",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0487",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.68843,
+              "lon": -75.22073
+            }
+          },
+          {
+            "facility": "Local Institution - 0200",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Sioux Falls",
+            "state": "South Dakota",
+            "zip": "57104",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0200",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 43.54369,
+              "lon": -96.72796
+            }
+          },
+          {
+            "facility": "Local Institution - 0199",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Memphis",
+            "state": "Tennessee",
+            "zip": "38120",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0199",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 35.14953,
+              "lon": -90.04898
+            }
+          },
+          {
+            "facility": "Texas Oncology",
+            "status": "RECRUITING",
+            "city": "Beaumont",
+            "state": "Texas",
+            "zip": "77702",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Ashok Malani, Site 0522",
+                "role": "CONTACT",
+                "phone": "713-792-2740"
+              }
+            ],
+            "geoPoint": {
+              "lat": 30.08605,
+              "lon": -94.10185
+            }
+          },
+          {
+            "facility": "Local Institution - 0525",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Dallas",
+            "state": "Texas",
+            "zip": "75246",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0525",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 32.78306,
+              "lon": -96.80667
+            }
+          },
+          {
+            "facility": "Texas Oncology - San Antonio",
+            "status": "RECRUITING",
+            "city": "San Antonio",
+            "state": "Texas",
+            "zip": "78217",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Krishna Alluri, Site 0529",
+                "role": "CONTACT",
+                "phone": "210-656-7177"
+              }
+            ],
+            "geoPoint": {
+              "lat": 29.42412,
+              "lon": -98.49363
+            }
+          },
+          {
+            "facility": "Local Institution - 0411",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Salt Lake City",
+            "state": "Utah",
+            "zip": "84112",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0411",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.76078,
+              "lon": -111.89105
+            }
+          },
+          {
+            "facility": "Local Institution - 0165",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Fairfax",
+            "state": "Virginia",
+            "zip": "22031",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0165",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 38.84622,
+              "lon": -77.30637
+            }
+          },
+          {
+            "facility": "Local Institution - 0530",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Fairfax",
+            "state": "Virginia",
+            "zip": "22031",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0530",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 38.84622,
+              "lon": -77.30637
+            }
+          },
+          {
+            "facility": "Shenandoah Oncology, P.C. (Shenandoah Oncology Associates, P.C.)",
+            "status": "RECRUITING",
+            "city": "Winchester",
+            "state": "Virginia",
+            "zip": "22601",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Michael McCusker Jr., Site 0528",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.18566,
+              "lon": -78.16333
+            }
+          },
+          {
+            "facility": "Local Institution - 0283",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Seattle",
+            "state": "Washington",
+            "zip": "98104",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0283",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 47.60621,
+              "lon": -122.33207
+            }
+          },
+          {
+            "facility": "Local Institution - 0502",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Morgantown",
+            "state": "West Virginia",
+            "zip": "26505",
+            "country": "United States",
+            "contacts": [
+              {
+                "name": "Site 0502",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.62953,
+              "lon": -79.9559
+            }
+          },
+          {
+            "facility": "Local Institution - 0077",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Mar del Plata",
+            "state": "Buenos Aires",
+            "zip": "B7602CBM",
+            "country": "Argentina",
+            "contacts": [
+              {
+                "name": "Site 0077",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -38.00042,
+              "lon": -57.5562
+            }
+          },
+          {
+            "facility": "Local Institution - 0514",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Río Cuarto",
+            "state": "Córdoba Province",
+            "zip": "5800",
+            "country": "Argentina",
+            "contacts": [
+              {
+                "name": "Site 0514",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -33.13044,
+              "lon": -64.35272
+            }
+          },
+          {
+            "facility": "Local Institution - 0086",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Buenos Aires",
+            "zip": "C1122AAL",
+            "country": "Argentina",
+            "contacts": [
+              {
+                "name": "Site 0086",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -34.61315,
+              "lon": -58.37723
+            }
+          },
+          {
+            "facility": "Local Institution - 0432",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Buenos Aires",
+            "zip": "C1199ABB",
+            "country": "Argentina",
+            "contacts": [
+              {
+                "name": "Site 0432",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -34.61315,
+              "lon": -58.37723
+            }
+          },
+          {
+            "facility": "Local Institution - 0085",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Buenos Aires",
+            "zip": "C1280AEB",
+            "country": "Argentina",
+            "contacts": [
+              {
+                "name": "Site 0085",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -34.61315,
+              "lon": -58.37723
+            }
+          },
+          {
+            "facility": "Local Institution - 0078",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Buenos Aires",
+            "zip": "C1426AGE",
+            "country": "Argentina",
+            "contacts": [
+              {
+                "name": "Site 0078",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -34.61315,
+              "lon": -58.37723
+            }
+          },
+          {
+            "facility": "Local Institution - 0151",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Buenos Aires",
+            "zip": "C1426ANZ",
+            "country": "Argentina",
+            "contacts": [
+              {
+                "name": "Site 0151",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -34.61315,
+              "lon": -58.37723
+            }
+          },
+          {
+            "facility": "Local Institution - 0424",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Camperdown",
+            "state": "New South Wales",
+            "zip": "2050",
+            "country": "Australia",
+            "contacts": [
+              {
+                "name": "Site 0424",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -33.88965,
+              "lon": 151.17642
+            }
+          },
+          {
+            "facility": "Local Institution - 0439",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Westmead",
+            "state": "New South Wales",
+            "zip": "2145",
+            "country": "Australia",
+            "contacts": [
+              {
+                "name": "Site 0439",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -33.80383,
+              "lon": 150.98768
+            }
+          },
+          {
+            "facility": "Local Institution - 0511",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Greenslopes",
+            "state": "Queensland",
+            "zip": "4120",
+            "country": "Australia",
+            "contacts": [
+              {
+                "name": "Site 0511",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -27.50815,
+              "lon": 153.04951
+            }
+          },
+          {
+            "facility": "Local Institution - 0492",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Adelaide",
+            "state": "South Australia",
+            "zip": "5000",
+            "country": "Australia",
+            "contacts": [
+              {
+                "name": "Site 0492",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -34.92866,
+              "lon": 138.59863
+            }
+          },
+          {
+            "facility": "Local Institution - 0447",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Clayton",
+            "state": "Victoria",
+            "zip": "3168",
+            "country": "Australia",
+            "contacts": [
+              {
+                "name": "Site 0447",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -37.91667,
+              "lon": 145.11667
+            }
+          },
+          {
+            "facility": "Local Institution - 0437",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Murdoch",
+            "state": "Western Australia",
+            "zip": "6150",
+            "country": "Australia",
+            "contacts": [
+              {
+                "name": "Site 0437",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -32.06987,
+              "lon": 115.83757
+            }
+          },
+          {
+            "facility": "Local Institution - 0253",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Vitória",
+            "state": "Espírito Santo",
+            "zip": "29043-260",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0253",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -20.31944,
+              "lon": -40.33778
+            }
+          },
+          {
+            "facility": "Local Institution - 0291",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Salvador",
+            "state": "Estado de Bahia",
+            "zip": "40170-110",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0291",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -12.97563,
+              "lon": -38.49096
+            }
+          },
+          {
+            "facility": "Local Institution - 0247",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Ijuí",
+            "state": "Rio Grande do Sul",
+            "zip": "98700-000",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0247",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -28.38778,
+              "lon": -53.91472
+            }
+          },
+          {
+            "facility": "Local Institution - 0252",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Florianópolis",
+            "state": "Santa Catarina",
+            "zip": "88020",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0252",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -27.59667,
+              "lon": -48.54917
+            }
+          },
+          {
+            "facility": "Local Institution - 0244",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Barretos",
+            "state": "São Paulo",
+            "zip": "14784-400",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0244",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -20.55722,
+              "lon": -48.56778
+            }
+          },
+          {
+            "facility": "Local Institution - 0249",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Campinas",
+            "state": "São Paulo",
+            "zip": "13060-803",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0249",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -22.90556,
+              "lon": -47.06083
+            }
+          },
+          {
+            "facility": "Local Institution - 0261",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Sorocaba",
+            "state": "São Paulo",
+            "zip": "18030-005",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0261",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -23.50167,
+              "lon": -47.45806
+            }
+          },
+          {
+            "facility": "Local Institution - 0255",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Rio de Janeiro",
+            "zip": "20230-130",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0255",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -22.90642,
+              "lon": -43.18223
+            }
+          },
+          {
+            "facility": "Local Institution - 0259",
+            "status": "NOT_YET_RECRUITING",
+            "city": "São Paulo",
+            "zip": "01246-000",
+            "country": "Brazil",
+            "contacts": [
+              {
+                "name": "Site 0259",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": -23.5475,
+              "lon": -46.63611
+            }
+          },
+          {
+            "facility": "Local Institution - 0059",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Edmonton",
+            "state": "Alberta",
+            "zip": "T6G1Z2",
+            "country": "Canada",
+            "contacts": [
+              {
+                "name": "Site 0059",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 53.55014,
+              "lon": -113.46871
+            }
+          },
+          {
+            "facility": "Local Institution - 0056",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Vancouver",
+            "state": "British Columbia",
+            "zip": "V5Z4E6",
+            "country": "Canada",
+            "contacts": [
+              {
+                "name": "Site 0056",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 49.24966,
+              "lon": -123.11934
+            }
+          },
+          {
+            "facility": "Local Institution - 0058",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Montreal",
+            "state": "Quebec",
+            "zip": "H3T1E2",
+            "country": "Canada",
+            "contacts": [
+              {
+                "name": "Site 0058",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.50884,
+              "lon": -73.58781
+            }
+          },
+          {
+            "facility": "Local Institution - 0057",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Montreal",
+            "state": "Quebec",
+            "zip": "H4A3J1",
+            "country": "Canada",
+            "contacts": [
+              {
+                "name": "Site 0057",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.50884,
+              "lon": -73.58781
+            }
+          },
+          {
+            "facility": "Local Institution - 0040",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Regina",
+            "state": "Saskatchewan",
+            "zip": "S4T1A5",
+            "country": "Canada",
+            "contacts": [
+              {
+                "name": "Site 0040",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 50.45008,
+              "lon": -104.6178
+            }
+          },
+          {
+            "facility": "Local Institution - 0517",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Beijing",
+            "state": "Beijing Municipality",
+            "zip": "100142",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0517",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.9075,
+              "lon": 116.39723
+            }
+          },
+          {
+            "facility": "Local Institution - 0458",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Beijing",
+            "state": "Beijing Municipality",
+            "zip": "101149",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0458",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.9075,
+              "lon": 116.39723
+            }
+          },
+          {
+            "facility": "Local Institution - 0535",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Chongqing",
+            "state": "Chongqing Municipality",
+            "zip": "0",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0535",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 29.56026,
+              "lon": 106.55771
+            }
+          },
+          {
+            "facility": "Local Institution - 0470",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Chongqing",
+            "state": "Chongqing Municipality",
+            "zip": "400030",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0470",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 29.56026,
+              "lon": 106.55771
+            }
+          },
+          {
+            "facility": "Local Institution - 0493",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Fuzhou",
+            "state": "Fujian",
+            "zip": "350001",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0493",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 26.07711,
+              "lon": 119.29153
+            }
+          },
+          {
+            "facility": "Local Institution - 0457",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Fuzhou",
+            "state": "Fujian",
+            "zip": "350014",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0457",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 26.07711,
+              "lon": 119.29153
+            }
+          },
+          {
+            "facility": "Local Institution - 0326",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Dongguan Shi",
+            "state": "Guangdong",
+            "zip": "523059",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0326",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0331",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Guangzhou",
+            "state": "Guangdong",
+            "zip": "510080",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0331",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 23.11667,
+              "lon": 113.25
+            }
+          },
+          {
+            "facility": "Local Institution - 0512",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Jiangmen",
+            "state": "Guangdong",
+            "zip": "529000",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0512",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 22.58333,
+              "lon": 113.08333
+            }
+          },
+          {
+            "facility": "Local Institution - 0478",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Zhongshan",
+            "state": "Guangdong",
+            "zip": "528403",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0478",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 22.52306,
+              "lon": 113.37912
+            }
+          },
+          {
+            "facility": "Local Institution - 0321",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Guilin",
+            "state": "Guangxi",
+            "zip": "541199",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0321",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 25.28022,
+              "lon": 110.29639
+            }
+          },
+          {
+            "facility": "Local Institution - 0328",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Nanning",
+            "state": "Guangxi",
+            "zip": "530021",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0328",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 22.81667,
+              "lon": 108.31667
+            }
+          },
+          {
+            "facility": "Local Institution - 0505",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Guiyang",
+            "state": "Guizhou",
+            "zip": "550003",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0505",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 26.58333,
+              "lon": 106.71667
+            }
+          },
+          {
+            "facility": "Local Institution - 0330",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Haikou",
+            "state": "Hainan",
+            "zip": "570000",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0330",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 20.03421,
+              "lon": 110.34651
+            }
+          },
+          {
+            "facility": "Local Institution - 0322",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Shijiazhuang",
+            "state": "Hebei",
+            "zip": "050035",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0322",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 38.04139,
+              "lon": 114.47861
+            }
+          },
+          {
+            "facility": "Local Institution - 0343",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Harbin",
+            "state": "Heilongjiang",
+            "zip": "150081",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0343",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.75,
+              "lon": 126.65
+            }
+          },
+          {
+            "facility": "Local Institution - 0298",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Anyang",
+            "state": "Henan",
+            "zip": "455000",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0298",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 36.096,
+              "lon": 114.38278
+            }
+          },
+          {
+            "facility": "Local Institution - 0341",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Weihui Shi",
+            "state": "Henan",
+            "zip": "453100",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0341",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0480",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Zhengzhou",
+            "state": "Henan",
+            "zip": "450000",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0480",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 34.75778,
+              "lon": 113.64861
+            }
+          },
+          {
+            "facility": "Local Institution - 0423",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Zhengzhou",
+            "state": "Henan",
+            "zip": "450008",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0423",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 34.75778,
+              "lon": 113.64861
+            }
+          },
+          {
+            "facility": "Local Institution - 0483",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Jingzhou",
+            "state": "Hubei",
+            "zip": "0",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0483",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 30.35028,
+              "lon": 112.19028
+            }
+          },
+          {
+            "facility": "Local Institution - 0450",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Wuhan",
+            "state": "Hubei",
+            "zip": "430022",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0450",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 30.58333,
+              "lon": 114.26667
+            }
+          },
+          {
+            "facility": "Local Institution - 0482",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Changsha",
+            "state": "Hunan",
+            "zip": "410007",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0482",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 28.19874,
+              "lon": 112.97087
+            }
+          },
+          {
+            "facility": "Local Institution - 0467",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Changsha",
+            "state": "Hunan",
+            "zip": "410008",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0467",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 28.19874,
+              "lon": 112.97087
+            }
+          },
+          {
+            "facility": "Local Institution - 0306",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Changsha Shi",
+            "state": "Hunan",
+            "zip": "410013",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0306",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0531",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Lianyungang",
+            "state": "Jiangsu",
+            "zip": "222061",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0531",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 34.59845,
+              "lon": 119.21556
+            }
+          },
+          {
+            "facility": "Local Institution - 0347",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Nanjing",
+            "state": "Jiangsu",
+            "zip": "210029",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0347",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 32.06167,
+              "lon": 118.77778
+            }
+          },
+          {
+            "facility": "Local Institution - 0332",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Shenyang",
+            "state": "Liaoning",
+            "zip": "110042",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0332",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 41.79222,
+              "lon": 123.43278
+            }
+          },
+          {
+            "facility": "Local Institution - 0464",
+            "status": "WITHDRAWN",
+            "city": "Xi'an",
+            "state": "Shaanxi",
+            "zip": "710038",
+            "country": "China",
+            "geoPoint": {
+              "lat": 34.25833,
+              "lon": 108.92861
+            }
+          },
+          {
+            "facility": "Local Institution - 0479",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Binzhou",
+            "state": "Shandong",
+            "zip": "256603",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0479",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.36667,
+              "lon": 118.01667
+            }
+          },
+          {
+            "facility": "Local Institution - 0455",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Jinan",
+            "state": "Shandong",
+            "zip": "250117",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0455",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 36.66833,
+              "lon": 116.99722
+            }
+          },
+          {
+            "facility": "Local Institution - 0413",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Linyi",
+            "state": "Shandong",
+            "zip": "276027",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0413",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 35.06306,
+              "lon": 118.34278
+            }
+          },
+          {
+            "facility": "Local Institution - 0469",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Weifang Shi",
+            "state": "Shandong",
+            "zip": "261000",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0469",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0319",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Shanghai Shi",
+            "state": "Shanghai Municipality",
+            "zip": "200120",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0319",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0316",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Taiyuan",
+            "state": "Shanxi",
+            "zip": "30001",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0316",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.86944,
+              "lon": 112.56028
+            }
+          },
+          {
+            "facility": "Local Institution - 0463",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Taiyuan",
+            "state": "Shanxi",
+            "zip": "30013",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0463",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.86944,
+              "lon": 112.56028
+            }
+          },
+          {
+            "facility": "Local Institution - 0456",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Chengdu",
+            "state": "Sichuan",
+            "zip": "610041",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0456",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 30.66667,
+              "lon": 104.06667
+            }
+          },
+          {
+            "facility": "Local Institution - 0471",
+            "status": "WITHDRAWN",
+            "city": "Chengdu",
+            "state": "Sichuan",
+            "zip": "610041",
+            "country": "China",
+            "geoPoint": {
+              "lat": 30.66667,
+              "lon": 104.06667
+            }
+          },
+          {
+            "facility": "Local Institution - 0534",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Chengdu",
+            "state": "Sichuan",
+            "zip": "610041",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0534",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 30.66667,
+              "lon": 104.06667
+            }
+          },
+          {
+            "facility": "Local Institution - 0320",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Dazhou Shi",
+            "state": "Sichuan",
+            "zip": "635000",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0320",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0472",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Yibin",
+            "state": "Sichuan",
+            "zip": "644000",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0472",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 28.7593,
+              "lon": 104.63994
+            }
+          },
+          {
+            "facility": "Local Institution - 0452",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Tianjin",
+            "state": "Tianjin Municipality",
+            "zip": "300060",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0452",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.14222,
+              "lon": 117.17667
+            }
+          },
+          {
+            "facility": "Local Institution - 0312",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Hangzhou",
+            "state": "Zhejiang",
+            "zip": "310022",
+            "country": "China",
+            "contacts": [
+              {
+                "name": "Site 0312",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 30.29365,
+              "lon": 120.16142
+            }
+          },
+          {
+            "facility": "Local Institution - 0074",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Marseille",
+            "state": "Bouches-Du-Rhône",
+            "zip": "13915",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0074",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 43.29695,
+              "lon": 5.38107
+            }
+          },
+          {
+            "facility": "Local Institution - 0063",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Dijon",
+            "state": "Côte-D'Or",
+            "zip": "21079",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0063",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 47.31344,
+              "lon": 5.01391
+            }
+          },
+          {
+            "facility": "Local Institution - 0075",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Nantes",
+            "state": "Loire Atlantique",
+            "zip": "44093",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0075",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 47.21725,
+              "lon": -1.55336
+            }
+          },
+          {
+            "facility": "Local Institution - 0064",
+            "status": "NOT_YET_RECRUITING",
+            "city": "La Tronche",
+            "state": "Nan",
+            "zip": "38700",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0064",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.20507,
+              "lon": 5.74629
+            }
+          },
+          {
+            "facility": "Local Institution - 0116",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Lyon",
+            "state": "Nan",
+            "zip": "69373",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0116",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.74906,
+              "lon": 4.84789
+            }
+          },
+          {
+            "facility": "Local Institution - 0109",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Paris",
+            "state": "Nan",
+            "zip": "75014",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0109",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 48.85341,
+              "lon": 2.3488
+            }
+          },
+          {
+            "facility": "Local Institution - 0062",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Bron",
+            "state": "Rhône",
+            "zip": "69677",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0062",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.73865,
+              "lon": 4.91303
+            }
+          },
+          {
+            "facility": "Local Institution - 0069",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Villejuif",
+            "state": "Val-De-Marne",
+            "zip": "94805",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0069",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 48.7939,
+              "lon": 2.35992
+            }
+          },
+          {
+            "facility": "Local Institution - 0073",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Brest",
+            "zip": "29200",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0073",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 48.39029,
+              "lon": -4.48628
+            }
+          },
+          {
+            "facility": "Local Institution - 0066",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Caen",
+            "zip": "14076",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0066",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 49.18585,
+              "lon": -0.35912
+            }
+          },
+          {
+            "facility": "Local Institution - 0070",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Toulouse",
+            "zip": "31059",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0070",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 43.60426,
+              "lon": 1.44367
+            }
+          },
+          {
+            "facility": "Local Institution - 0071",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Paris",
+            "state": "Île-de-France Region",
+            "zip": "75248",
+            "country": "France",
+            "contacts": [
+              {
+                "name": "Site 0071",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 48.85341,
+              "lon": 2.3488
+            }
+          },
+          {
+            "facility": "Local Institution - 0112",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Gerlingen",
+            "state": "Baden-Wurttemberg",
+            "zip": "70839",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0112",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 48.79954,
+              "lon": 9.06316
+            }
+          },
+          {
+            "facility": "Local Institution - 0001",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Munich",
+            "state": "Bavaria",
+            "zip": "81377",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0001",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 48.13743,
+              "lon": 11.57549
+            }
+          },
+          {
+            "facility": "Local Institution - 0105",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Regensburg",
+            "state": "Bavaria",
+            "zip": "93053",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0105",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 49.01513,
+              "lon": 12.10161
+            }
+          },
+          {
+            "facility": "Local Institution - 0446",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Frankfurt am Main",
+            "state": "Hesse",
+            "zip": "60389",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0446",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 50.11552,
+              "lon": 8.68417
+            }
+          },
+          {
+            "facility": "Local Institution - 0106",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Oldenburg",
+            "state": "Lower Saxony",
+            "zip": "26121",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0106",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 53.14039,
+              "lon": 8.21479
+            }
+          },
+          {
+            "facility": "Local Institution - 0100",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Cologne",
+            "state": "North Rhine-Westphalia",
+            "zip": "50937",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0100",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 50.93333,
+              "lon": 6.95
+            }
+          },
+          {
+            "facility": "Local Institution - 0243",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Dortmund",
+            "state": "North Rhine-Westphalia",
+            "zip": "44263",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0243",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 51.51494,
+              "lon": 7.466
+            }
+          },
+          {
+            "facility": "Local Institution - 0104",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Essen",
+            "state": "North Rhine-Westphalia",
+            "zip": "45147",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0104",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 51.45657,
+              "lon": 7.01228
+            }
+          },
+          {
+            "facility": "Local Institution - 0117",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Hemer",
+            "state": "North Rhine-Westphalia",
+            "zip": "58675",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0117",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 51.38707,
+              "lon": 7.77019
+            }
+          },
+          {
+            "facility": "Local Institution - 0101",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Münster",
+            "state": "North Rhine-Westphalia",
+            "zip": "48149",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0101",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 51.96236,
+              "lon": 7.62571
+            }
+          },
+          {
+            "facility": "Local Institution - 0103",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Dresden",
+            "state": "Saxony",
+            "zip": "1307",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0103",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 51.05089,
+              "lon": 13.73832
+            }
+          },
+          {
+            "facility": "Local Institution - 0412",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Leipzig",
+            "state": "Saxony",
+            "zip": "4103",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0412",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 51.33962,
+              "lon": 12.37129
+            }
+          },
+          {
+            "facility": "Local Institution - 0108",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Großhansdorf",
+            "state": "Schleswig-Holstein",
+            "zip": "22927",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0108",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 53.66528,
+              "lon": 10.28552
+            }
+          },
+          {
+            "facility": "Local Institution - 0239",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Lübeck",
+            "state": "Schleswig-Holstein",
+            "zip": "23538",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0239",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 53.86893,
+              "lon": 10.68729
+            }
+          },
+          {
+            "facility": "Local Institution - 0445",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Giessen",
+            "zip": "35392",
+            "country": "Germany",
+            "contacts": [
+              {
+                "name": "Site 0445",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 50.58727,
+              "lon": 8.67554
+            }
+          },
+          {
+            "facility": "Local Institution - 0225",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Vadodara",
+            "state": "Gujarat",
+            "zip": "361790",
+            "country": "India",
+            "contacts": [
+              {
+                "name": "Site 0225",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 22.29941,
+              "lon": 73.20812
+            }
+          },
+          {
+            "facility": "Local Institution - 0444",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Badsa",
+            "state": "Haryana",
+            "zip": "124105",
+            "country": "India",
+            "contacts": [
+              {
+                "name": "Site 0444",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0337",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Gurgaon",
+            "state": "Haryana",
+            "zip": "122001",
+            "country": "India",
+            "contacts": [
+              {
+                "name": "Site 0337",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 28.4601,
+              "lon": 77.02635
+            }
+          },
+          {
+            "facility": "Local Institution - 0436",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Belagavi",
+            "state": "Karnataka",
+            "zip": "590010",
+            "country": "India",
+            "contacts": [
+              {
+                "name": "Site 0436",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 15.85212,
+              "lon": 74.50447
+            }
+          },
+          {
+            "facility": "Local Institution - 0215",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Pune",
+            "state": "Maharashtra",
+            "zip": "411013",
+            "country": "India",
+            "contacts": [
+              {
+                "name": "Site 0215",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 18.51957,
+              "lon": 73.85535
+            }
+          },
+          {
+            "facility": "Local Institution - 0233",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Mohali",
+            "state": "Punjab",
+            "zip": "140901",
+            "country": "India",
+            "contacts": [
+              {
+                "name": "Site 0233",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 30.67995,
+              "lon": 76.72211
+            }
+          },
+          {
+            "facility": "Local Institution - 0222",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Chennai",
+            "state": "Tamil Nadu",
+            "zip": "600035",
+            "country": "India",
+            "contacts": [
+              {
+                "name": "Site 0222",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 13.08784,
+              "lon": 80.27847
+            }
+          },
+          {
+            "facility": "Local Institution - 0236",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Meldola",
+            "state": "Forli-Cesena",
+            "zip": "47014",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0236",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 44.12775,
+              "lon": 12.0626
+            }
+          },
+          {
+            "facility": "Local Institution - 0094",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Candiolo",
+            "state": "Turin",
+            "zip": "10060",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0094",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 44.95858,
+              "lon": 7.59812
+            }
+          },
+          {
+            "facility": "Local Institution - 0093",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Bergamo",
+            "zip": "24128",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0093",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.69601,
+              "lon": 9.66721
+            }
+          },
+          {
+            "facility": "Local Institution - 0289",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Brescia",
+            "zip": "25123",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0289",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.53558,
+              "lon": 10.21472
+            }
+          },
+          {
+            "facility": "Local Institution - 0089",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Milan",
+            "zip": "20133",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0089",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.46427,
+              "lon": 9.18951
+            }
+          },
+          {
+            "facility": "Local Institution - 0087",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Milan",
+            "zip": "20141",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0087",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.46427,
+              "lon": 9.18951
+            }
+          },
+          {
+            "facility": "Local Institution - 0238",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Milan",
+            "zip": "20142",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0238",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.46427,
+              "lon": 9.18951
+            }
+          },
+          {
+            "facility": "Local Institution - 0091",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Pavia",
+            "zip": "27100",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0091",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.19205,
+              "lon": 9.15917
+            }
+          },
+          {
+            "facility": "Local Institution - 0088",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Verona",
+            "zip": "37126",
+            "country": "Italy",
+            "contacts": [
+              {
+                "name": "Site 0088",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 45.43854,
+              "lon": 10.9938
+            }
+          },
+          {
+            "facility": "Local Institution - 0262",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Nagoya",
+            "state": "Aichi-ken",
+            "zip": "464-8681",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0262",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 35.18147,
+              "lon": 136.90641
+            }
+          },
+          {
+            "facility": "Local Institution - 0128",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Toon-Shi",
+            "state": "Ehime",
+            "zip": "791-0295",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0128",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0136",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Kurume-Shi",
+            "state": "Fukuoka",
+            "zip": "830-0011",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0136",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0121",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Yokohama",
+            "state": "Kanagawa",
+            "zip": "241-8515",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0121",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 35.43333,
+              "lon": 139.65
+            }
+          },
+          {
+            "facility": "Local Institution - 0122",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Sendai",
+            "state": "Miyagi",
+            "zip": "980-0873",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0122",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 38.26667,
+              "lon": 140.86667
+            }
+          },
+          {
+            "facility": "Local Institution - 0433",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Okayama",
+            "state": "Okayama-ken",
+            "zip": "700-8558",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0433",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 34.65,
+              "lon": 133.93333
+            }
+          },
+          {
+            "facility": "Local Institution - 0125",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Hirakata-Shi",
+            "state": "Osaka",
+            "zip": "573-1191",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0125",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0129",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Osakasayama-Shi",
+            "state": "Osaka",
+            "zip": "589-8511",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0129",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0141",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Hamamatsu",
+            "state": "Shizuoka",
+            "zip": "431-3192",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0141",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 34.7,
+              "lon": 137.73333
+            }
+          },
+          {
+            "facility": "Local Institution - 0137",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Chūōku",
+            "state": "Tokyo-To",
+            "zip": "104-0045",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0137",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 33.63867,
+              "lon": 130.67068
+            }
+          },
+          {
+            "facility": "Local Institution - 0414",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Kōtoku",
+            "state": "Tokyo-To",
+            "zip": "135-8550",
+            "country": "Japan",
+            "contacts": [
+              {
+                "name": "Site 0414",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 42.50417,
+              "lon": 143.14297
+            }
+          },
+          {
+            "facility": "Local Institution - 0140",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Cheongju-si",
+            "state": "Chungcheongbuk-do [Chungbuk]",
+            "zip": "28644",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0140",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 36.63722,
+              "lon": 127.48972
+            }
+          },
+          {
+            "facility": "Local Institution - 0138",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Buk-Gu",
+            "state": "Daegu",
+            "zip": "41404",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0138",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0506",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Dalseo",
+            "state": "Daegu",
+            "zip": "42601",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0506",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0127",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Goyang-si",
+            "state": "Gyeonggi-do",
+            "zip": "410-769",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0127",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.65639,
+              "lon": 126.835
+            }
+          },
+          {
+            "facility": "Local Institution - 0133",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Seongnam-si",
+            "state": "Gyeonggi-do",
+            "zip": "13620",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0133",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.43861,
+              "lon": 127.13778
+            }
+          },
+          {
+            "facility": "Local Institution - 0134",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Hwasun-Gun",
+            "state": "Jeollanam-do",
+            "zip": "58128",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0134",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0124",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Seocho -Gu",
+            "state": "Seoul",
+            "zip": "6591",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0124",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0123",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Songpa-Gu",
+            "state": "Seoul",
+            "zip": "138-736",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0123",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0131",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Seoul",
+            "state": "Seoul-teukbyeolsi [Seoul]",
+            "zip": "03080",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0131",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.566,
+              "lon": 126.9784
+            }
+          },
+          {
+            "facility": "Local Institution - 0139",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Gyeongsangnam-do",
+            "zip": "050612",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0139",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0135",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Seoul",
+            "zip": "120-752",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0135",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.566,
+              "lon": 126.9784
+            }
+          },
+          {
+            "facility": "Local Institution - 0126",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Seoul",
+            "zip": "8308",
+            "country": "South Korea",
+            "contacts": [
+              {
+                "name": "Site 0126",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.566,
+              "lon": 126.9784
+            }
+          },
+          {
+            "facility": "Local Institution - 0143",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Majadahonda",
+            "state": "Madrid",
+            "zip": "28222",
+            "country": "Spain",
+            "contacts": [
+              {
+                "name": "Site 0143",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.47353,
+              "lon": -3.87182
+            }
+          },
+          {
+            "facility": "Local Institution - 0147",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Seville",
+            "state": "Seville",
+            "zip": "41013",
+            "country": "Spain",
+            "contacts": [
+              {
+                "name": "Site 0147",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.38283,
+              "lon": -5.97317
+            }
+          },
+          {
+            "facility": "Local Institution - 0242",
+            "status": "NOT_YET_RECRUITING",
+            "city": "A Coruña",
+            "zip": "15006",
+            "country": "Spain",
+            "contacts": [
+              {
+                "name": "Site 0242",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 43.37135,
+              "lon": -8.396
+            }
+          },
+          {
+            "facility": "Local Institution - 0144",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Jaén",
+            "zip": "23007",
+            "country": "Spain",
+            "contacts": [
+              {
+                "name": "Site 0144",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.76922,
+              "lon": -3.79028
+            }
+          },
+          {
+            "facility": "Local Institution - 0226",
+            "status": "WITHDRAWN",
+            "city": "Jaén",
+            "zip": "23007",
+            "country": "Spain",
+            "geoPoint": {
+              "lat": 37.76922,
+              "lon": -3.79028
+            }
+          },
+          {
+            "facility": "Local Institution - 0149",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Jerez de la Frontera",
+            "zip": "11407",
+            "country": "Spain",
+            "contacts": [
+              {
+                "name": "Site 0149",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 36.68645,
+              "lon": -6.13606
+            }
+          },
+          {
+            "facility": "Local Institution - 0148",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Madrid",
+            "zip": "28041",
+            "country": "Spain",
+            "contacts": [
+              {
+                "name": "Site 0148",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.4165,
+              "lon": -3.70256
+            }
+          },
+          {
+            "facility": "Local Institution - 0150",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Málaga",
+            "zip": "29010",
+            "country": "Spain",
+            "contacts": [
+              {
+                "name": "Site 0150",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 36.72016,
+              "lon": -4.42034
+            }
+          },
+          {
+            "facility": "Local Institution - 0241",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Valencia",
+            "zip": "46009",
+            "country": "Spain",
+            "contacts": [
+              {
+                "name": "Site 0241",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.47391,
+              "lon": -0.37966
+            }
+          },
+          {
+            "facility": "Local Institution - 0229",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Kaohsiung City",
+            "state": "Kaohsiung",
+            "zip": "82445",
+            "country": "Taiwan",
+            "contacts": [
+              {
+                "name": "Site 0229",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 22.61626,
+              "lon": 120.31333
+            }
+          },
+          {
+            "facility": "Local Institution - 0230",
+            "status": "NOT_YET_RECRUITING",
+            "city": "New Taipei City",
+            "state": "New Taipei",
+            "zip": "23561",
+            "country": "Taiwan",
+            "contacts": [
+              {
+                "name": "Site 0230",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 25.06199,
+              "lon": 121.45703
+            }
+          },
+          {
+            "facility": "Local Institution - 0223",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Taipei City",
+            "state": "Taipei",
+            "zip": "106",
+            "country": "Taiwan",
+            "contacts": [
+              {
+                "name": "Site 0223",
+                "role": "CONTACT"
+              }
+            ]
+          },
+          {
+            "facility": "Local Institution - 0227",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Gaoxiongka",
+            "state": "Taiwan",
+            "zip": "807",
+            "country": "Taiwan",
+            "contacts": [
+              {
+                "name": "Site 0227",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 24.42165,
+              "lon": 120.91045
+            }
+          },
+          {
+            "facility": "Local Institution - 0221",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Taoyuan City",
+            "state": "Taoyuan",
+            "zip": "33378",
+            "country": "Taiwan",
+            "contacts": [
+              {
+                "name": "Site 0221",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 24.99368,
+              "lon": 121.29696
+            }
+          },
+          {
+            "facility": "Local Institution - 0418",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Taichung",
+            "zip": "402",
+            "country": "Taiwan",
+            "contacts": [
+              {
+                "name": "Site 0418",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 24.1469,
+              "lon": 120.6839
+            }
+          },
+          {
+            "facility": "China Medical University Hospital",
+            "status": "RECRUITING",
+            "city": "Taichung",
+            "zip": "404332",
+            "country": "Taiwan",
+            "contacts": [
+              {
+                "name": "Chih-Yen Tu, Site 0216",
+                "role": "CONTACT",
+                "phone": "886-4-22052121ext.12"
+              }
+            ],
+            "geoPoint": {
+              "lat": 24.1469,
+              "lon": 120.6839
+            }
+          },
+          {
+            "facility": "Local Institution - 0420",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Tainan",
+            "zip": "70428",
+            "country": "Taiwan",
+            "contacts": [
+              {
+                "name": "Site 0420",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 22.99259,
+              "lon": 120.20507
+            }
+          },
+          {
+            "facility": "Local Institution - 0275",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Bangkok",
+            "state": "Bangkok",
+            "zip": "10300",
+            "country": "Thailand",
+            "contacts": [
+              {
+                "name": "Site 0275",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 13.75398,
+              "lon": 100.50144
+            }
+          },
+          {
+            "facility": "Local Institution - 0263",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Din Daeng",
+            "state": "Bangkok",
+            "zip": "10400",
+            "country": "Thailand",
+            "contacts": [
+              {
+                "name": "Site 0263",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 13.7904,
+              "lon": 100.57014
+            }
+          },
+          {
+            "facility": "Local Institution - 0021",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Sur",
+            "state": "Diyarbakır",
+            "zip": "21200",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0021",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 37.91351,
+              "lon": 40.22859
+            }
+          },
+          {
+            "facility": "Local Institution - 0265",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Pendik",
+            "state": "Istanbul",
+            "zip": "34340",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0265",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 40.8775,
+              "lon": 29.2725
+            }
+          },
+          {
+            "facility": "Local Institution - 0014",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Adana",
+            "zip": "1060",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0014",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 36.98615,
+              "lon": 35.32531
+            }
+          },
+          {
+            "facility": "Local Institution - 0019",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Adana",
+            "zip": "1370",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0019",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 36.98615,
+              "lon": 35.32531
+            }
+          },
+          {
+            "facility": "Local Institution - 0008",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Ankara",
+            "zip": "6680",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0008",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.91987,
+              "lon": 32.85427
+            }
+          },
+          {
+            "facility": "Local Institution - 0003",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Ankara",
+            "zip": "6800",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0003",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 39.91987,
+              "lon": 32.85427
+            }
+          },
+          {
+            "facility": "Local Institution - 0015",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Antalya",
+            "zip": "07100",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0015",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 36.90812,
+              "lon": 30.69556
+            }
+          },
+          {
+            "facility": "Local Institution - 0041",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Istanbul",
+            "zip": "34214",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0041",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 41.01384,
+              "lon": 28.94966
+            }
+          },
+          {
+            "facility": "Local Institution - 0039",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Istanbul",
+            "zip": "34295",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0039",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 41.01384,
+              "lon": 28.94966
+            }
+          },
+          {
+            "facility": "Local Institution - 0050",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Izmir",
+            "zip": "35110",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0050",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 38.41273,
+              "lon": 27.13838
+            }
+          },
+          {
+            "facility": "Local Institution - 0037",
+            "status": "NOT_YET_RECRUITING",
+            "city": "Izmir",
+            "zip": "35530",
+            "country": "Turkey (Türkiye)",
+            "contacts": [
+              {
+                "name": "Site 0037",
+                "role": "CONTACT"
+              }
+            ],
+            "geoPoint": {
+              "lat": 38.41273,
+              "lon": 27.13838
+            }
+          }
+        ]
+      },
+      "referencesModule": {
+        "seeAlsoLinks": [
+          {
+            "label": "BMS Clinical Trial Information",
+            "url": "https://www.bms.com/researchers-and-partners/clinical-trials-and-research.html"
+          },
+          {
+            "label": "BMS Clinical Trial Patient Recruiting",
+            "url": "https://www.bmsclinicaltrials.com/us/en/clinical-trials/NCT07680790.html"
+          }
+        ]
+      },
+      "ipdSharingStatementModule": {
+        "ipdSharing": "YES",
+        "description": "BMS will provide access to individual anonymized participant data upon request from qualified researchers, and subject to certain criteria. Additional information regarding Bristol Myer Squibb's data sharing policy and process can be found at https://www.bms.com/researchers-and-partners/clinical-trials-and-research.html",
+        "infoTypes": [
+          "STUDY_PROTOCOL",
+          "SAP",
+          "CSR"
+        ],
+        "timeFrame": "See Plan Description",
+        "accessCriteria": "See Plan Description",
+        "url": "https://www.bms.com/researchers-and-partners/clinical-trials-and-research.html"
+      }
+    },
+    "derivedSection": {
+      "miscInfoModule": {
+        "versionHolder": "2026-10-23"
+      },
+      "conditionBrowseModule": {
+        "meshes": [
+          {
+            "id": "D002289",
+            "term": "Carcinoma, Non-Small-Cell Lung"
+          }
+        ],
+        "ancestors": [
+          {
+            "id": "D002283",
+            "term": "Carcinoma, Bronchogenic"
+          },
+          {
+            "id": "D001984",
+            "term": "Bronchial Neoplasms"
+          },
+          {
+            "id": "D008175",
+            "term": "Lung Neoplasms"
+          },
+          {
+            "id": "D012142",
+            "term": "Respiratory Tract Neoplasms"
+          },
+          {
+            "id": "D013899",
+            "term": "Thoracic Neoplasms"
+          },
+          {
+            "id": "D009371",
+            "term": "Neoplasms by Site"
+          },
+          {
+            "id": "D009369",
+            "term": "Neoplasms"
+          },
+          {
+            "id": "D008171",
+            "term": "Lung Diseases"
+          },
+          {
+            "id": "D012140",
+            "term": "Respiratory Tract Diseases"
+          }
+        ]
+      },
+      "interventionBrowseModule": {
+        "meshes": [
+          {
+            "id": "C000596361",
+            "term": "osimertinib"
+          },
+          {
+            "id": "D000068437",
+            "term": "Pemetrexed"
+          },
+          {
+            "id": "D016190",
+            "term": "Carboplatin"
+          },
+          {
+            "id": "D002945",
+            "term": "Cisplatin"
+          }
+        ],
+        "ancestors": [
+          {
+            "id": "D006147",
+            "term": "Guanine"
+          },
+          {
+            "id": "D007042",
+            "term": "Hypoxanthines"
+          },
+          {
+            "id": "D011688",
+            "term": "Purinones"
+          },
+          {
+            "id": "D011687",
+            "term": "Purines"
+          },
+          {
+            "id": "D006574",
+            "term": "Heterocyclic Compounds, 2-Ring"
+          },
+          {
+            "id": "D000072471",
+            "term": "Heterocyclic Compounds, Fused-Ring"
+          },
+          {
+            "id": "D006571",
+            "term": "Heterocyclic Compounds"
+          },
+          {
+            "id": "D005971",
+            "term": "Glutamates"
+          },
+          {
+            "id": "D024342",
+            "term": "Amino Acids, Acidic"
+          },
+          {
+            "id": "D000596",
+            "term": "Amino Acids"
+          },
+          {
+            "id": "D000602",
+            "term": "Amino Acids, Peptides, and Proteins"
+          },
+          {
+            "id": "D000600",
+            "term": "Amino Acids, Dicarboxylic"
+          },
+          {
+            "id": "D056831",
+            "term": "Coordination Complexes"
+          },
+          {
+            "id": "D009930",
+            "term": "Organic Chemicals"
+          },
+          {
+            "id": "D017606",
+            "term": "Chlorine Compounds"
+          },
+          {
+            "id": "D007287",
+            "term": "Inorganic Chemicals"
+          },
+          {
+            "id": "D017672",
+            "term": "Nitrogen Compounds"
+          },
+          {
+            "id": "D017671",
+            "term": "Platinum Compounds"
+          }
+        ]
+      }
+    },
+    "hasResults": false
+  }
+}

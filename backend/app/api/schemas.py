@@ -51,6 +51,11 @@ class QuestionnaireSubmission(BaseModel):
     answers: dict[str, Any]     # question id → value; month_year is "YYYY-MM", single is an option value
 
 
+class RescanSummary(BaseModel):
+    judged: int                 # Trials given a Verdict by the Re-scan that followed the commit
+    failed: int                 # Trials left without one (model unavailable); the next Re-scan retries them
+
+
 class LatestAnswersOut(BaseModel):
     """The latest accepted submission, to prefill "edit answers". Postcode and travel are never included."""
     definition_version: str
@@ -66,6 +71,7 @@ class SubmissionAccepted(BaseModel):
     profile_version_id: str | None = None
     version_number: int | None = None
     reason: str | None = None
+    rescan: RescanSummary | None = None   # set on "committed"
     return_token: str | None = None   # first submission only; the frontend shows it as /return/{token}
 
 
@@ -108,18 +114,84 @@ class VersionOut(BaseModel):
     current: dict[str, str]     # subject → fact id
 
 
+class VerdictCitationOut(BaseModel):
+    fact_id: str
+    document_hash: str
+    page: int
+    quote: str
+    question: str | None        # "Q13" for a Patient-reported Fact: the web page links to that question
+    label: str                  # "Patient-reported, intake questionnaire, Q13" or "page 2"
+
+
+class CriterionResultOut(BaseModel):
+    criterion_id: str
+    kind: Literal["inclusion", "exclusion"]
+    text: str
+    outcome: Literal["met", "not_met", "unknown"]
+    rationale: str
+    citation: VerdictCitationOut | None
+
+
+class DoctorQuestionOut(BaseModel):
+    criterion_id: str
+    nct_id: str
+    subject: str
+    text: str
+    unblocks: list[str]
+
+
+class VerdictOut(BaseModel):
+    nct_id: str
+    title: str
+    status: str
+    profile_version_id: str
+    outcome: Literal["eligible", "possible", "excluded"]
+    degraded: bool
+    attempts: int
+    results: list[CriterionResultOut]
+    questions: list[DoctorQuestionOut]
+
+
+class VerdictListOut(BaseModel):
+    profile_version_id: str
+    verdicts: list[VerdictOut]  # ranked: eligible, possible (fewest unknowns first), excluded
+
+
+class RescanOut(BaseModel):
+    run_id: str
+    planned: list[str]
+    judged: list[str]
+    skipped_existing: list[str]
+    failed: list[list[str]]     # [nct_id, reason]
+
+
 class SubjectChangeOut(BaseModel):
     subject: str
     before: FactOut | None      # None when the subject is new in the later version
     after: FactOut
 
 
+class CriterionChangeOut(BaseModel):
+    criterion_id: str
+    text: str
+    outcome_from: Literal["met", "not_met", "unknown"] | None   # None when the Trial was not judged before
+    outcome_to: Literal["met", "not_met", "unknown"]
+    citation: VerdictCitationOut | None
+
+
+class VerdictChangeOut(BaseModel):
+    nct_id: str
+    outcome_from: Literal["eligible", "possible", "excluded"] | None
+    outcome_to: Literal["eligible", "possible", "excluded"]
+    criteria_changed: list[CriterionChangeOut]
+
+
 class VersionDiffOut(BaseModel):
     from_version: str
     to_version: str
     facts_added: list[FactOut]
-    subjects_changed: list[SubjectChangeOut]   # verdicts_changed arrives with matching (#12)
+    subjects_changed: list[SubjectChangeOut]
+    verdicts_changed: list[VerdictChangeOut] = []   # Trials whose outcome or any Criterion result moved
 
 
-# TODO: VerdictSummaryOut, VerdictOut, VerdictChangeOut,
-#       DoctorQuestionOut, SyncReportOut, RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.
+# TODO: SyncReportOut, RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.

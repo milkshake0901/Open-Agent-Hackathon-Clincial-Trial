@@ -1,7 +1,11 @@
 """app/config.py — settings from .env (never committed; see .env.example)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+_REPO = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -23,5 +27,6 @@ class Settings(BaseSettings):
     zetaris_visibility_wait_s: float = 5.0
 
     raw_documents_dir: str = "data/raw"       # gitignored
+    trials_snapshot_dir: str = str(_REPO / "data" / "trials_snapshot")   # saved Trials, loaded at start-up (#12)
 
     model_config = {"env_file": ".env"}

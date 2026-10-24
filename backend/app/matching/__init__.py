@@ -5,18 +5,25 @@ Hides: parallelism, idempotent planning, citation validation, verdict derivation
 """
 from __future__ import annotations
 
+from app import record, trace
 from app.ctx import Ctx
-from app.matching.types import DoctorQuestion, RescanReport, Verdict, VerdictChange
+from app.matching import loop, repo
+from app.matching.types import (
+    Citation, CriterionResult, DoctorQuestion, Outcome, RescanReport, Verdict, VerdictChange, VerdictOutcome,
+)
 from app.record import ProfileVersionId
 from app.trials import NctId
 from app.trace import RunId
 
 __all__ = ["rescan", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
-           "Verdict", "DoctorQuestion", "RescanReport", "VerdictChange"]
+           "Verdict", "DoctorQuestion", "RescanReport", "VerdictChange", "VerdictOutcome", "Outcome",
+           "CriterionResult", "Citation"]
+
+_RANK = {VerdictOutcome.ELIGIBLE: 0, VerdictOutcome.POSSIBLE: 1, VerdictOutcome.EXCLUDED: 2}
 
 
 async def rescan(ctx: Ctx, version_id: ProfileVersionId, *, only: set[NctId] | None = None,
-                 run_id: RunId | None = None) -> RescanReport:
+                 run_id: RunId | None = None, correlation_id: RunId | None = None) -> RescanReport:
     """Produce a Verdict for every active Trial that lacks one for (trial, version, trial.eligibility_hash).
 
     Idempotent and cheap: the plan is a set difference computed in SQL; Trials already judged
@@ -24,25 +31,62 @@ async def rescan(ctx: Ctx, version_id: ProfileVersionId, *, only: set[NctId] | N
     `only` narrows to Trials that trials.sync reported changed. Runs Trials with bounded
     concurrency; each Verdict commits in its own transaction, so a crash loses at most the
     in-flight Trials and the next rescan finishes the rest.
+    The rescan run is traced under `correlation_id` (the ingest run that committed the version), if given.
+    Raises record.NotFound for an unknown version.
     """
-    raise NotImplementedError
+    profile = await record.profile_version(ctx, version_id)
+    run_id = run_id or trace.new_id()
+    await trace.open(ctx.writer, run_id, "rescan", patient_id=profile.patient_id, correlation_id=correlation_id)
+    return await loop.run_rescan(ctx, version_id, only, run_id, ctx.settings.match_attempts,
+                                 ctx.settings.match_concurrency)
 
 
 async def verdict(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId) -> Verdict | None:
-    """With criterion results, citations (fact + document + page + quote) and doctor questions."""
-    raise NotImplementedError
+    """With criterion results, citations (fact + document + page + quote + question) and doctor questions.
+    The Verdict judged against the Trial's current Criteria."""
+    return await repo.verdict(ctx.ui_reader, nct_id, version_id, with_results=True)
 
 
 async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[Verdict]:
-    """Ranked: eligible, then possible (fewest unknowns first), then excluded. Results not loaded."""
-    raise NotImplementedError
+    """Ranked: eligible, then possible (fewest unknowns first), then excluded; ties by NCT id.
+    Results, Citations and questions are loaded (the Trials page shows them)."""
+    ranked = sorted(await repo.verdicts_for_version(ctx.ui_reader, version_id),
+                    key=lambda vu: (_RANK[vu[0].outcome], vu[1] if vu[0].outcome == VerdictOutcome.POSSIBLE else 0,
+                                    vu[0].nct_id))
+    return [v for v, _ in ranked]
 
 
 async def change_between(ctx: Ctx, nct_id: NctId, from_version: ProfileVersionId, to_version: ProfileVersionId) -> VerdictChange:
-    """Why did the Verdict move? Pure diff of two stored Verdicts' criterion results. The demo moment."""
-    raise NotImplementedError
+    """Why did the Verdict move? Pure diff of two stored Verdicts' criterion results. The demo moment.
+    Lists the Criteria whose outcome differs (all of them when the Trial was not judged at from_version).
+    Raises LookupError when the Trial has no Verdict at to_version."""
+    from app import trials
+    from app.matching.types import CriterionChange
+
+    after = await verdict(ctx, nct_id, to_version)
+    if after is None:
+        raise LookupError(f"no Verdict for {nct_id} at {to_version}")
+    before = await verdict(ctx, nct_id, from_version)
+    was = {r.criterion_id: r.outcome for r in before.results} if before else {}
+    texts = {c.id: c.text for c in await trials.criteria(ctx, nct_id)}
+    return VerdictChange(nct_id=nct_id, outcome_from=before.outcome if before else None, outcome_to=after.outcome,
+                         criteria_changed=tuple(
+                             CriterionChange(criterion_id=r.criterion_id, text=texts.get(r.criterion_id, ""),
+                                             outcome_from=was.get(r.criterion_id), outcome_to=r.outcome,
+                                             citation=r.citation)
+                             for r in after.results if was.get(r.criterion_id) != r.outcome))
 
 
 async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[DoctorQuestion]:
-    """Deduplicated across Trials by criterion subject; each carries the Trials it would unblock."""
-    raise NotImplementedError
+    """Deduplicated across Trials by criterion subject; each carries the Trials it would unblock (`unblocks`).
+    The first occurrence (Trial, then Criterion order) supplies criterion_id, nct_id and text."""
+    from dataclasses import replace
+
+    first: dict[str, DoctorQuestion] = {}
+    trials_by_subject: dict[str, list[NctId]] = {}
+    for q in await repo.questions_for_version(ctx.ui_reader, version_id):
+        key = q.subject.lower()
+        first.setdefault(key, q)
+        if q.nct_id not in trials_by_subject.setdefault(key, []):
+            trials_by_subject[key].append(q.nct_id)
+    return [replace(q, unblocks=tuple(trials_by_subject[k])) for k, q in first.items()]
