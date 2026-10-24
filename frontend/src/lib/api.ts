@@ -27,6 +27,7 @@ export type SubmissionAccepted = {
   version_number: number | null;
   reason: string | null;
   rescan: { judged: number; failed: number } | null;
+  return_token: string | null; // first submission only
 };
 
 export type VerdictCitation = {
@@ -61,6 +62,12 @@ export type VerdictOut = {
   questions: DoctorQuestion[];
 };
 
+export type ReturnOpened = {
+  patient_id: string;
+  profile_version_id: string | null;
+  version_number: number | null;
+};
+
 export type FactOut = {
   id: string;
   resource: string;
@@ -77,6 +84,20 @@ export type VersionOut = {
   document_hash: string;
   facts: FactOut[];
   current: Record<string, string>;
+};
+
+export type LatestAnswers = {
+  definition_version: string;
+  document_hash: string;
+  respondent: Respondent;
+  answers: Answers; // search preferences (postcode, travel, contact) are never included
+};
+
+export type VersionDiff = {
+  from_version: string;
+  to_version: string;
+  facts_added: FactOut[];
+  subjects_changed: { subject: string; before: FactOut | null; after: FactOut }[];
 };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -100,6 +121,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  latestAnswers: (patientId: string) =>
+    call<LatestAnswers>(`/patients/${encodeURIComponent(patientId)}/questionnaire`),
+  diff: (patientId: string, versionId: string, fromVersionId: string) =>
+    call<VersionDiff>(
+      `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/diff` +
+        `?from=${encodeURIComponent(fromVersionId)}`,
+    ),
+  openReturnLink: (token: string) => call<ReturnOpened>(`/return/${encodeURIComponent(token)}`),
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
   verdicts: (patientId: string, versionId: string) =>

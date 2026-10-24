@@ -56,6 +56,14 @@ class RescanSummary(BaseModel):
     failed: int                 # Trials left without one (model unavailable); the next Re-scan retries them
 
 
+class LatestAnswersOut(BaseModel):
+    """The latest accepted submission, to prefill "edit answers". Postcode and travel are never included."""
+    definition_version: str
+    document_hash: str
+    respondent: Literal["patient", "other"]
+    answers: dict[str, Any]
+
+
 class SubmissionAccepted(BaseModel):
     run_id: str
     outcome: Literal["committed", "awaiting_patient", "rejected"]
@@ -64,6 +72,13 @@ class SubmissionAccepted(BaseModel):
     version_number: int | None = None
     reason: str | None = None
     rescan: RescanSummary | None = None   # set on "committed"
+    return_token: str | None = None   # first submission only; the frontend shows it as /return/{token}
+
+
+class ReturnOpened(BaseModel):
+    patient_id: str
+    profile_version_id: str | None    # current version, None if nothing was committed yet
+    version_number: int | None
 
 
 class PatientIn(BaseModel):
@@ -148,6 +163,19 @@ class RescanOut(BaseModel):
     judged: list[str]
     skipped_existing: list[str]
     failed: list[list[str]]     # [nct_id, reason]
+
+
+class SubjectChangeOut(BaseModel):
+    subject: str
+    before: FactOut | None      # None when the subject is new in the later version
+    after: FactOut
+
+
+class VersionDiffOut(BaseModel):
+    from_version: str
+    to_version: str
+    facts_added: list[FactOut]
+    subjects_changed: list[SubjectChangeOut]   # verdicts_changed arrives with matching (#12)
 
 
 # TODO: VerdictChangeOut, SyncReportOut, RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.

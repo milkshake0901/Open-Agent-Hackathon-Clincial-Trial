@@ -1,9 +1,9 @@
 """Patients, their Documents, Profile versions and diffs."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import record
 from app.api.deps import get_ctx
-from app.api.schemas import PatientCreated, PatientIn, VersionOut
+from app.api.schemas import FactOut, PatientCreated, PatientIn, VersionDiffOut, VersionOut
 from app.ctx import Ctx
 
 router = APIRouter(tags=["patients"])
@@ -32,6 +32,12 @@ def _citation_label(f: record.Fact) -> str:
     return f"Patient-reported, intake questionnaire, {f.question}" if f.question else f"page {f.page}"
 
 
+def _fact_out(f: record.Fact) -> FactOut:
+    return FactOut(id=f.id, resource=f.resource, subject=f.subject, value=f.value, unit=f.unit,
+                   observed_on=f.observed_on, citation={"document_hash": f.document_hash, "page": f.page,
+                                                        "quote": f.quote, "label": _citation_label(f)})
+
+
 @router.get("/patients/{pid}/versions/{vid}", response_model=VersionOut)
 async def get_version(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
     try:
@@ -40,14 +46,21 @@ async def get_version(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
         raise HTTPException(404, str(e))
     if v.patient_id != pid:
         raise HTTPException(404, f"profile version {vid}")
-    return VersionOut(id=v.id, number=v.number, document_hash=v.document_hash, facts=[
-        {"id": f.id, "resource": f.resource, "subject": f.subject, "value": f.value, "unit": f.unit,
-         "observed_on": f.observed_on, "citation": {"document_hash": f.document_hash, "page": f.page,
-                                                    "quote": f.quote, "label": _citation_label(f)}}
-        for f in v.facts], current={s: f.id for s, f in v.current().items()})
+    return VersionOut(id=v.id, number=v.number, document_hash=v.document_hash,
+                      facts=[_fact_out(f) for f in v.facts], current={s: f.id for s, f in v.current().items()})
 
 
-@router.get("/patients/{pid}/versions/{vid}/diff")
-async def version_diff(pid: str, vid: str, from_: str):
-    """Facts added, subjects changed and Verdicts changed between two versions: the demo moment."""
-    raise NotImplementedError
+@router.get("/patients/{pid}/versions/{vid}/diff", response_model=VersionDiffOut)
+async def version_diff(pid: str, vid: str, from_: str = Query(alias="from"), ctx: Ctx = Depends(get_ctx)):
+    """Facts added and subjects changed between two versions (record.diff). Verdicts changed: matching, #12."""
+    try:
+        d = await record.diff(ctx, record.ProfileVersionId(from_), record.ProfileVersionId(vid))
+        v = await record.profile_version(ctx, d.to_version)
+    except record.NotFound as e:
+        raise HTTPException(404, str(e))
+    if v.patient_id != pid:
+        raise HTTPException(404, f"profile version {vid}")
+    return VersionDiffOut(from_version=d.from_version, to_version=d.to_version,
+                          facts_added=[_fact_out(f) for f in d.facts_added],
+                          subjects_changed=[{"subject": s, "before": b and _fact_out(b), "after": _fact_out(a)}
+                                            for s, b, a in d.subjects_changed])
