@@ -20,6 +20,7 @@ __all__ = ["rescan", "verdict", "verdicts_for_version", "change_between", "quest
            "respondent_questions_for_version", "Verdict", "DoctorQuestion", "RespondentQuestion", "RescanReport",
            "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation", "SiteDistance"]
 
+DIAGNOSIS_QUESTION = "diagnosis"   # the questionnaire question (Q6) a Diagnosis check reads
 _RANK = {VerdictOutcome.ELIGIBLE: 0, VerdictOutcome.POSSIBLE: 1, VerdictOutcome.EXCLUDED: 2}
 
 
@@ -144,14 +145,17 @@ async def respondent_questions_for_version(ctx: Ctx, version_id: ProfileVersionI
     """Deduplicated across Trials by subject (the questionnaire question); each carries the Trials it would unblock.
     The first occurrence (Trial, then Criterion order) supplies criterion_id, nct_id and text. Answering one is a
     questionnaire resubmission: the new Profile version is re-scanned and gets its own Verdicts and questions.
-    Only Trials selected by a confirmed diagnosis term count (#14), as for Doctor questions."""
+    Only Trials selected by a confirmed diagnosis term count (#14), as for Doctor questions. While the diagnosis
+    needs the GP, the diagnosis question is not asked again: the patient-level Doctor question covers it."""
     from dataclasses import replace
 
     selected = await _selected(ctx, version_id)
+    profile = await record.profile_version(ctx, version_id)
+    held = await record.diagnosis(ctx, profile.patient_id)
     first: dict[str, RespondentQuestion] = {}
     trials_by_subject: dict[str, list[NctId]] = {}
     for q in await repo.respondent_questions_for_version(ctx.ui_reader, version_id):
-        if not selected(q.nct_id):
+        if not selected(q.nct_id) or (held is not None and held.needs_gp and q.question_id == DIAGNOSIS_QUESTION):
             continue
         first.setdefault(q.question_id, q)
         if q.nct_id not in trials_by_subject.setdefault(q.question_id, []):

@@ -107,3 +107,28 @@ async def test_an_unclear_proposal_raises_the_diagnosis_doctor_question_too(clea
     questions = await matching.questions_for_version(ctx, version.id)
 
     assert [q.subject for q in questions if q.criterion_id is None] == ["diagnosis"]
+
+
+async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_not_also_asked_the_diagnosis_question(
+        clean_db, tmp_path):
+    ctx, fake, patient, version = await _setup(clean_db, tmp_path, "non-small cell lung cancer")
+    respond = fake.responder
+
+    def ask_again(lane, system, user):       # the Matcher points the diagnosis Criteria back at Q6, the rest at Q8
+        out = respond(lane, system, user)
+        if lane == "deep":
+            lines = [l for l in user.splitlines() if l.startswith("- NCT")]
+            for r, line in zip(out["results"], lines):
+                r["ask"] = "Q6" if "ECOG" not in line else "Q8"
+        return out
+    fake.responder = ask_again
+    await matching.rescan(ctx, version.id)
+    assert "Q6" in {q.question for q in await matching.respondent_questions_for_version(ctx, version.id)}
+
+    check = await record.check_diagnosis(ctx, patient)
+    await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
+
+    doctor = await matching.questions_for_version(ctx, version.id)
+    assert doctor[0].subject == "diagnosis"
+    asked = {q.question for q in await matching.respondent_questions_for_version(ctx, version.id)}
+    assert "Q6" not in asked and "Q8" in asked
