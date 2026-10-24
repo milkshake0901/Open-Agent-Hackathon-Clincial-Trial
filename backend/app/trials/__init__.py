@@ -64,7 +64,7 @@ class SyncReport:
 
 __all__ = ["sync", "load_snapshot", "trial", "criteria", "sites", "active_trials", "studies_condition", "Trial",
            "Criterion", "Site", "CriterionKind",
-           "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES"]
+           "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES", "trial_columns", "trial_from_row", "active_filter"]
 
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
 ACTIVE_STATUSES = ("RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION")
@@ -88,6 +88,12 @@ def studies_condition(trial: Trial, term: str) -> bool:
 
 # Submodules import the types above; imported here (after them) so the `criteria` function below wins the name.
 from app.trials import criteria as splitting, ctgov, repo  # noqa: E402
+
+# For other modules' SQL that joins the trial table (one SQL text per question, ctx.py): its columns, row mapping
+# and the active filter, so no module restates them.
+trial_columns = repo.trial_columns
+trial_from_row = repo.to_trial
+active_filter = repo.active_filter
 
 
 async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30) -> SyncReport:

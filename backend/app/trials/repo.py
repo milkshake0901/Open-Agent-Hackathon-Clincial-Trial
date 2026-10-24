@@ -4,7 +4,12 @@ from __future__ import annotations
 from app.sql.reader import SqlReader
 from app.trials import ACTIVE_STATUSES, Criterion, CriterionId, CriterionKind, NctId, Site, Trial
 
-TRIAL_COLS = "nct_id, title, conditions, status, eligibility_text, eligibility_hash, fetched_at, source"
+_TRIAL_COLS = ("nct_id", "title", "conditions", "status", "eligibility_text", "eligibility_hash", "fetched_at", "source")
+
+
+def trial_columns(alias: str = "") -> str:
+    """The trial columns to_trial reads, qualified by `alias` when the query joins other tables."""
+    return ", ".join(f"{alias}.{c}" if alias else c for c in _TRIAL_COLS)
 
 
 def to_trial(r: dict) -> Trial:
@@ -20,12 +25,12 @@ def active_filter(alias: str = "") -> str:
 
 
 async def trial(reader: SqlReader, nct_id: NctId) -> Trial | None:
-    rows = await reader.fetch(f"SELECT {TRIAL_COLS} FROM {reader.table('trial')} WHERE nct_id = $1", (nct_id,))
+    rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE nct_id = $1", (nct_id,))
     return to_trial(rows[0]) if rows else None
 
 
 async def active_trials(reader: SqlReader) -> list[Trial]:
-    rows = await reader.fetch(f"SELECT {TRIAL_COLS} FROM {reader.table('trial')} WHERE {active_filter()} "
+    rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE {active_filter()} "
                               "ORDER BY nct_id")
     return [to_trial(r) for r in rows]
 

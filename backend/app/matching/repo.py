@@ -7,27 +7,18 @@ from app.matching.types import (
 from app.record import DocumentHash, FactId, ProfileVersionId
 from app.sql.reader import SqlReader
 from app.trace import RunId
-from app.trials import ACTIVE_STATUSES, CriterionId, NctId, Trial
-
-_TRIAL_COLS = "t.nct_id, t.title, t.conditions, t.status, t.eligibility_text, t.eligibility_hash, t.fetched_at, t.source"
-_ACTIVE = f"t.status IN ({', '.join(repr(s) for s in ACTIVE_STATUSES)})"
-
-
-def _trial(r: dict) -> Trial:
-    return Trial(nct_id=NctId(r["nct_id"]), title=r["title"], conditions=tuple(r["conditions"]), status=r["status"],
-                 eligibility_text=r["eligibility_text"], eligibility_hash=r["eligibility_hash"],
-                 fetched_at=r["fetched_at"].isoformat(), source=r["source"])
+from app.trials import CriterionId, NctId, Trial, active_filter, trial_columns, trial_from_row
 
 
 async def trials_needing_verdict(reader: SqlReader, version_id: ProfileVersionId, only: set[NctId] | None) -> tuple[list[Trial], list[NctId]]:
     """The idempotent plan, in one query (see loop.plan): active Trials, each with whether a Verdict exists for
     (Trial, its current eligibility hash, this version)."""
     rows = await reader.fetch(
-        f"SELECT {_TRIAL_COLS}, v.nct_id AS judged FROM {reader.table('trial')} t "
+        f"SELECT {trial_columns('t')}, v.nct_id AS judged FROM {reader.table('trial')} t "
         f"LEFT JOIN {reader.table('verdict')} v ON v.nct_id = t.nct_id AND v.eligibility_hash = t.eligibility_hash "
-        f"AND v.profile_version_id = $1 WHERE {_ACTIVE} ORDER BY t.nct_id", (version_id,))
+        f"AND v.profile_version_id = $1 WHERE {active_filter('t')} ORDER BY t.nct_id", (version_id,))
     rows = [r for r in rows if only is None or r["nct_id"] in only]
-    return ([_trial(r) for r in rows if r["judged"] is None],
+    return ([trial_from_row(r) for r in rows if r["judged"] is None],
             [NctId(r["nct_id"]) for r in rows if r["judged"] is not None])
 
 
