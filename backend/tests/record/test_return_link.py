@@ -48,7 +48,22 @@ async def test_postcode_travel_limit_and_contact_are_stored_as_search_preference
     await record.submit_questionnaire(ctx, patient, {"sex": "female", **PRIVATE}, respondent="other")
 
     assert await record.search_preferences(ctx, patient) == record.SearchPreferences(
-        postcode="2031", max_travel_km=50, contact="sam.carer@example.com")
+        postcode="2031", max_travel_km=50, contact="sam.carer@example.com", location=RANDWICK)
+
+
+RANDWICK = (-33.91, 151.24)
+
+
+async def test_the_postcode_is_turned_into_a_coarse_location_point_when_it_is_stored(ctx):
+    patient = await record.create_patient(ctx, "Demo patient A")
+
+    await record.submit_questionnaire(ctx, patient, {"sex": "female", "postcode": "2031"}, respondent="patient")
+    assert (await record.search_preferences(ctx, patient)).location == RANDWICK
+
+    # a postcode not in the table is still kept (prefill rules), with no point: "distance unknown"
+    await record.submit_questionnaire(ctx, patient, {"sex": "female", "postcode": "9999"}, respondent="patient")
+    prefs = await record.search_preferences(ctx, patient)
+    assert (prefs.postcode, prefs.location) == ("9999", None)
 
 
 async def test_search_preferences_are_never_facts_document_text_or_model_input(clean_db):
@@ -82,7 +97,7 @@ async def test_a_resubmission_keeps_preferences_it_leaves_blank(ctx):
     await record.submit_questionnaire(ctx, patient, {"sex": "female", "max_travel_km": "100"}, respondent="patient")
 
     assert await record.search_preferences(ctx, patient) == record.SearchPreferences(
-        postcode="2031", max_travel_km=100, contact="sam.carer@example.com")
+        postcode="2031", max_travel_km=100, contact="sam.carer@example.com", location=RANDWICK)
 
 
 @pytest.mark.parametrize("answers", [{"postcode": "20311"}, {"postcode": "Sydney"}, {"contact": "not a contact"}])

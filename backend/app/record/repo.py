@@ -21,10 +21,12 @@ async def patient_exists(reader: SqlReader, patient_id: PatientId) -> bool:
 
 
 async def search_preferences(reader: SqlReader, patient_id: PatientId) -> SearchPreferences:
-    rows = await reader.fetch(f"SELECT postcode, max_travel_km, contact FROM {reader.table('search_preference')} "
-                              "WHERE patient_id = $1", (patient_id,))
+    rows = await reader.fetch(f"SELECT postcode, max_travel_km, contact, lat, lon FROM "
+                              f"{reader.table('search_preference')} WHERE patient_id = $1", (patient_id,))
     r = rows[0] if rows else {}
-    return SearchPreferences(postcode=r.get("postcode"), max_travel_km=r.get("max_travel_km"), contact=r.get("contact"))
+    location = (r["lat"], r["lon"]) if r.get("lat") is not None else None
+    return SearchPreferences(postcode=r.get("postcode"), max_travel_km=r.get("max_travel_km"), contact=r.get("contact"),
+                             location=location)
 
 
 _CHECK_COLS = "id, patient_id, text, suggested_term, confidence, status"
@@ -133,8 +135,12 @@ async def insert_patient(tx: Tx, patient_id: PatientId, label: str) -> None:
 
 
 async def upsert_search_preferences(tx: Tx, patient_id: PatientId, changes: dict) -> None:
-    """Sets only the given fields (SearchPreferences names); the others keep their stored values."""
-    cols = [c for c in ("postcode", "max_travel_km", "contact") if c in changes]
+    """Sets only the given fields (SearchPreferences names); the others keep their stored values. `location` is
+    stored as lat, lon."""
+    changes = dict(changes)
+    if "location" in changes:
+        changes["lat"], changes["lon"] = changes.pop("location") or (None, None)
+    cols = [c for c in ("postcode", "lat", "lon", "max_travel_km", "contact") if c in changes]
     if not cols:
         return
     params = [patient_id] + [changes[c] for c in cols]

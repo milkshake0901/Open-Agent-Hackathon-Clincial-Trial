@@ -18,7 +18,9 @@ CREATE TABLE patient (
 
 CREATE TABLE search_preference (          -- per patient, NOT Facts: never rendered into a Document, never in a prompt (ADR 0003)
   patient_id    text PRIMARY KEY REFERENCES patient(id),
-  postcode      text,                     -- never shown back, never in a URL; only code computing distances reads it (#16)
+  postcode      text,                     -- never shown back, never in a URL, never read for distances (#16)
+  lat           double precision,         -- the postcode's coarse location point, computed when it is stored;
+  lon           double precision,         -- NULL: no postcode, or one not in app.record.postcodes. Distances read this
   max_travel_km int,                      -- NULL: no limit ("anywhere", or not answered)
   contact       text,                     -- optional email or phone for "you have new questions" notices
   updated_at    timestamptz NOT NULL DEFAULT now()

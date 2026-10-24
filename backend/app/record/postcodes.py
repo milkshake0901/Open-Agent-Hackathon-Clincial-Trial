@@ -1,4 +1,5 @@
-"""app/matching/postcodes.py — coarse location points for Australian postcodes. Private to matching.
+"""app/record/postcodes.py — coarse location points for Australian postcodes. Private to record: a postcode is
+turned into its point when it is stored as a Search preference (ADR 0003), and distances are measured from the point.
 
 A small committed table, enough for a Sydney demo plus each capital city and the suburbs of the Australian sites
 in the saved Trial snapshot. Never fetched at runtime; a postcode not listed here means "distance unknown".
@@ -10,7 +11,9 @@ To extend: add rows from that dataset's POA centroids, keyed by the four-digit p
 """
 from __future__ import annotations
 
-CENTROIDS: dict[str, tuple[float, float]] = {
+Point = tuple[float, float]   # (latitude, longitude) in degrees
+
+CENTROIDS: dict[str, Point] = {
     # Sydney and surrounds (NSW)
     "2000": (-33.87, 151.21),   # Sydney CBD
     "2010": (-33.88, 151.21),   # Surry Hills
@@ -46,3 +49,8 @@ CENTROIDS: dict[str, tuple[float, float]] = {
     "4120": (-27.51, 153.05),   # Greenslopes (QLD)
     "6150": (-32.07, 115.84),   # Murdoch (WA)
 }
+
+
+def point(postcode: str | None) -> Point | None:
+    """The postcode's coarse location point; None for no postcode or one not in the table ("distance unknown")."""
+    return CENTROIDS.get(postcode.strip()) if postcode else None

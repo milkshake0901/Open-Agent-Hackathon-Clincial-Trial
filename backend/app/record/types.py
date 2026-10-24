@@ -95,10 +95,13 @@ class DiagnosisCheck:
 @dataclass(frozen=True)
 class SearchPreferences:
     """Kept on the patient, never as Facts (ADR 0003): never rendered into a Document, never in a prompt.
-    Code computes distances from the postcode (#16); models see only "site name, status, km"."""
+    The postcode is turned into a coarse location point when it is stored; code measures distances from that
+    point (#16); models see only "site name, status, km"."""
     postcode: str | None
     max_travel_km: int | None        # None: no limit ("anywhere", or not answered)
     contact: str | None              # optional email or phone for "you have new questions" notices
+    location: tuple[float, float] | None = None   # the postcode's coarse point, computed when it is stored;
+                                                  # None: no postcode, or one not in the table
 
 
 @dataclass(frozen=True)

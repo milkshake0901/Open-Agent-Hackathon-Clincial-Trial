@@ -1,6 +1,7 @@
-"""app/matching/distance.py — postcode → coarse point → km to each Trial site. Private to matching.
+"""app/matching/distance.py — the patient's coarse location point → km to each Trial site. Private to matching.
 
-The postcode stays here (ADR 0003): it is turned into a point and dropped; what leaves is "site name, status, km".
+The postcode never reaches here (ADR 0003): record stores its coarse point with the Search preferences, and distance
+reads only that point; what leaves is "site name, status, km".
 Distance ranks Verdicts and flags Trials beyond the travel limit; it never changes a Verdict.
 """
 from __future__ import annotations
@@ -10,7 +11,6 @@ from math import asin, cos, radians, sin, sqrt
 
 from app import record, trials
 from app.ctx import Ctx
-from app.matching.postcodes import CENTROIDS
 from app.matching.types import SiteDistance
 from app.trials import NctId, Site
 
@@ -33,13 +33,9 @@ class Reach:
     further_away: bool                    # a travel limit is set and no recruiting site lies within it
 
 
-def point(postcode: str | None) -> tuple[float, float] | None:
-    return CENTROIDS.get(postcode.strip()) if postcode else None
-
-
 async def origin(ctx: Ctx, patient_id: record.PatientId) -> Origin:
     prefs = await record.search_preferences(ctx, patient_id)
-    return Origin(point=point(prefs.postcode), max_km=prefs.max_travel_km)
+    return Origin(point=prefs.location, max_km=prefs.max_travel_km)
 
 
 def km(a: tuple[float, float], b: tuple[float, float]) -> float:

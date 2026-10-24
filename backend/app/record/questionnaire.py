@@ -18,6 +18,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, Literal
 
+from app.record import postcodes
 from app.record.types import DraftFact, FactResource, Page, Respondent
 
 DEFINITION_VERSION = "1"
@@ -213,7 +214,8 @@ def normalise(answers: dict[str, Any]) -> dict[str, Any]:
 
 def preferences(answers: dict[str, Any]) -> dict[str, Any]:
     """The answered search preferences, validated, as SearchPreferences field → value. A skipped preference
-    is absent (so a resubmission keeps what was stored); "anywhere" is an answered travel limit of None."""
+    is absent (so a resubmission keeps what was stored); "anywhere" is an answered travel limit of None.
+    An answered postcode brings its coarse `location` point with it (None if the table does not list it)."""
     normalise(answers)
     got: dict[str, Any] = {}
     for qid in ("postcode", "max_travel_km", "contact"):
@@ -233,6 +235,8 @@ def preferences(answers: dict[str, Any]) -> dict[str, Any]:
                                                              and 8 <= sum(c.isdigit() for c in value) <= 15)):
             raise InvalidAnswers("contact: expected an email or a phone number")
         got[qid] = value
+        if qid == "postcode":
+            got["location"] = postcodes.point(value)
     return got
 
 
