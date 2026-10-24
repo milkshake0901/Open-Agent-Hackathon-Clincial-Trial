@@ -87,7 +87,7 @@ class ProfileVersion:
 
     def current(self) -> dict[str, Fact]:
         """subject → Fact with latest observed_on (ADR 0002). Pure; ties go to the later Fact in `facts`,
-        which repo loads in upload order."""
+        which repo loads in the order their Documents were accepted."""
         out: dict[str, Fact] = {}
         for f in self.facts:
             if f.subject not in out or f.observed_on >= out[f.subject].observed_on:

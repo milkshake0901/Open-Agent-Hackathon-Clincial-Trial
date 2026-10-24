@@ -40,8 +40,8 @@ async def _build(reader: SqlReader, row: dict, with_facts: bool) -> ProfileVersi
         f"SELECT f.id, f.document_hash, f.page, f.resource, f.subject, f.value, f.unit, f.observed_on, f.quote, "
         f"f.question FROM {reader.table('profile_version_fact')} pvf "
         f"JOIN {reader.table('fact')} f ON f.id = pvf.fact_id "
-        f"JOIN {reader.table('document')} d ON d.hash = f.document_hash "
-        f"WHERE pvf.profile_version_id = $1 ORDER BY d.uploaded_at, f.page, f.id", (row["id"],))
+        f"JOIN {reader.table('profile_version')} accepted ON accepted.document_hash = f.document_hash "
+        f"WHERE pvf.profile_version_id = $1 ORDER BY accepted.number, f.page, f.id", (row["id"],))
     loaded = tuple(Fact(id=FactId(f["id"]), document_hash=DocumentHash(f["document_hash"]), page=f["page"],
                         resource=FactResource(f["resource"]), subject=f["subject"], value=f["value"], unit=f["unit"],
                         observed_on=f["observed_on"], quote=f["quote"], question=f["question"]) for f in facts)
