@@ -3,6 +3,7 @@ and Profile version, with unchanged answers dropped as duplicates. Observed thro
 from __future__ import annotations
 
 from app import record
+from app.llm.nightshift import FakeLLM
 
 ANSWERS = {
     "birth_month": "1958-03",
@@ -69,7 +70,14 @@ async def test_a_correction_on_a_later_day_still_adds_only_the_changed_answer(ct
     assert [s for s, _, _ in d.subjects_changed] == ["any allergy"]
 
 
-async def test_changing_only_a_free_text_answer_makes_a_version_with_no_new_facts(ctx):
+def _quiet_model_ctx(clean_db):
+    """Free-text answers go to the Intake agent (#8); this fake model finds no Facts in them."""
+    from tests.conftest import make_ctx
+    return make_ctx(clean_db, FakeLLM(lambda lane, system, user: {"facts": []}))
+
+
+async def test_changing_only_a_free_text_answer_makes_a_version_with_no_new_facts(clean_db):
+    ctx = _quiet_model_ctx(clean_db)
     patient = await record.create_patient(ctx, "Demo patient E")
     v1 = await _submit(ctx, patient, ANSWERS)
     v2 = await _submit(ctx, patient, {**ANSWERS, "medicines": "Paracetamol when needed"})
@@ -79,7 +87,8 @@ async def test_changing_only_a_free_text_answer_makes_a_version_with_no_new_fact
     assert d.facts_added == () and d.subjects_changed == ()
 
 
-async def test_the_latest_submission_can_be_read_back_to_prefill_an_edit(ctx):
+async def test_the_latest_submission_can_be_read_back_to_prefill_an_edit(clean_db):
+    ctx = _quiet_model_ctx(clean_db)
     patient = await record.create_patient(ctx, "Demo patient F")
     assert await record.latest_answers(ctx, patient) is None
     await _submit(ctx, patient, ANSWERS)
@@ -92,3 +101,17 @@ async def test_the_latest_submission_can_be_read_back_to_prefill_an_edit(ctx):
     assert latest.respondent == "other"
     assert latest.answers == {"birth_month": "1958-03", "sex": "prefer_not_to_say", "has_allergies": "no",
                               "daily_activity": "light_activity", "treatments": "Chemotherapy in 2024, then surgery"}
+
+
+async def test_a_free_text_fact_the_model_finds_again_in_a_correction_is_dropped_as_a_duplicate(clean_db):
+    from tests.conftest import make_ctx
+    tamoxifen = {"resource": "MedicationStatement", "subject": "tamoxifen", "value": "20 mg daily",
+                 "observed_on": "2026-10-24", "page": 4, "quote": "Tamoxifen 20 mg daily", "question": "Q9"}
+    ctx = make_ctx(clean_db, FakeLLM(lambda lane, system, user: {"facts": [tamoxifen]}))
+    patient = await record.create_patient(ctx, "Demo patient G")
+    answers = {**ANSWERS, "medicines": "Tamoxifen 20 mg daily"}
+    v1 = await _submit(ctx, patient, answers)
+    v2 = await _submit(ctx, patient, {**answers, "sex": "intersex"})
+
+    d = await record.diff(ctx, v1.id, v2.id)
+    assert [f.subject for f in d.facts_added] == ["sex assigned at birth"]
