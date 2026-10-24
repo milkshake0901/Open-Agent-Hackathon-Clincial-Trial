@@ -141,9 +141,14 @@ class ProfileVersion:
 
     def current(self) -> dict[str, Fact]:
         """subject → Fact with latest observed_on (ADR 0002). Pure; ties go to the later Fact in `facts`,
-        which repo loads in the order their Documents were accepted."""
+        which repo loads in the order their Documents were accepted.
+        Among Patient-reported Facts for one subject, the later submission supersedes the earlier one whatever
+        their observed-on dates (a resubmission is a correction: ADR 0002 amendment); only the latest takes part."""
+        latest_reported = {f.subject: f for f in self.facts if f.question is not None}
         out: dict[str, Fact] = {}
         for f in self.facts:
+            if f.question is not None and latest_reported[f.subject] is not f:
+                continue
             if f.subject not in out or f.observed_on >= out[f.subject].observed_on:
                 out[f.subject] = f
         return out

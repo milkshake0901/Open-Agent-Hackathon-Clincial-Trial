@@ -75,9 +75,9 @@ def contradicts_accepted(draft: DraftFact, doc: Document, current: ProfileVersio
     key, value = _canonical(draft)
     candidates = [f for f in current.facts if f.question is None]
     if not doc.is_questionnaire:
-        latest = None   # the current Patient-reported Fact; ties go to the later-accepted one, as in current()
+        latest = None   # the current Patient-reported Fact: the latest submission's, as in current()
         for f in current.facts:
-            if f.question is not None and _canonical(f)[0] == key and (latest is None or f.observed_on >= latest.observed_on):
+            if f.question is not None and _canonical(f)[0] == key:
                 latest = f
         candidates += [latest] if latest else []
     for f in candidates:

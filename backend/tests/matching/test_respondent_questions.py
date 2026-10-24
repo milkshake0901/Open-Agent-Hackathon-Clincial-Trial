@@ -152,3 +152,35 @@ async def test_answering_a_respondent_question_makes_a_new_version_whose_verdict
     assert WASHOUT in moved.text and (moved.outcome_from, moved.outcome_to) == ("unknown", "met")
     assert moved.citation.quote == precise and moved.citation.question == "Q8"
     assert await matching.respondent_questions_for_version(ctx, v2.id) == []
+
+
+async def test_a_clarified_date_earlier_than_the_vague_estimate_supersedes_it_and_moves_the_verdict(clean_db,
+                                                                                                       tmp_path):
+    # "around October 2026" is estimated as 15 October; the clarification says 2 October, which is EARLIER. A later
+    # submission corrects an earlier one (ADR 0002 amendment), so the clarified Fact is current all the same.
+    vague = "Chemo ended around October 2026"
+    snapshot = write_snapshot(tmp_path, [study("NCT00000005", inclusion=[LAB], exclusion=[WASHOUT])])
+    ctx, fake, v1 = await _setup_with_intake(clean_db, snapshot, {**ANSWERS, "treatments": vague},
+                                             [chemo_fact(vague, "2026-10")])
+
+    def rule(line, lines):
+        if WASHOUT in line:
+            precise = next((l for l in lines if "| chemotherapy:" in l and "around" not in l), None)
+            return ("met", fact_id(lines, "chemotherapy"), None) if precise else ("unknown", None, "Q8")
+        return "unknown", None, None
+    script(fake, matcher(rule))
+    await matching.rescan(ctx, v1.id, only={"NCT00000005"})
+
+    precise = "Last chemo was on 2 October 2026"
+    matching_model = fake.responder
+    fake.responder = lambda lane, system, user: (
+        {"facts": [chemo_fact(precise, "2026-10-02")]} if lane == "fast" else matching_model(lane, system, user))
+    resubmitted = await record.submit_questionnaire(ctx, v1.patient_id, {**ANSWERS, "treatments": precise},
+                                                    respondent="patient")
+    assert isinstance(resubmitted, record.Committed)
+    v2 = await record.profile_version(ctx, resubmitted.version.id)
+    assert v2.current()["chemotherapy"].quote == precise
+    await matching.rescan(ctx, v2.id, only={"NCT00000005"})
+
+    change = await matching.change_between(ctx, "NCT00000005", v1.id, v2.id)
+    assert (change.outcome_from, change.outcome_to) == ("possible", "excluded")
