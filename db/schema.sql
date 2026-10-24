@@ -1,12 +1,15 @@
 -- db/schema.sql — Postgres for the app (our own container, separate from Zetaris's internal postgres).
 -- One writer per table:
---   patient, document, document_page,
---   search_preference, return_token, diagnosis_check    app.record.repo
---   wm_event, wm_audit                                   app.worldmodel.store.PgEventStore (engine log)
---   fact, profile_version*, trial, criterion,
---   verdict, criterion_result, doctor_question, respondent_question          app.worldmodel.projector, inside the wm_event append
---                                                        transaction (projections of the World Model, ADR 0001)
---   trace_run, trace_event, llm_call                     app.trace
+--   patient, document, document_page                    app.record.repo
+--   search_preference                                   app.record.repo (postcode and its coarse point, travel, contact)
+--   return_token                                        app.record.repo (sha256 of the return link's token)
+--   diagnosis_check                                     app.record.repo (Diagnosis checks and their answers)
+--   wm_event, wm_audit                                  app.worldmodel.store.PgEventStore (engine log)
+--   fact, profile_version, profile_version_fact         app.worldmodel.projector, inside the wm_event append
+--   trial, criterion, trial_site                        transaction (projections of the World Model, ADR 0001)
+--   verdict, criterion_result, doctor_question,
+--   respondent_question
+--   trace_run, trace_event, llm_call                    app.trace
 -- Facts are append-only. Everything is read through Zetaris by agents.
 
 -- ---------- record ----------

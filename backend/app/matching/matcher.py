@@ -74,7 +74,11 @@ SITES_SHOWN = 5
 
 
 def _site_lines(sites: tuple[SiteDistance, ...]) -> list[str]:
-    """Sites as "name · status · km" only, nearest first (ADR 0003: the postcode never reaches a model)."""
+    """Sites as "name · status · km" only, nearest first (ADR 0003: the postcode never reaches a model).
+
+    Known risk (kept on purpose: the spec puts km in the prompt): nothing but the instruction below stops the
+    Matcher from letting distance decide a Criterion such as "able to attend site visits". Distance must only
+    rank and flag Verdicts (matching.verdicts_for_version); the Evaluator does not check for this."""
     if not sites:
         return []
     lines = ["", "Sites (distance from the patient's area; context only, distance never decides a Criterion):"]
