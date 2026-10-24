@@ -10,7 +10,7 @@ from app import trials
 from app.api import EXCEPTION_HANDLERS, router
 from app.config import Settings
 from app.ctx import Ctx
-from app.llm.nightshift import FakeLLM
+from app.llm.nightshift import Nightshift
 from app.sql.reader import PgReader
 from app.sql.writer import PgWriter
 from app.worldmodel import PgEventStore, WorldModel
@@ -29,15 +29,18 @@ async def lifespan(app: FastAPI):
     reader = PgReader(pool)
     wm = WorldModel(namespace=WORLD_MODEL_NAMESPACE, store=PgEventStore(writer, WORLD_MODEL_NAMESPACE))
     await wm.replay()
-    # Until ZetarisReader (agents) and Nightshift (models) land, agents read Postgres directly and any model
-    # call fails loudly: the #7 path (structured questionnaire answers) makes none.
-    app.state.ctx = Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=FakeLLM(), wm=wm,
+    llm = Nightshift(settings.meterless_base_url, settings.meterless_runtime_token, settings.meterless_app_id,
+                     settings.lane_models, default_model=settings.meterless_model)
+    await llm.models()   # warns, never fails: a missing runtime turns model calls into LlmUnavailable
+    # Until ZetarisReader lands, agents read Postgres directly.
+    app.state.ctx = Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm, wm=wm,
                         settings=settings, now=lambda: datetime.now(timezone.utc))
     # Trials come from the saved snapshot until live sync (Zetaris) lands; idempotent across restarts.
     await trials.load_snapshot(app.state.ctx, settings.trials_snapshot_dir)
     try:
         yield
     finally:
+        await llm.aclose()
         await pool.close()
 
 

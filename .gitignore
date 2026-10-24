@@ -18,3 +18,9 @@ node_modules/
 
 # archify working files and evidence (the diagram itself lives in docs/diagrams/)
 .archify/
+
+# local scratch work (discovery runs, raw API caches); never pushed
+.scratch/
+
+# generated images and audio from Meterless media jobs
+data/media/

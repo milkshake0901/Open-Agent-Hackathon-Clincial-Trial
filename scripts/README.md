@@ -1,4 +1,9 @@
-# Scripts (to be written)
+# Scripts
+
+- `meterless.py` checks the Nightshift connection: status, Auto Detect, chat, a lane's JSON call, media plan and `illustrate`. Usage in DEVELOPER.md, "Check the LLM connection yourself".
+
+To be written:
+
 
 - `seed_demo.py` registers the demo patient and uploads `data/demo/` Documents in story order.
 - `sync_trials.py` calls `trials.sync`; schedule it daily with cron or launchd.
