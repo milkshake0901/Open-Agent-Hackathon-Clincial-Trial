@@ -1,0 +1,356 @@
+<title>Matchable Trial Variables</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column (~68ch) for prose; tables break out to a wider column and scroll on their own. */
+:root {
+  --bg: #f4f6f8; --surface: #ffffff; --ink: #15222b; --ink-2: #4a5a66; --muted: #6f7f8b; --rule: #dbe2e7;
+  --accent: #1f5f8b; --accent-soft: #e3edf5; --meter-track: #e6ebef;
+  --ok: #26704a; --ok-soft: #e2f1e8; --warn: #95560f; --warn-soft: #f8ecdc; --gap: #a93229; --gap-soft: #f8e3e1;
+  --code-bg: #eef2f5;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Public Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f161b; --surface: #152029; --ink: #e3ebf0; --ink-2: #a8b7c2; --muted: #84939e; --rule: #26343e;
+  --accent: #79b0dc; --accent-soft: #1b3142; --meter-track: #23313b;
+  --ok: #72c495; --ok-soft: #173326; --warn: #e3a95e; --warn-soft: #36271a; --gap: #f08a80; --gap-soft: #3a1f1d;
+  --code-bg: #1a2731; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0f161b; --surface: #152029; --ink: #e3ebf0; --ink-2: #a8b7c2; --muted: #84939e; --rule: #26343e;
+  --accent: #79b0dc; --accent-soft: #1b3142; --meter-track: #23313b;
+  --ok: #72c495; --ok-soft: #173326; --warn: #e3a95e; --warn-soft: #36271a; --gap: #f08a80; --gap-soft: #3a1f1d;
+  --code-bg: #1a2731; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--f-body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 72px; display: grid; gap: 56px; }
+.prose { max-width: 70ch; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; font-weight: 700; }
+h2 { font-size: 24px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 600; }
+p { margin: 0; }
+section { display: grid; gap: 18px; min-width: 0; }
+.eyebrow { font: 600 12px/1 var(--f-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 18px; color: var(--ink-2); max-width: 64ch; }
+code, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+a { color: var(--accent); }
+
+header { display: grid; gap: 18px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--ink-2); font-size: 13px; }
+.meta b { color: var(--ink); font-weight: 600; }
+
+.figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.fig { background: var(--surface); padding: 18px 18px 16px; display: grid; gap: 4px; align-content: start; }
+.fig .n { font: 700 30px/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
+.fig .l { font-size: 13px; color: var(--ink-2); }
+@media (max-width: 760px) { .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.findings { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; max-width: 78ch; }
+.findings li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; }
+.findings li::before { content: ""; width: 8px; height: 8px; margin-top: 9px; border-radius: 2px; background: var(--accent); }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 600 11.5px/1 var(--f-body); letter-spacing: 0.02em; padding: 4px 8px 4px 6px; border-radius: 999px; white-space: nowrap; }
+.chip::before { font-size: 11px; line-height: 1; }
+.c-yes { background: var(--ok-soft); color: var(--ok); } .c-yes::before { content: "●"; }
+.c-partly { background: var(--warn-soft); color: var(--warn); } .c-partly::before { content: "◐"; }
+.c-no { background: var(--meter-track); color: var(--ink-2); } .c-no::before { content: "○"; }
+.c-gap { background: var(--gap-soft); color: var(--gap); } .c-gap::before { content: "✕"; }
+.c-fact { background: var(--accent-soft); color: var(--accent); } .c-fact::before { content: "◆"; }
+.c-pending { background: var(--warn-soft); color: var(--warn); } .c-pending::before { content: "…"; }
+.kind { font: 500 11px/1 var(--f-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.filters button { font: 500 13px/1 var(--f-body); color: var(--ink-2); background: var(--surface); border: 1px solid var(--rule); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.filters button:focus-visible, .copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 11.5px/1.3 var(--f-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--surface); position: sticky; top: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.var { font-weight: 600; }
+.src { font-family: var(--f-mono); font-size: 11.5px; color: var(--ink-2); margin-top: 3px; overflow-wrap: anywhere; }
+.note { color: var(--ink-2); font-size: 13px; }
+.t-vars { min-width: 920px; } .t-vars td:nth-child(1) { width: 22%; } .t-vars td:nth-child(2) { width: 150px; } .t-vars td:nth-child(5) { width: 32%; }
+
+.meter { display: grid; gap: 3px; min-width: 132px; }
+.meter .row { display: grid; grid-template-columns: 12px 1fr 34px; align-items: center; gap: 6px; font: 500 11px/1 var(--f-mono); color: var(--muted); }
+.meter .bar { height: 6px; background: var(--meter-track); border-radius: 3px; overflow: hidden; }
+.meter .bar i { display: block; height: 100%; background: var(--accent); border-radius: 0 3px 3px 0; }
+.meter .v { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+.meter .na { color: var(--muted); font: 12px var(--f-body); }
+
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+@media (max-width: 860px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.panel ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+
+.codebox { position: relative; background: var(--code-bg); border-radius: 8px; padding: 14px 14px 14px; }
+.codebox pre { margin: 0; font: 12px/1.6 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 64px; }
+.copy { position: absolute; top: 10px; right: 10px; font: 600 12px/1 var(--f-body); color: var(--accent); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+
+.callout { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 14px 16px; border-radius: 0 8px 8px 0; color: var(--ink); max-width: 80ch; }
+.small { font-size: 13px; color: var(--ink-2); }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--rule); padding-top: 20px; display: grid; gap: 6px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">TrialMatch · ClinicalTrials.gov field discovery</span>
+  <h1>What we can match a patient on</h1>
+  <p class="lede">We checked every field in ClinicalTrials.gov API v2 against real recruiting Trials, to find which ones a patient's Facts could be checked against. We also mined each Trial's eligibility text to see what its Criteria ask about.</p>
+  <div class="meta">
+    <span><b>Run</b> 23 Oct 2026</span>
+    <span><b>API</b> v2.0.5 · data 22 Oct 2026 09:00</span>
+    <span><b>Registry</b> 608,228 studies</span>
+    <span><b>Samples</b> A 96 · B 608 · C 500</span>
+    <span><b>Zetaris</b> 2.4.3.1, not yet tested</span>
+  </div>
+</header>
+
+<div class="figures" role="list">
+  <div class="fig" role="listitem"><span class="n">342</span><span class="l">leaf fields in the API; 66 can be filtered server-side</span></div>
+  <div class="fig" role="listitem"><span class="n">3</span><span class="l">patient variables that are structured and checkable: age, sex, site location</span></div>
+  <div class="fig" role="listitem"><span class="n">18.7</span><span class="l">Criteria per Trial in the NSCLC target sample, all free text</span></div>
+  <div class="fig" role="listitem"><span class="n">11 / 96</span><span class="l">Trials "near Sydney" with no recruiting Sydney site</span></div>
+</div>
+
+<section>
+  <h2>Key findings</h2>
+  <ul class="findings">
+    <li><span><b>Age, sex and site location are the only structured patient checks, and our Facts can't hold any of them.</b> <code>minimumAge</code> is filled for 100 / 75 / 98% of studies, <code>sex</code> for 100%, and site <code>geoPoint</code> for at least 99%. Patients have no date of birth, sex or location.</span></li>
+    <li><span><b>Diagnosis is structured, but too coarse for oncology.</b> Conditions are 100% filled and MeSH terms 96 / 93 / 82%. Histology, stage, line of therapy and relapse status exist only in free text.</span></li>
+    <li><span><b>Most Criteria are free text.</b> In NSCLC Trials, prior treatment is mentioned by 97%, stage or extent by 98%, biomarkers by 90%, labs by 78%, performance status by 78% and CNS metastases by 76%.</span></li>
+    <li><span><b>About half of lab thresholds can be checked without a model.</b> 35 / 49 / 51% of lab mentions carry a number and a unit. Many are "× ULN", which needs the lab's reference range, and the <code>fact</code> table has no column for it.</span></li>
+    <li><span><b>The API's distance filter isn't enough.</b> <code>filter.geo</code> keeps a Trial if <i>any</i> site is within range, whatever that site's status. We need a per-site check.</span></li>
+    <li><span><b>The <code>trial</code> table throws away almost everything structured</b>: age bounds, sex, phases, MeSH terms, interventions and sites.</span></li>
+    <li><span><b>Zetaris hasn't been tested yet.</b> The probe SQL and its expected results are ready. The page it registers is 4.0 MB of JSON, so payload size is the first thing to check.</span></li>
+  </ul>
+</section>
+
+<section>
+  <h2>Matchable variables</h2>
+  <p class="prose small">One row per patient variable. The meters show the share of studies in each sample. For structured fields, that means the field is filled in. For free text, it means a Criterion mentions the topic. A is NSCLC within 50 km of Sydney, B is paediatric oncology and C is a general recruiting control. Rows marked model-derived come from labelling 150 Criteria the keyword dictionary missed (50 per sample). Their figures are counts out of 50, not coverage.</p>
+  <div class="filters" role="group" aria-label="Filter variables by source">
+    <button type="button" id="f-all" data-f="all" aria-pressed="true">All</button>
+    <button type="button" id="f-structured" data-f="structured" aria-pressed="false">Structured field</button>
+    <button type="button" id="f-text" data-f="text" aria-pressed="false">Free text</button>
+    <button type="button" id="f-model" data-f="model" aria-pressed="false">Model-derived</button>
+    <button type="button" id="f-gap" data-f="gap" aria-pressed="false">No Fact to hold it</button>
+  </div>
+  <div class="scroll">
+    <table class="t-vars">
+      <thead><tr><th>Variable and source</th><th>Coverage A / B / C</th><th>Patient Fact</th><th>Checkable without a model?</th><th>Notes</th></tr></thead>
+      <tbody id="vars"></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Structured fields we drop today</h2>
+  <p class="prose small">The <code>trial</code> table keeps <code>nct_id</code>, <code>title</code>, <code>conditions</code>, <code>status</code> and <code>eligibility_text</code>. These are proposed columns only. The schema has not been changed.</p>
+  <div class="scroll">
+    <table style="min-width: 760px">
+      <thead><tr><th>API field</th><th>Proposed storage</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr><td><code>minimumAge</code>, <code>maximumAge</code></td><td><code>min_age_years</code>, <code>max_age_years numeric NULL</code><div class="note">Normalised from "N Years / Months / Weeks / Days"; NULL means no limit</div></td><td>Age gate</td></tr>
+        <tr><td><code>sex</code></td><td><code>sex text</code> (ALL / FEMALE / MALE)</td><td>Sex gate</td></tr>
+        <tr><td><code>stdAges</code></td><td><code>std_ages text[]</code></td><td>Cheap pre-filter</td></tr>
+        <tr><td><code>healthyVolunteers</code></td><td><code>healthy_volunteers boolean</code></td><td>Trial filter</td></tr>
+        <tr><td><code>phases</code></td><td><code>phases text[]</code></td><td>UI and filtering</td></tr>
+        <tr><td>Condition MeSH <code>meshes</code>, <code>ancestors</code></td><td><code>condition_mesh_ids</code>, <code>condition_mesh_terms</code>, <code>condition_ancestor_terms text[]</code></td><td>Diagnosis matching on a controlled vocabulary</td></tr>
+        <tr><td><code>interventions[]</code> + intervention MeSH</td><td>new table <code>trial_intervention(nct_id, type, name, other_names[], mesh_terms[])</code></td><td>Prior / current drug overlap, UI</td></tr>
+        <tr><td><code>locations[]</code></td><td>new table <code>trial_site(nct_id, facility, city, country, status, lat, lon)</code></td><td>Nearest <i>recruiting</i> site</td></tr>
+        <tr><td><code>keywords</code></td><td><code>keywords text[]</code></td><td>Search, display</td></tr>
+        <tr><td><code>lastUpdatePostDate</code></td><td><code>last_update_posted date</code></td><td>Cheap "did it change?" check before re-hashing</td></tr>
+        <tr><td><code>centralContacts[]</code></td><td><code>trial_contact</code> or JSON</td><td>UI: who to call</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Gaps in our patient model</h2>
+  <p class="prose small">A Fact's <code>resource</code> can only be Condition, Observation, MedicationStatement or Procedure. Performance status, pregnancy status, biomarkers and weight all fit Observation. The variables below don't fit anywhere. De-identification removes date of birth and address, so age and location have to be stored as coarse values.</p>
+  <div class="scroll">
+    <table style="min-width: 720px">
+      <thead><tr><th>Variable</th><th>How often Trials ask</th><th>Where it should live</th></tr></thead>
+      <tbody>
+        <tr><td class="var">Age</td><td>Every Trial (structured)</td><td><span class="chip c-gap">Patient attribute</span><div class="note">Birth year, or age in years at the Profile version. An "age" Fact would go stale.</div></td></tr>
+        <tr><td class="var">Sex</td><td>Every Trial (structured)</td><td><span class="chip c-gap">Patient attribute</span></td></tr>
+        <tr><td class="var">Location</td><td>Every distance check</td><td><span class="chip c-gap">Patient attribute</span><div class="note">Postcode or suburb centroid, not an address</div></td></tr>
+        <tr><td class="var">Lab reference range</td><td>Every "× ULN" threshold</td><td><span class="chip c-gap">New Fact columns</span><div class="note">Add <code>ref_low</code> and <code>ref_high</code> to Observation Facts, taken from the same report line</div></td></tr>
+        <tr><td class="var">Allergies</td><td>12 of 150 sampled Criteria</td><td><span class="chip c-gap">New resource</span><div class="note"><code>AllergyIntolerance</code>, or Condition with an agreed subject convention</div></td></tr>
+        <tr><td class="var">Willing to travel, language, other trials</td><td>60 / 79 / 68% (consent and logistics)</td><td><span class="chip c-gap">Patient preference</span><div class="note">Otherwise a Doctor question</div></td></tr>
+        <tr><td class="var">Life expectancy, investigator judgement</td><td>Common</td><td><span class="chip c-no">Neither</span><div class="note">Always a Doctor question</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Zetaris retrieval</h2>
+  <div class="callout"><b>Not run yet.</b> This session had no Zetaris API key. <code>05_zetaris_probe.sql</code> is ready: one REST table for Sample A page 1, nine SchemaStore views covering every bucket, a haversine query for nearby recruiting sites, and a teardown block. Each statement has an outcome line to fill in. The expected results below come from the same raw page, so a mismatch shows truncation or a schema-inference failure.</div>
+  <div class="two">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Check</th><th>Shape tested</th><th class="num">Expected</th></tr></thead>
+        <tbody>
+          <tr><td><code>ctgov_trial_core</code> rows</td><td>Nested structs</td><td class="num">96</td></tr>
+          <tr><td>Eligibility text length, sum / max</td><td>Truncation</td><td class="num">371,925 / 15,505</td></tr>
+          <tr><td>Rows with <code>maximum_age</code> / <code>gender_based</code></td><td>Sparse fields</td><td class="num">3 / 1</td></tr>
+          <tr><td>conditions · std_ages · phases</td><td>List of strings</td><td class="num">403 · 194 · 131</td></tr>
+          <tr><td>locations (with <code>geoPoint</code>)</td><td>List of structs</td><td class="num">10,428</td></tr>
+          <tr><td>interventions · other names</td><td>List inside a list</td><td class="num">324 · 119</td></tr>
+          <tr><td>condition MeSH · ancestors</td><td>Derived lists</td><td class="num">380 · 1,613</td></tr>
+          <tr><td>Trials with a recruiting site ≤ 50 km</td><td>Computed in SQL</td><td class="num">85</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h3>Paging, reasoned from the API</h3>
+      <p class="small">A REST table is one fixed URL, so it holds one page. The next page's token is only known after reading the response, so each page has to be fetched outside Zetaris first and registered as its own table, then joined with <code>UNION ALL</code>.</p>
+      <p class="small">Sample A fits in one page. Sample B would need 7 tables at 100 per page, or one table of about 10 MB at 1,000 per page.</p>
+      <p class="small"><b>Expected outcome:</b> Zetaris works for a single bounded page of up to 1,000 Trials. Anything larger uses the HTTP fallback in <code>ctgov.py</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>API caveats</h2>
+  <div class="two">
+    <div class="panel">
+      <h3>Data</h3>
+      <ul class="small">
+        <li><code>filter.geo</code> matches on any site, whatever that site's status.</li>
+        <li><code>geoPoint</code> is listed as a leaf in <code>/studies/metadata</code>, but study JSON returns a <code>{lat, lon}</code> struct.</li>
+        <li>Eligibility text is markdown with escapes (<code>\&lt;</code>, <code>\&gt;</code>, <code>1\.</code>). Unescape it before parsing.</li>
+        <li>Text ages that differ from the structured minimum (B: 32 of 200, C: 9 of 186) are mostly conditional, for example "Karnofsky if ≥ 16 years". A few are genuinely stricter sub-cohort limits.</li>
+        <li>Splitting failed for 2 / 56 / 64 studies. Causes: only one heading (82), no headings (35), or headings written as bullets or numbers.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Endpoints</h3>
+      <ul class="small">
+        <li>Every endpoint and parameter in the plan exists in the live OpenAPI spec.</li>
+        <li><code>/stats/field/sizes</code> returns 404 for the whole request if any listed field isn't itself a list (e.g. <code>InterventionName</code>). Query one field at a time.</li>
+        <li>Results are unordered by default, so use <code>sort</code> for reproducible samples. <code>countTotal</code> only works on the first page. <code>pageSize</code> is capped at 1,000.</li>
+        <li>One page of 96 NSCLC Trials is 4.0 MB. The field list below cuts it by 37.5%. Site lists dominate the size.</li>
+        <li>29 live calls, at least 1.3 s apart, no 429 responses.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Recommendations</h2>
+  <div class="two">
+    <div class="panel">
+      <h3>Check deterministically</h3>
+      <ul class="small">
+        <li>Age and sex gates</li>
+        <li>Distance to the nearest <i>recruiting</i> site</li>
+        <li>Performance status (scale and threshold, with the scale picked by age)</li>
+        <li>Labs with absolute units, and "× ULN" once Facts carry a reference range</li>
+        <li>Named biomarkers, when the Observation is coded</li>
+        <li>Named prior or current drugs, using other names and MeSH terms as synonyms</li>
+        <li>Body weight</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Use the model, or ask the doctor</h3>
+      <ul class="small">
+        <li><b>Model extracts, code checks:</b> washout windows and lines of therapy, using date arithmetic on each Fact's observed-on date</li>
+        <li><b>Model:</b> histology, stage and relapse wording; measurable disease; comorbidities; whether CNS metastases are active or stable</li>
+        <li><b>Always a Doctor question:</b> investigator judgement, life expectancy, and pregnancy or contraception at screening</li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>Field list for <code>ctgov.fetch</code> (checked against the live API)</h3>
+    <div class="codebox">
+      <button type="button" class="copy" id="copy-fields">Copy</button>
+      <pre id="fields">fields=NCTId|BriefTitle|OverallStatus|StudyType|Phase|LastUpdatePostDate|Condition|Keyword|ConditionMeshId|ConditionMeshTerm|ConditionAncestorTerm|EligibilityCriteria|Sex|MinimumAge|MaximumAge|StdAge|HealthyVolunteers|InterventionType|InterventionName|InterventionOtherName|InterventionMeshTerm|LocationFacility|LocationCity|LocationState|LocationCountry|LocationStatus|LocationGeoPoint|CentralContactName|CentralContactEMail|CentralContactPhone</pre>
+    </div>
+    <p class="small"><b>Before building the matcher:</b> add patient attributes for age, sex and coarse location; add reference-range columns to Observation Facts; and run the Zetaris probe.</p>
+  </div>
+</section>
+
+<footer>
+  <span>Every figure comes from scripts that re-run from a local cache of the API responses. The model-derived rows were labelled by Claude from public trial text only.</span>
+  <span>Samples: A = NSCLC, recruiting or not yet recruiting, within 50 km of Sydney (96 of 96). B = neuroblastoma, medulloblastoma or leukaemia, child age band, recruiting (608 of 608). C = recruiting interventional Trials, most recently updated first (500 of 47,419).</span>
+</footer>
+</div>
+
+<script>
+const V = [
+  {v:"Age", src:"eligibilityModule.minimumAge · maximumAge · stdAges", k:["structured","gap"], cov:[100,75,98], fact:null, factNote:"Needs date of birth", det:"yes", note:"Shown: minimum age. A maximum is set for 3 / 75 / 49%. Values are strings like “18 Years” or “36 Months”."},
+  {v:"Sex", src:"eligibilityModule.sex", k:["structured","gap"], cov:[100,100,100], fact:null, det:"yes", note:"Restricted to one sex in 0 / 1 / 41 Trials. Most free-text mentions are about pregnancy or say “male or female”."},
+  {v:"Distance to a recruiting site", src:"locations[].geoPoint + locations[].status", k:["structured","gap"], cov:[100,100,100], fact:null, factNote:"Needs patient location", det:"yes", note:"Median of 65 sites per NSCLC Trial. 85 of 96 have a recruiting site within 50 km of Sydney."},
+  {v:"Healthy volunteer", src:"eligibilityModule.healthyVolunteers", k:["structured"], cov:[100,98,100], fact:"n/a", det:"yes", note:"Filters Trials, not patients. A patient is never a healthy volunteer."},
+  {v:"Primary diagnosis", src:"conditions · conditionBrowseModule.meshes / ancestors", k:["structured"], cov:[100,100,100], fact:"Condition", det:"partly", note:"MeSH terms are filled for 96 / 93 / 82%. Match on MeSH ancestors if the patient's Conditions are coded."},
+  {v:"Histology / confirmed diagnosis", src:"free text · diagnosis_histology", k:["text"], cov:[85,59,56], fact:"Condition", det:"no", note:""},
+  {v:"Stage, grade, risk, extent", src:"free text · stage_grade_risk", k:["text"], cov:[98,41,36], fact:"Condition", det:"partly", note:"TNM and “stage IV” keywords can be parsed."},
+  {v:"Relapsed / refractory / progression", src:"free text · relapsed_refractory", k:["text"], cov:[58,55,24], fact:"Condition", det:"no", note:"Needs the treatment timeline."},
+  {v:"Biomarkers and genetics", src:"free text · biomarker_genetic", k:["text"], cov:[90,48,34], fact:"Observation", det:"partly", note:"Checkable when the Observation names the gene and result. Includes CD19 / CD123 expression."},
+  {v:"Performance status", src:"free text · performance_status", k:["text"], cov:[78,54,24], fact:"Observation", det:"yes", note:"ECOG, Karnofsky or Lansky, often chosen by age."},
+  {v:"Labs and organ function", src:"free text · labs_organ_function", k:["text"], cov:[78,60,42], fact:"Observation", det:"partly", note:"35 / 49 / 51% of mentions have a number and unit. “× ULN” needs a reference range."},
+  {v:"Measurable disease", src:"free text · measurable_disease", k:["text"], cov:[75,26,17], fact:"Observation", det:"no", note:"RECIST, INRC, RANO, MRD"},
+  {v:"Prior treatment and washout", src:"free text · prior_treatment + interventions[]", k:["text"], cov:[97,84,78], fact:"MedicationStatement · Procedure", det:"partly", note:"Drug names can be matched. Lines of therapy and washout windows need dates."},
+  {v:"CNS / brain metastases", src:"free text · cns_brain_mets", k:["text"], cov:[76,41,23], fact:"Condition", det:"partly", note:"Presence is checkable. Active vs treated and stable needs a model."},
+  {v:"Comorbidities and infections", src:"free text · comorbidity_infection", k:["text"], cov:[84,66,67], fact:"Condition · Observation", det:"no", note:"HIV, hepatitis, cardiac history, other cancers."},
+  {v:"Current medications", src:"free text · concomitant_meds", k:["text"], cov:[74,44,42], fact:"MedicationStatement", det:"partly", note:"Named drugs are checkable. CYP3A4 classes need an interaction database."},
+  {v:"Pregnancy and contraception", src:"free text · pregnancy_contraception", k:["text"], cov:[36,60,60], fact:"Observation", det:"no", note:"Settled at screening. Better as a Doctor question."},
+  {v:"Consent, life expectancy, logistics", src:"free text · consent_logistics", k:["text","gap"], cov:[60,79,68], fact:null, factNote:"Patient preference or clinician", det:"no", note:""},
+  {v:"Drug hypersensitivity", src:"model-derived · 8 / 2 / 2 of 50", k:["model","gap"], cov:null, fact:null, factNote:"No allergy resource", det:"yes", note:"Usually about the study drug itself."},
+  {v:"Oral intake / GI absorption", src:"model-derived · 6 / 1 / 1 of 50", k:["model"], cov:null, fact:"Condition · Procedure", det:"no", note:""},
+  {v:"Investigator judgement", src:"model-derived · 5 / 3 / 6 of 50", k:["model"], cov:null, fact:"n/a", det:"never", note:"Always unknown, so always a Doctor question."},
+  {v:"Psychiatric / substance use", src:"model-derived · 0 / 0 / 6 of 50", k:["model"], cov:null, fact:"Condition", det:"no", note:"Only seen outside oncology."},
+  {v:"Body or tumour size", src:"model-derived · 0 / 1 / 4 of 50", k:["model"], cov:null, fact:"Observation", det:"partly", note:"Weight is checkable. Lesion size depends on the report."},
+  {v:"Effusions", src:"model-derived · 3 / 0 / 0 of 50", k:["model"], cov:null, fact:"Condition", det:"no", note:""},
+  {v:"Other trial participation", src:"model-derived · 1 / 1 / 1 of 50", k:["model","gap"], cov:null, fact:null, factNote:"Patient attribute", det:"no", note:""},
+];
+const DET = {yes:["c-yes","Yes"], partly:["c-partly","Partly"], no:["c-no","Model"], never:["c-gap","Never"]};
+const esc = s => s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function meter(cov) {
+  if (!cov) return '<span class="meter"><span class="na">Count out of 50, see source</span></span>';
+  return '<span class="meter">' + cov.map((p, i) =>
+    `<span class="row" title="Sample ${"ABC"[i]}: ${p}% of studies"><span>${"ABC"[i]}</span><span class="bar"><i style="width:${p}%"></i></span><span class="v">${p}%</span></span>`).join("") + "</span>";
+}
+function fact(r) {
+  if (r.fact === null) return `<span class="chip c-gap">No Fact</span>${r.factNote ? `<div class="note" style="margin-top:6px">${esc(r.factNote)}</div>` : ""}`;
+  if (r.fact === "n/a") return '<span class="note">Not applicable</span>';
+  return `<span class="chip c-fact">${esc(r.fact)}</span>`;
+}
+const tbody = document.getElementById("vars");
+tbody.innerHTML = V.map(r => `<tr data-k="${r.k.join(" ")}">
+  <td><div class="var">${esc(r.v)}</div><div class="src">${esc(r.src)}</div></td>
+  <td>${meter(r.cov)}</td>
+  <td>${fact(r)}</td>
+  <td><span class="chip ${DET[r.det][0]}">${DET[r.det][1]}</span></td>
+  <td class="note">${esc(r.note)}</td></tr>`).join("");
+const buttons = document.querySelectorAll(".filters button");
+function applyFilter(f) {
+  buttons.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.f === f)));
+  tbody.querySelectorAll("tr").forEach(tr => { tr.hidden = f !== "all" && !tr.dataset.k.split(" ").includes(f); });
+  try { localStorage.setItem("ctgov-filter", f); } catch (e) {}
+}
+buttons.forEach(b => b.addEventListener("click", () => applyFilter(b.dataset.f)));
+try { const saved = localStorage.getItem("ctgov-filter"); if (saved && document.getElementById("f-" + saved)) applyFilter(saved); } catch (e) {}
+document.getElementById("copy-fields").addEventListener("click", e => {
+  const btn = e.currentTarget, text = document.getElementById("fields").textContent;
+  navigator.clipboard.writeText(text).then(() => { btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy", 1600); })
+    .catch(() => { const r = document.createRange(); r.selectNodeContents(document.getElementById("fields")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Selected"; });
+});
+</script>
