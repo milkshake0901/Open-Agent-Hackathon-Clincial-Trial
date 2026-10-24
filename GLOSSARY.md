@@ -40,6 +40,22 @@ _Avoid_: Profile (unqualified), snapshot, patient state
 Removing names, addresses, record numbers and clinician names from a Document's text before any model sees it.
 _Avoid_: Anonymisation, redaction, masking
 
+**Return link**:
+A private link the Respondent receives after their first Intake questionnaire that reopens that patient's record without an account.
+_Avoid_: Login, magic link, account
+
+**Search preferences**:
+The patient's postcode, how far they would travel and an optional contact detail; used only to rank Trials by distance and send notices, never part of the patient's Facts.
+_Avoid_: Settings, location Fact, profile
+
+**Diagnosis check**:
+The step where the Respondent confirms, rejects or is unsure about the Condition term understood from their own words.
+_Avoid_: Diagnosis confirmation, normalisation
+
+**Condition term**:
+The formal name of the patient's condition, settled by a Diagnosis check, that decides which Trials are judged.
+_Avoid_: Search term, diagnosis code
+
 ## Trials
 
 **Trial**:
@@ -53,6 +69,10 @@ _Avoid_: Requirement, condition, rule
 **Criterion topic**:
 A kind of patient information a Criterion asks about, such as performance status or CNS metastases; one Criterion can have several.
 _Avoid_: Category, tag, bucket
+
+**Trial site**:
+One place a Trial runs, with its recruitment status and location; distance to it ranks Trials but never changes a Verdict.
+_Avoid_: Location, centre, facility
 
 ## Matching
 
