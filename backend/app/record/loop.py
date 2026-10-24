@@ -6,10 +6,11 @@ from those trace events on confirm(). Accepted Facts are committed through the W
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Awaitable, Callable
 
 from app.ctx import Ctx
+from app.llm import LlmUnavailable
 from app.record import critic, intake, repo
 from app.worldmodel import timeline
 from app.record.types import (
@@ -56,6 +57,23 @@ def structured_drafter(drafts: tuple[DraftFact, ...]) -> Drafter:
             actor="questionnaire", attempt=1 + bool(feedback), drafts=[asdict(d) for d in drafts],
             model_answered="none: structured answers"))
         return drafts
+    return draft
+
+
+def questionnaire_drafter(structured: tuple[DraftFact, ...], free_text: Document,
+                          settle: Callable[[DraftFact], DraftFact]) -> Drafter:
+    """A questionnaire's attempt: structured answers drafted in code, then free-text answers through the Intake
+    agent reading `free_text` (only the free-text answers, with Document page numbers). No free text, no model
+    call. On a retry the agent gets only the findings about its own drafts, re-indexed to its list."""
+    code = structured_drafter(structured)
+
+    async def draft(ctx: Ctx, doc: Document, feedback: tuple[Finding, ...], run_id: trace.RunId):
+        drafts = await code(ctx, doc, feedback, run_id)
+        if not free_text.pages:
+            return drafts
+        n = len(drafts)
+        own = tuple(replace(f, draft_index=f.draft_index - n) for f in feedback if f.draft_index >= n)
+        return drafts + tuple(settle(d) for d in await intake.extract(ctx, free_text, own, run_id))
     return draft
 
 
@@ -112,7 +130,12 @@ async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts:
     await trace.append(ctx.writer, run_id, IngestStarted(actor="record", document_hash=doc.hash, pages=len(doc.pages)))
     feedback: tuple[Finding, ...] = ()
     for attempt in range(1, max_attempts + 1):
-        drafts = await drafter(ctx, doc, feedback, run_id)
+        try:
+            drafts = await drafter(ctx, doc, feedback, run_id)
+        except LlmUnavailable as e:   # nothing is committed; the Respondent can submit again
+            reason = f"the Intake model is unavailable ({e})"
+            await trace.append(ctx.writer, run_id, RunRejected(actor="record", reason=reason))
+            return Rejected(run_id, reason)
         findings = critic.review(drafts, doc, current)
         await trace.append(ctx.writer, run_id, CriticReviewed(actor="critic", attempt=attempt,
                                                               findings=[asdict(f) for f in findings]))

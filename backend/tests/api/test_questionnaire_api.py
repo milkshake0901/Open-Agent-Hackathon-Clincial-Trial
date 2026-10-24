@@ -34,3 +34,12 @@ async def test_definition_submit_and_view_profile_v1_over_http(ctx, fake_llm):
         assert bad.status_code == 422
         assert (await http.get(f"/api/patients/{patient}/versions/nope")).status_code == 404
     assert fake_llm.calls == []
+
+
+async def test_the_served_definition_carries_the_free_text_questions_for_the_web_form():
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        definition = (await http.get("/api/questionnaire/definition")).json()
+    kinds = {q["id"]: (q["number"], q["kind"]) for s in definition["sections"] for q in s["questions"]}
+    assert kinds["diagnosis"] == (6, "textarea") and kinds["diagnosis_when"] == (7, "text")
+    assert kinds["treatments"] == (8, "textarea") and kinds["medicines"] == (9, "textarea")
+    assert kinds["allergies"] == (11, "textarea") and kinds["other_illnesses"] == (12, "textarea")

@@ -7,14 +7,14 @@ street address, labs, biomarkers, stage, histology, contraception.
 
 `use` says where an answer goes:
   fact        structured; mapped to a Patient-reported Fact here, in code
-  free_text   rendered into the Document; the Intake agent drafts Facts from it (ticket #8)
+  free_text   rendered into the Document; the Intake agent drafts Facts from it (free_text_pages)
   respondent  who is answering; stored with the Document, never a Fact
   preference  search preference (postcode, travel); never rendered, never a Fact, never seen by a model
 """
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, Literal
 
@@ -103,16 +103,18 @@ DEFINITION = Questionnaire(DEFINITION_VERSION, (
     Section("treatment", "Treatment so far", (
         Question("treatments", 8, "What treatments have you had, and roughly when?",
                  "What treatments have they had, and roughly when?", "textarea", "free_text",
-                 help="For example chemotherapy, radiotherapy, surgery, immunotherapy or targeted therapy."),
+                 help="For example chemotherapy, radiotherapy, surgery, immunotherapy or targeted therapy. "
+                      'Rough dates such as "chemo ended around March 2025" are fine.'),
     )),
     Section("medicines", "Medicines now", (
         Question("medicines", 9, "What medicines do you take now?", "What medicines do they take now?",
-                 "textarea", "free_text"),
+                 "textarea", "free_text", help="One per line. Include the dose if you know it."),
     )),
     Section("allergies", "Allergies", (
         Question("has_allergies", 10, "Do you have any allergies?", "Do they have any allergies?", "single", "fact",
                  YES_NO),
-        Question("allergies", 11, "What are you allergic to?", "What are they allergic to?", "textarea", "free_text"),
+        Question("allergies", 11, "What are you allergic to?", "What are they allergic to?", "textarea", "free_text",
+                 help="And what happens, for example a rash."),
     )),
     Section("other_health", "Other health", (
         Question("other_illnesses", 12, "Do you have any other major illnesses?",
@@ -190,20 +192,50 @@ def normalise(answers: dict[str, Any]) -> dict[str, Any]:
     return kept
 
 
-def render(answers: dict[str, Any], respondent: Respondent) -> tuple[Page, ...]:
-    """One page per section that goes into the Document, every question listed with its number."""
+def _pages(answers: dict[str, Any], respondent: Respondent, uses: tuple[QuestionUse, ...],
+           answered_only: bool) -> tuple[Page, ...]:
+    """Pages numbered as in the full Document (one per section with fact or free-text questions), keeping only
+    the questions with a use in `uses`. Sections left with no question are dropped from the result."""
     answers = normalise(answers)
     pages = []
+    number = 0
     for section in DEFINITION.sections:
         qs = [q for q in section.questions if q.use in ("fact", "free_text")]
         if not qs:
             continue
+        number += 1
+        shown = [q for q in qs if q.use in uses and (q.id in answers or not answered_only)]
+        if not shown:
+            continue
         lines = [f"Intake questionnaire: {section.title}"]
-        for q in qs:
+        for q in shown:
             answer = _answer_text(q, answers[q.id]) if q.id in answers else "(not answered)"
             lines += [f"{q.ref}. {q.wording(respondent)}", f"Answer: {answer}"]
-        pages.append(Page(number=len(pages) + 1, text="\n".join(lines)))
+        pages.append(Page(number=number, text="\n".join(lines)))
     return tuple(pages)
+
+
+def render(answers: dict[str, Any], respondent: Respondent) -> tuple[Page, ...]:
+    """One page per section that goes into the Document, every question listed with its number."""
+    return _pages(answers, respondent, ("fact", "free_text"), answered_only=False)
+
+
+def free_text_pages(answers: dict[str, Any], respondent: Respondent) -> tuple[Page, ...]:
+    """What the Intake agent reads: only the answered free-text questions, each page keeping its Document page
+    number so the Agent's citations point into the full Document. No structured answer, preference or
+    Respondent choice is in it. Empty when no free-text question was answered (then no model call is made)."""
+    return _pages(answers, respondent, ("free_text",), answered_only=True)
+
+
+# Free-text question → the resource its Facts always have, whatever the model proposed.
+_FREE_TEXT_RESOURCES: dict[str, FactResource] = {"allergies": FactResource.ALLERGY_INTOLERANCE}
+
+
+def settle_free_text(draft: DraftFact) -> DraftFact:
+    """Code has the last word on what a free-text answer is about: an allergy answer is an AllergyIntolerance."""
+    q = next((q for q in DEFINITION.questions() if q.ref == draft.question), None)
+    resource = _FREE_TEXT_RESOURCES.get(q.id) if q else None
+    return replace(draft, resource=resource) if resource else draft
 
 
 def structured_drafts(answers: dict[str, Any], respondent: Respondent, pages: tuple[Page, ...],

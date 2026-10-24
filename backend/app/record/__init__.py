@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from dataclasses import replace
 from typing import Any
 
 from app import trace
@@ -68,10 +69,11 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
                                respondent: Respondent) -> IngestOutcome:
     """A completed Intake questionnaire becomes a Document (one page per section, each answer under its
     question number; Respondent stored with the Document) and goes through the ingest loop (ADR 0003).
-    Structured answers map to Patient-reported Facts in code, with no model call. Raises InvalidAnswers
-    before anything is stored if an answer does not fit its question. Idempotent on identical answers.
-
-    Not yet (#8): free-text answers are rendered into the Document but drafted into no Facts."""
+    Structured answers map to Patient-reported Facts in code, with no model call. Free-text answers (diagnosis,
+    treatments, medicines, allergies, other illnesses) go through the Intake agent, which sees only those
+    answers; approximate dates are accepted as best estimates and the quote keeps the Respondent's words.
+    Raises InvalidAnswers before anything is stored if an answer does not fit its question. Idempotent on
+    identical answers."""
     if respondent not in ("patient", "other"):
         raise InvalidAnswers(f"respondent must be 'patient' or 'other', got {respondent!r}")
     pages = questionnaire.render(answers, respondent)
@@ -92,8 +94,9 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
         return Committed(await trace.latest_for_document(ctx.ui_reader, h) or trace.new_id(), existing)
     run_id = trace.new_id()
     await trace.open(ctx.writer, run_id, "ingest", patient_id=patient_id, document_hash=h)
+    free_text = replace(doc, pages=questionnaire.free_text_pages(answers, respondent))
     return await loop.run_ingest(ctx, doc, run_id, ctx.settings.intake_attempts,
-                                 drafter=loop.structured_drafter(drafts))
+                                 drafter=loop.questionnaire_drafter(drafts, free_text, questionnaire.settle_free_text))
 
 
 def questionnaire_definition() -> Questionnaire:
