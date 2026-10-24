@@ -60,13 +60,13 @@ async def test_a_committed_questionnaire_rescans_and_lists_ranked_cited_verdicts
         assert (await http.get(f"/api/patients/{patient}/versions/{vid}/verdicts/NCT0")).status_code == 404
 
 
-async def test_an_upload_that_commits_a_new_version_rescans_it(clean_db, tmp_path):
+async def test_an_added_document_that_commits_a_new_version_rescans_it(clean_db, tmp_path):
     from dataclasses import replace
 
     from app import record
     from app.config import Settings
     from tests.conftest import ADMIN_DSN, make_ctx
-    from tests.record.test_document_upload import REFERRAL, REFERRAL_FACTS
+    from tests.record.test_adding_documents import REFERRAL, REFERRAL_FACTS
 
     judge = matcher_citing({})
 
@@ -82,9 +82,9 @@ async def test_an_upload_that_commits_a_new_version_rescans_it(clean_db, tmp_pat
             "definition_version": record.questionnaire_definition().version, "respondent": "patient",
             "answers": {"sex": "female"}})
 
-        upload = await http.post(f"/api/patients/{patient}/documents",
+        added = await http.post(f"/api/patients/{patient}/documents",
                                  files={"file": ("referral.pdf", REFERRAL, "application/pdf")})
-        run = (await http.get(f"/api/runs/{upload.json()['run_id']}")).json()
+        run = (await http.get(f"/api/runs/{added.json()['run_id']}")).json()
         assert run["state"]["version_number"] == 2
         v2 = run["state"]["profile_version_id"]
 

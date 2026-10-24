@@ -190,7 +190,7 @@ class WorldModel:
     # ---- the single append path: store first, then fold ----
 
     async def _append(self, kind: EventKind, payload: Any, source: Provenance, summary: str) -> bool:
-        # One append at a time: seq is taken from memory, so concurrent writers (two uploads ingesting at once)
+        # One append at a time: seq is taken from memory, so concurrent writers (two added Documents ingesting at once)
         # would otherwise both claim the same seq.
         async with self._append_lock:
             return await self._append_one(kind, payload, source, summary)

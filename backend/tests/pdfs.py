@@ -1,4 +1,4 @@
-"""Tiny generated PDFs for upload tests: one text page per argument, one line per "\n". No real patient data."""
+"""Tiny generated PDFs for added-Document tests: one text page per argument, one line per "\n". No real patient data."""
 from __future__ import annotations
 
 

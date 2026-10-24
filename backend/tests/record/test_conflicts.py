@@ -12,7 +12,7 @@ from app import record
 from app.config import Settings
 from tests.conftest import ADMIN_DSN, make_ctx
 from tests.pdfs import make_pdf
-from tests.record.test_document_upload import by_document
+from tests.record.test_adding_documents import by_document
 
 REFERRAL = make_pdf(
     "Oncology referral letter\nDear colleague,",
@@ -51,7 +51,7 @@ async def _fully_active_patient(ctx):
     return patient, v1.version
 
 
-async def _upload(ctx, patient, name, content):
+async def _add(ctx, patient, name, content):
     registered = await record.register_document(ctx, patient, name, content)
     return registered.document.hash, await record.ingest(ctx, registered.document.hash)
 
@@ -60,7 +60,7 @@ async def test_a_letter_contradicting_the_questionnaire_waits_on_the_patient_wit
     ctx = conflict_ctx
     patient, v1 = await _fully_active_patient(ctx)
 
-    letter, outcome = await _upload(ctx, patient, "referral.pdf", REFERRAL)
+    letter, outcome = await _add(ctx, patient, "referral.pdf", REFERRAL)
 
     assert isinstance(outcome, record.AwaitingPatient)
     [conflict] = outcome.conflicts
@@ -76,8 +76,8 @@ async def test_a_letter_that_agrees_or_describes_another_time_commits_without_as
     ctx = conflict_ctx
     patient, _ = await _fully_active_patient(ctx)
 
-    _, agreeing = await _upload(ctx, patient, "review.pdf", AGREEING)
-    _, old = await _upload(ctx, patient, "old.pdf", OLD_LETTER)
+    _, agreeing = await _add(ctx, patient, "review.pdf", AGREEING)
+    _, old = await _add(ctx, patient, "old.pdf", OLD_LETTER)
 
     assert isinstance(agreeing, record.Committed) and agreeing.version.number == 2
     assert isinstance(old, record.Committed) and old.version.number == 3
@@ -86,7 +86,7 @@ async def test_a_letter_that_agrees_or_describes_another_time_commits_without_as
 async def test_ingesting_a_parked_document_again_returns_the_same_conflict_without_a_model_call(conflict_ctx):
     ctx = conflict_ctx
     patient, _ = await _fully_active_patient(ctx)
-    letter, parked = await _upload(ctx, patient, "referral.pdf", REFERRAL)
+    letter, parked = await _add(ctx, patient, "referral.pdf", REFERRAL)
     calls = len(ctx.llm.calls)
 
     again = await record.ingest(ctx, letter)
@@ -98,7 +98,7 @@ async def test_ingesting_a_parked_document_again_returns_the_same_conflict_witho
 async def test_accepting_the_letter_commits_its_value_as_the_next_version(conflict_ctx):
     ctx = conflict_ctx
     patient, v1 = await _fully_active_patient(ctx)
-    letter, parked = await _upload(ctx, patient, "referral.pdf", REFERRAL)
+    letter, parked = await _add(ctx, patient, "referral.pdf", REFERRAL)
     [conflict] = parked.conflicts
 
     outcome = await record.confirm(ctx, parked.run_id, [record.Resolution(conflict.id, "accept_draft")])
@@ -116,7 +116,7 @@ async def test_accepting_the_letter_commits_its_value_as_the_next_version(confli
 async def test_keeping_the_answer_drops_the_letters_value_but_commits_the_rest_of_the_letter(conflict_ctx):
     ctx = conflict_ctx
     patient, _ = await _fully_active_patient(ctx)
-    _, parked = await _upload(ctx, patient, "referral.pdf", REFERRAL)
+    _, parked = await _add(ctx, patient, "referral.pdf", REFERRAL)
 
     outcome = await record.confirm(ctx, parked.run_id, [record.Resolution(parked.conflicts[0].id, "keep_accepted")])
 
@@ -129,7 +129,7 @@ async def test_keeping_the_answer_drops_the_letters_value_but_commits_the_rest_o
 async def test_discarding_both_leaves_neither_value_in_the_next_version(conflict_ctx):
     ctx = conflict_ctx
     patient, _ = await _fully_active_patient(ctx)
-    _, parked = await _upload(ctx, patient, "referral.pdf", REFERRAL)
+    _, parked = await _add(ctx, patient, "referral.pdf", REFERRAL)
 
     outcome = await record.confirm(ctx, parked.run_id, [record.Resolution(parked.conflicts[0].id, "discard_both")])
 
@@ -150,7 +150,7 @@ async def test_a_partial_answer_keeps_waiting_on_the_rest_and_a_finished_run_can
     ctx = make_ctx(clean_db, by_document(Discharge=TWO_CONFLICTS_FACTS))
     ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
     patient, _ = await _fully_active_patient(ctx)
-    _, parked = await _upload(ctx, patient, "discharge.pdf", TWO_CONFLICTS)
+    _, parked = await _add(ctx, patient, "discharge.pdf", TWO_CONFLICTS)
     sex, ecog = sorted(parked.conflicts, key=lambda c: c.draft.subject != "sex assigned at birth")
 
     first = await record.confirm(ctx, parked.run_id, [record.Resolution(sex.id, "keep_accepted")])

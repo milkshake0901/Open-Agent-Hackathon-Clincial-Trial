@@ -1,4 +1,4 @@
-"""Seam 1 (spec #5): the record facade, for clinical Document uploads (#11). Uploads go through
+"""Seam 1 (spec #5): the record facade, for adding clinical Documents (#11). A Document goes through
 register_document (hash, pages, de-identification) and ingest (Intake ⇄ Critic, a scripted fake model here);
 observe the result through record.document, profile_version and the prompts the fake model captured.
 The PDFs are generated (tests/pdfs.py) and every name, number and address in them is invented."""
@@ -60,7 +60,7 @@ def by_document(**facts_by_marker):
 
 
 @pytest.fixture
-def upload_ctx(clean_db, tmp_path):
+def documents_ctx(clean_db, tmp_path):
     fake = by_document(referral=REFERRAL_FACTS, Pathology=BLOODS_FACTS)
     ctx = make_ctx(clean_db, fake)
     return replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
@@ -73,8 +73,8 @@ async def _patient_with_questionnaire(ctx) -> record.PatientId:
     return patient
 
 
-async def test_an_uploaded_pdf_becomes_a_document_with_deidentified_pages_and_creates_the_next_version(upload_ctx):
-    ctx = upload_ctx
+async def test_an_added_pdf_becomes_a_document_with_deidentified_pages_and_creates_the_next_version(documents_ctx):
+    ctx = documents_ctx
     patient = await _patient_with_questionnaire(ctx)
 
     registered = await record.register_document(ctx, patient, "referral.pdf", REFERRAL)
@@ -96,8 +96,8 @@ async def test_an_uploaded_pdf_becomes_a_document_with_deidentified_pages_and_cr
     assert {f.subject for f in version.facts} >= {"sex assigned at birth", "breast cancer", "ecog"}
 
 
-async def test_uploading_the_same_bytes_twice_is_deduplicated(upload_ctx):
-    ctx = upload_ctx
+async def test_adding_the_same_bytes_twice_is_deduplicated(documents_ctx):
+    ctx = documents_ctx
     patient = await _patient_with_questionnaire(ctx)
     first = await record.register_document(ctx, patient, "referral.pdf", REFERRAL)
     committed = await record.ingest(ctx, first.document.hash)
@@ -113,8 +113,8 @@ async def test_uploading_the_same_bytes_twice_is_deduplicated(upload_ctx):
     assert (await record.current_version(ctx, patient)).number == 2
 
 
-async def test_the_same_bytes_from_two_patients_are_two_documents(upload_ctx):
-    ctx = upload_ctx
+async def test_the_same_bytes_from_two_patients_are_two_documents(documents_ctx):
+    ctx = documents_ctx
     a, b = await _patient_with_questionnaire(ctx), await _patient_with_questionnaire(ctx)
 
     from_a = await record.register_document(ctx, a, "referral.pdf", REFERRAL)
@@ -125,8 +125,8 @@ async def test_the_same_bytes_from_two_patients_are_two_documents(upload_ctx):
     assert (await record.ingest(ctx, from_b.document.hash)).version.patient_id == b
 
 
-async def test_several_uploads_at_once_create_one_version_each(upload_ctx):
-    ctx = upload_ctx
+async def test_several_documents_added_at_once_create_one_version_each(documents_ctx):
+    ctx = documents_ctx
     patient = await _patient_with_questionnaire(ctx)
     referral = await record.register_document(ctx, patient, "referral.pdf", REFERRAL)
     bloods = await record.register_document(ctx, patient, "bloods.pdf", BLOODS)
@@ -140,8 +140,8 @@ async def test_several_uploads_at_once_create_one_version_each(upload_ctx):
     assert {"sex assigned at birth", "breast cancer", "ecog", "haemoglobin"} <= {f.subject for f in latest.facts}
 
 
-async def test_a_file_without_readable_text_is_refused_before_anything_is_stored(upload_ctx):
-    ctx = upload_ctx
+async def test_a_file_without_readable_text_is_refused_before_anything_is_stored(documents_ctx):
+    ctx = documents_ctx
     patient = await _patient_with_questionnaire(ctx)
 
     for content in (b"GIF89a not a pdf", make_pdf("")):
@@ -152,8 +152,8 @@ async def test_a_file_without_readable_text_is_refused_before_anything_is_stored
     assert ctx.llm.calls == []
 
 
-async def test_two_patients_uploading_at_the_same_time_each_get_their_next_version(upload_ctx):
-    ctx = upload_ctx
+async def test_two_patients_adding_documents_at_the_same_time_each_get_their_next_version(documents_ctx):
+    ctx = documents_ctx
     a, b = await _patient_with_questionnaire(ctx), await _patient_with_questionnaire(ctx)
     from_a = await record.register_document(ctx, a, "referral.pdf", REFERRAL)
     from_b = await record.register_document(ctx, b, "bloods.pdf", BLOODS)

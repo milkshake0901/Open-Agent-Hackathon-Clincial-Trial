@@ -8,7 +8,7 @@ Envelope on every event:
   event_id        stable_ids.event_id(actor, cause, index) → a duplicate append after a crash is ignored
   actor           which agent or rule produced it ("intake", "critic", "matcher", "evaluator", "rescan")
   causation_id    the event this one reacts to → the UI draws a causal tree, not a flat list
-  correlation_id  the run id the user started; one upload threads through ingest AND its Re-scan
+  correlation_id  the run id the user started; one added Document threads through ingest AND its Re-scan
   llm_call_ids    joins to llm_call (requested vs answered model, latency, tokens)
 
 World Model writes carry the run id in their provenance, so a trace links to the world changes it caused.

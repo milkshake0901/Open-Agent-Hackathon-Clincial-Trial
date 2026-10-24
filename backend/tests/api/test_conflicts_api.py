@@ -1,4 +1,4 @@
-"""HTTP smoke test of Conflicts: a contradicting upload's run waits on the patient, its Conflicts show both sides
+"""HTTP smoke test of Conflicts: a contradicting Document's run waits on the patient, its Conflicts show both sides
 with their Documents and pages, and confirming commits the next version and re-scans it. Behaviour is covered in
 tests/record/test_conflicts.py."""
 from __future__ import annotations
@@ -12,10 +12,10 @@ from app.config import Settings
 from app.main import app
 from tests.conftest import ADMIN_DSN, make_ctx
 from tests.record.test_conflicts import REFERRAL, REFERRAL_FACTS
-from tests.record.test_document_upload import by_document
+from tests.record.test_adding_documents import by_document
 
 
-async def test_a_parked_upload_shows_both_sides_and_confirming_commits_the_choice(clean_db, tmp_path):
+async def test_a_parked_document_shows_both_sides_and_confirming_commits_the_choice(clean_db, tmp_path):
     ctx = make_ctx(clean_db, by_document(referral=REFERRAL_FACTS))
     app.state.ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:

@@ -109,7 +109,7 @@ async def register_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[
                                  respondent: Respondent) -> Registered:
     """A completed Intake questionnaire becomes a Document (one page per section, each answer under its question
     number; Respondent stored with the Document; ADR 0003) and its Search preferences are stored. Ingest it with
-    ingest(), as an uploaded Document. Raises InvalidAnswers and NotFound before anything is stored. Answers identical
+    ingest(), as an added Document. Raises InvalidAnswers and NotFound before anything is stored. Answers identical
     to the latest accepted submission are that submission's Document (deduplicated)."""
     if respondent not in ("patient", "other"):
         raise InvalidAnswers(f"respondent must be 'patient' or 'other', got {respondent!r}")
@@ -235,14 +235,14 @@ class Registered:
 
 
 def document_hash(patient_id: PatientId, content: bytes) -> DocumentHash:
-    """Document hashes are global keys, so the patient is part of an upload's identity: the same bytes from two
-    patients are two Documents, and one patient's upload can never resolve to another patient's pages."""
+    """Document hashes are global keys, so the patient is part of an added Document's identity: the same bytes from two
+    patients are two Documents, and one patient's Document can never resolve to another patient's pages."""
     return DocumentHash(hashlib.sha256(f"document\n{patient_id}\n".encode() + content).hexdigest())
 
 
 async def register_document(ctx: Ctx, patient_id: PatientId, filename: str, content: bytes) -> Registered:
     """Hash content, parse pages, de-identify, persist document+pages. Idempotent on hash (per patient):
-    uploading the same bytes twice returns the existing Document and does not re-parse.
+    adding the same bytes twice returns the existing Document and does not re-parse.
     De-identified page text is what Citations display; raw bytes are kept only on disk (settings.raw_documents_dir).
     Raises UnreadableDocument (not a PDF, or no text layer) and NotFound before anything is stored."""
     if not await repo.patient_exists(ctx.ui_reader, patient_id):
@@ -268,7 +268,7 @@ _patient_locks: dict[PatientId, asyncio.Lock] = {}
 
 def _patient_lock(patient_id: PatientId) -> asyncio.Lock:
     """One ingest at a time per patient (in this process): each commit numbers its version from the previous
-    one, so several uploads in one go become v2, v3, ... in turn instead of racing for the same number."""
+    one, so several Documents added in one go become v2, v3, ... in turn instead of racing for the same number."""
     return _patient_locks.setdefault(patient_id, asyncio.Lock())
 
 
@@ -284,7 +284,7 @@ async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None 
     Committed for it without calling any model. If a run for this document is already
     AwaitingPatient, returns that AwaitingPatient (rehydrated from the run log, no model call).
 
-    `run_id` lets the caller open the run first (an upload or a questionnaire submission answers 202 with it); it
+    `run_id` lets the caller open the run first (adding a Document or submitting a questionnaire answers 202 with it); it
     is opened here otherwise. Ingests for one patient run one at a time. An Intake questionnaire's structured
     answers are drafted in code and only its free-text answers reach the Intake agent (record.loop.drafter_for).
     """

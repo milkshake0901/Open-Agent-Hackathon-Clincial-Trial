@@ -1,6 +1,6 @@
 "use client";
 
-// Optional clinical Document uploads after the questionnaire. Every file becomes its own Document and Profile
+// Optional clinical Documents (letters, reports) added after the questionnaire. Every file becomes its own Document and Profile
 // version on the server; however many are added at once, this shows one "Checking N documents" state, then
 // one line per file.
 
@@ -13,11 +13,11 @@ type Result =
   | { kind: "needs_answer"; runId: string }
   | { kind: "failed"; reason: string };
 
-type Batch = { files: string[]; done: number } | null;
+type Batch = { names: string[]; done: number } | null;
 
 async function check(patientId: string, file: File): Promise<Result> {
   try {
-    const accepted = await api.upload(patientId, file);
+    const accepted = await api.addDocument(patientId, file);
     const run = await followRun(accepted.run_id);
     const state = run.state!;
     if (state.phase === "committed" && state.version_number !== null)
@@ -31,7 +31,7 @@ async function check(patientId: string, file: File): Promise<Result> {
 
 const plural = (n: number) => `${n} document${n === 1 ? "" : "s"}`;
 
-export function DocumentUploads({ patientId }: { patientId: string }) {
+export function AddDocuments({ patientId }: { patientId: string }) {
   const [picked, setPicked] = useState<File[]>([]);
   const [batch, setBatch] = useState<Batch>(null);
   const [results, setResults] = useState<{ name: string; result: Result }[]>([]);
@@ -41,7 +41,7 @@ export function DocumentUploads({ patientId }: { patientId: string }) {
     if (!picked.length || batch) return;
     const files = picked;
     const form = e.currentTarget;
-    setBatch({ files: files.map((f) => f.name), done: 0 });
+    setBatch({ names: files.map((f) => f.name), done: 0 });
     const checked = await Promise.all(
       files.map(async (f) => {
         const result = await check(patientId, f);
@@ -56,8 +56,8 @@ export function DocumentUploads({ patientId }: { patientId: string }) {
   }
 
   return (
-    <section aria-labelledby="uploads-heading" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
-      <h2 id="uploads-heading" className="text-lg font-semibold">Have letters or reports?</h2>
+    <section aria-labelledby="documents-heading" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
+      <h2 id="documents-heading" className="text-lg font-semibold">Have letters or reports?</h2>
       <p className="text-muted">
         Adding them makes results more accurate. This step is optional. PDF files only; names, addresses and record
         numbers are removed before anything reads them.
@@ -75,10 +75,10 @@ export function DocumentUploads({ patientId }: { patientId: string }) {
       <div role="status" aria-live="polite">
         {batch && (
           <div className="flex flex-col gap-2">
-            <p className="font-medium">Checking {plural(batch.files.length)}…</p>
-            <progress value={batch.done} max={batch.files.length} className="w-full accent-[var(--accent)]"
-                      aria-label={`${batch.done} of ${plural(batch.files.length)} checked`} />
-            <p className="text-sm text-muted">{batch.done} of {batch.files.length} checked</p>
+            <p className="font-medium">Checking {plural(batch.names.length)}…</p>
+            <progress value={batch.done} max={batch.names.length} className="w-full accent-[var(--accent)]"
+                      aria-label={`${batch.done} of ${plural(batch.names.length)} checked`} />
+            <p className="text-sm text-muted">{batch.done} of {batch.names.length} checked</p>
           </div>
         )}
       </div>

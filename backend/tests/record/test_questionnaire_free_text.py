@@ -134,7 +134,7 @@ async def test_when_the_model_is_unavailable_the_submission_is_rejected_not_cras
 
 
 async def test_a_registered_questionnaire_is_ingested_later_like_any_document(clean_db):
-    # The HTTP shell registers the submission now and ingests it in the background, as it does an upload.
+    # The HTTP shell registers the submission now and ingests it in the background, as it does an added Document.
     from tests.conftest import make_ctx
     fake = scripted(MODEL_FACTS)
     ctx = make_ctx(clean_db, fake)

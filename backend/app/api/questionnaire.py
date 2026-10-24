@@ -39,7 +39,7 @@ async def latest(pid: str, ctx: Ctx = Depends(get_ctx)):
 @router.post("/patients/{pid}/questionnaire", status_code=202, response_model=QuestionnaireAccepted)
 async def submit(pid: str, body: QuestionnaireSubmission, background: BackgroundTasks, ctx: Ctx = Depends(get_ctx)):
     """record.register_questionnaire → 202 {document_hash, run_id, deduplicated, return_token}; background:
-    record.ingest → on Committed, matching.rescan with the same correlation id, exactly like an upload. The UI
+    record.ingest → on Committed, matching.rescan with the same correlation id, exactly like an added Document. The UI
     follows the run (GET /runs/{run_id}) to its outcome."""
     if body.definition_version != record.questionnaire_definition().version:
         raise HTTPException(422, f"questionnaire definition {body.definition_version} is out of date")

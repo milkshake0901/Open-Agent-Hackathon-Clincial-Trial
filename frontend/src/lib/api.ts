@@ -131,7 +131,7 @@ export type VersionOut = {
   current: Record<string, string>;
 };
 
-export type UploadAccepted = { document_hash: string; run_id: string; deduplicated: boolean };
+export type DocumentAccepted = { document_hash: string; run_id: string; deduplicated: boolean };
 
 export type IngestPhase = "started" | "drafting" | "awaiting_patient" | "committed" | "rejected";
 
@@ -199,10 +199,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  upload: (patientId: string, file: File) => {
+  addDocument: (patientId: string, file: File) => {
     const body = new FormData();
     body.append("file", file);
-    return call<UploadAccepted>(`/patients/${encodeURIComponent(patientId)}/documents`, { method: "POST", body });
+    return call<DocumentAccepted>(`/patients/${encodeURIComponent(patientId)}/documents`, { method: "POST", body });
   },
   run: (runId: string) => call<RunOut>(`/runs/${encodeURIComponent(runId)}`),
   conflicts: (runId: string) =>

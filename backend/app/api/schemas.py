@@ -8,7 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 
-class UploadAccepted(BaseModel):
+class DocumentAccepted(BaseModel):
     document_hash: str
     run_id: str
     deduplicated: bool
@@ -120,8 +120,8 @@ class LatestAnswersOut(BaseModel):
     answers: dict[str, Any]
 
 
-class QuestionnaireAccepted(UploadAccepted):
-    """Like an upload: the Document now, its run to follow (GET /runs/{run_id}) for the outcome."""
+class QuestionnaireAccepted(DocumentAccepted):
+    """Like an added Document: the Document now, its run to follow (GET /runs/{run_id}) for the outcome."""
     return_token: str | None = None   # first submission only; the frontend shows it as /return/{token}
 
 

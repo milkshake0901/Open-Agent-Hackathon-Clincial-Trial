@@ -9,7 +9,7 @@ from typing import Literal, NewType
 from app.trace import RunId
 
 PatientId = NewType("PatientId", str)
-DocumentHash = NewType("DocumentHash", str)      # sha256 hex of the uploaded bytes
+DocumentHash = NewType("DocumentHash", str)      # sha256 hex identifying the Document (its bytes and patient, or a questionnaire submission)
 FactId = NewType("FactId", str)
 ProfileVersionId = NewType("ProfileVersionId", str)
 ConflictId = NewType("ConflictId", str)

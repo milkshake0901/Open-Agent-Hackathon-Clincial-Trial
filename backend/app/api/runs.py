@@ -27,7 +27,7 @@ def _events(log: trace.RunLog) -> list[dict]:
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str, ctx: Ctx = Depends(get_ctx)):
     """{run_id, kind, head, state, events}. An ingest run's state.phase is started | drafting | awaiting_patient |
-    committed | rejected; the upload page polls this until every run it started has ended."""
+    committed | rejected; the page adding Documents polls this until every run it started has ended."""
     log = await _read(ctx, run_id)
     state = None
     if log.kind == "ingest":
@@ -86,7 +86,7 @@ def submission_accepted(outcome: record.IngestOutcome) -> IngestOutcomeOut:
 @router.post("/runs/{run_id}/confirm", status_code=202, response_model=IngestOutcomeOut)
 async def confirm(run_id: str, body: ConfirmIn, ctx: Ctx = Depends(get_ctx)):
     """Patient resolves Conflicts on a parked ingest run → record.confirm. Committed re-scans the new version under
-    the run's correlation id, as an upload does. 404 unknown run, 409 not awaiting the patient, 422 unknown Conflict."""
+    the run's correlation id, as an added Document does. 404 unknown run, 409 not awaiting the patient, 422 unknown Conflict."""
     try:
         outcome = await record.confirm(ctx, trace.RunId(run_id), [
             record.Resolution(record.ConflictId(r.conflict_id), r.choice) for r in body.resolutions])

@@ -6,24 +6,24 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFi
 
 from app import matching, record, trace
 from app.api.deps import get_ctx
-from app.api.schemas import UploadAccepted
+from app.api.schemas import DocumentAccepted
 from app.ctx import Ctx
 from app.trace.events import RunRejected
 
 router = APIRouter(tags=["documents"])
 log = logging.getLogger(__name__)
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 
 
-@router.post("/patients/{pid}/documents", status_code=202, response_model=UploadAccepted)
-async def upload(pid: str, file: UploadFile, background: BackgroundTasks, ctx: Ctx = Depends(get_ctx)):
+@router.post("/patients/{pid}/documents", status_code=202, response_model=DocumentAccepted)
+async def add_document(pid: str, file: UploadFile, background: BackgroundTasks, ctx: Ctx = Depends(get_ctx)):
     """record.register_document → 202 {document_hash, run_id, deduplicated};
     background: record.ingest → on Committed, matching.rescan with the same correlation id.
-    Several files at once are several requests; the UI follows their runs together. A re-upload of the same bytes
+    Several files at once are several requests; the UI follows their runs together. Adding the same bytes again
     answers with the run that already handled them, unless that run was rejected, in which case it runs again."""
-    content = await file.read(MAX_UPLOAD_BYTES + 1)
-    if len(content) > MAX_UPLOAD_BYTES:
+    content = await file.read(MAX_DOCUMENT_BYTES + 1)
+    if len(content) > MAX_DOCUMENT_BYTES:
         raise HTTPException(413, "the file is larger than 20 MB")
     try:
         registered = await record.register_document(ctx, record.PatientId(pid), file.filename or "document.pdf",
@@ -32,7 +32,7 @@ async def upload(pid: str, file: UploadFile, background: BackgroundTasks, ctx: C
         raise HTTPException(404, str(e))
     except record.UnreadableDocument as e:
         raise HTTPException(422, str(e))
-    return UploadAccepted(document_hash=registered.document.hash, run_id=await start_ingest(ctx, background, registered),
+    return DocumentAccepted(document_hash=registered.document.hash, run_id=await start_ingest(ctx, background, registered),
                           deduplicated=registered.deduplicated)
 
 

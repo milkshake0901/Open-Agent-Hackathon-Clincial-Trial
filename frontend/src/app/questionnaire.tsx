@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DiagnosisCheckCard } from "./diagnosis-check";
 import { ReturnLink } from "./return-link";
-import { DocumentUploads } from "./uploads";
+import { AddDocuments } from "./documents";
 import {
   api, followRun, trialsHref, type Answers, type Question, type Questionnaire, type Respondent, type VersionDiff,
   type VersionOut,
@@ -114,7 +114,7 @@ export function QuestionnaireForm() {
         {patientId && answers.diagnosis && <DiagnosisCheckCard key={version.id} patientId={patientId} />}
         <ProfileSummary version={version} changes={changes} patientId={patientId} />
         {returnToken && <ReturnLink token={returnToken} />}
-        {patientId && <DocumentUploads patientId={patientId} />}
+        {patientId && <AddDocuments patientId={patientId} />}
         {editError && <p role="alert" className="text-red-700 dark:text-red-400">{editError}</p>}
         <button type="button" onClick={onEdit} disabled={loadingEdit}
                 className="min-h-12 self-start rounded-lg border border-border px-5 text-base font-semibold disabled:opacity-60">
