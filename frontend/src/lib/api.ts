@@ -48,7 +48,27 @@ export type CriterionResultOut = {
   citation: VerdictCitation | null;
 };
 
-export type DoctorQuestion = { criterion_id: string; nct_id: string; subject: string; text: string; unblocks: string[] };
+// criterion_id and nct_id are null on the patient-level diagnosis question (subject "diagnosis").
+export type DoctorQuestion = {
+  criterion_id: string | null;
+  nct_id: string | null;
+  subject: string;
+  text: string;
+  unblocks: string[];
+};
+
+export type DiagnosisCheck = {
+  id: string;
+  text: string;
+  suggested_term: string | null;
+  confidence: number;
+  status: "proposed" | "confirmed" | "rejected" | "not_sure" | "unclear";
+  condition: string | null;
+  needs_gp: boolean;
+  ask_again: boolean;
+  message: string;
+  rescan: { judged: number; failed: number } | null;
+};
 
 // Asks the Respondent to answer a questionnaire question again, more exactly; answering resubmits the questionnaire.
 export type RespondentQuestion = {
@@ -192,6 +212,16 @@ export const api = {
   verdicts: (patientId: string, versionId: string) =>
     call<{ profile_version_id: string; verdicts: VerdictOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
+    ),
+  checkDiagnosis: (patientId: string, text?: string) =>
+    call<DiagnosisCheck>(`/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check`, {
+      method: "POST",
+      body: JSON.stringify(text ? { text } : {}),
+    }),
+  answerDiagnosis: (patientId: string, checkId: string, answer: "yes" | "no" | "not_sure") =>
+    call<DiagnosisCheck>(
+      `/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check/${encodeURIComponent(checkId)}`,
+      { method: "POST", body: JSON.stringify({ answer }) },
     ),
   doctorQuestions: (patientId: string, versionId: string) =>
     call<DoctorQuestion[]>(

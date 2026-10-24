@@ -47,6 +47,51 @@ class Document:
         return self.respondent is not None
 
 
+DiagnosisAnswer = Literal["yes", "no", "not_sure"]
+DiagnosisStatus = Literal["proposed", "confirmed", "rejected", "not_sure", "unclear"]
+
+GP_MESSAGE = ("We couldn't be sure how to describe the diagnosis. Please check the exact name with the GP; "
+              "we've added it to the questions for the doctor.")
+
+
+@dataclass(frozen=True)
+class DiagnosisCheck:
+    """A condition term proposed for the free-text diagnosis, and the Respondent's answer (#14). Not a Fact: the
+    diagnosis Fact keeps the Respondent's words as its quote; a confirmed term only selects which Trials are judged.
+    status: proposed (awaiting yes / no / not sure), confirmed, rejected ("no": ask again), not_sure, or unclear
+    (the model could not propose a term with confidence, so none was offered)."""
+    id: str
+    patient_id: PatientId
+    text: str
+    suggested_term: str | None
+    confidence: float
+    status: DiagnosisStatus
+
+    @property
+    def condition(self) -> str | None:
+        """The confirmed condition term that drives Trial selection; None unless confirmed."""
+        return self.suggested_term if self.status == "confirmed" else None
+
+    @property
+    def needs_gp(self) -> bool:
+        """Tell the Respondent to check with their GP; a Doctor question is raised for the diagnosis."""
+        return self.status in ("not_sure", "unclear")
+
+    @property
+    def ask_again(self) -> bool:
+        return self.status == "rejected"
+
+    @property
+    def message(self) -> str:
+        if self.needs_gp:
+            return GP_MESSAGE
+        if self.status == "proposed":
+            return f"We understood this as {self.suggested_term}. Is that right?"
+        if self.status == "rejected":
+            return "Sorry about that. Could you describe the diagnosis in other words?"
+        return f"Thanks. We'll look for trials for {self.suggested_term}."
+
+
 @dataclass(frozen=True)
 class SearchPreferences:
     """Kept on the patient, never as Facts (ADR 0003): never rendered into a Document, never in a prompt.

@@ -62,12 +62,29 @@ class SyncReport:
     source: str
 
 
-__all__ = ["sync", "load_snapshot", "trial", "criteria", "sites", "active_trials", "Trial", "Criterion", "Site",
-           "CriterionKind",
+__all__ = ["sync", "load_snapshot", "trial", "criteria", "sites", "active_trials", "studies_condition", "Trial",
+           "Criterion", "Site", "CriterionKind",
            "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES"]
 
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
 ACTIVE_STATUSES = ("RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION")
+
+_STOP_WORDS = frozenset({"of", "the", "and", "with", "in", "a", "an"})
+
+
+def _words(text: str) -> frozenset[str]:
+    import re
+    return frozenset(w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOP_WORDS)
+
+
+def studies_condition(trial: Trial, term: str) -> bool:
+    """Does the Trial list this condition (#14: a confirmed diagnosis term selects which snapshot Trials are judged)?
+    Word-set containment either way against each listed condition, ignoring case, punctuation and filler words:
+    "lung cancer" and "non-small cell lung cancer stage iv" both match "Non-Small Cell Lung Cancer"; "breast cancer"
+    does not. No MeSH or synonym expansion yet (a live condition search is trials.sync)."""
+    want = _words(term)
+    return bool(want) and any(want <= have or have <= want for have in map(_words, trial.conditions) if have)
+
 
 # Submodules import the types above; imported here (after them) so the `criteria` function below wins the name.
 from app.trials import criteria as splitting, ctgov, repo  # noqa: E402

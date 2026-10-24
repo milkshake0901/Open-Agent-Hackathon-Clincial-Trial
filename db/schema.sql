@@ -1,7 +1,7 @@
 -- db/schema.sql — Postgres for the app (our own container, separate from Zetaris's internal postgres).
 -- One writer per table:
 --   patient, document, document_page,
---   search_preference, return_token                     app.record.repo
+--   search_preference, return_token, diagnosis_check    app.record.repo
 --   wm_event, wm_audit                                   app.worldmodel.store.PgEventStore (engine log)
 --   fact, profile_version*, trial, criterion,
 --   verdict, criterion_result, doctor_question, respondent_question          app.worldmodel.projector, inside the wm_event append
@@ -29,6 +29,22 @@ CREATE TABLE return_token (               -- private return link; only the sha25
   patient_id    text NOT NULL UNIQUE REFERENCES patient(id),   -- one per patient, issued on first submission
   created_at    timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE diagnosis_check (            -- proposed condition terms for the free-text diagnosis and the Respondent's answer (#14);
+                                          -- NOT Facts: the diagnosis Fact keeps the Respondent's words as its quote
+  id             text PRIMARY KEY,
+  patient_id     text NOT NULL REFERENCES patient(id),
+  text           text NOT NULL,           -- the words the term was proposed from (the answer, or a re-wording after "no")
+  suggested_term text,                    -- NULL when the model could not propose one with confidence
+  confidence     real NOT NULL,
+  status         text NOT NULL CHECK (status IN ('proposed','confirmed','rejected','not_sure','unclear')),
+  created_at     timestamptz NOT NULL,
+  answered_at    timestamptz,
+  settled_seq    bigint                   -- set from diagnosis_check_settled when confirmed / not_sure / unclear; the
+                                          -- latest settled check holds (a clock can repeat, a sequence cannot)
+);
+CREATE SEQUENCE diagnosis_check_settled;
+CREATE INDEX diagnosis_check_by_patient ON diagnosis_check (patient_id, settled_seq);
 
 CREATE TABLE document (
   hash          text PRIMARY KEY,         -- sha256 of uploaded bytes; identity per GLOSSARY

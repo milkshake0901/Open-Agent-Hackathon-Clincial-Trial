@@ -9,7 +9,7 @@ import json
 from datetime import datetime, time, timezone
 
 from app.record.types import (
-    Document, DocumentHash, Fact, FactId, FactResource, Page, PatientId, ProfileVersion, ProfileVersionId,
+    DiagnosisCheck, Document, DocumentHash, Fact, FactId, FactResource, Page, PatientId, ProfileVersion, ProfileVersionId,
     SearchPreferences,
 )
 from app.sql.reader import SqlReader
@@ -25,6 +25,29 @@ async def search_preferences(reader: SqlReader, patient_id: PatientId) -> Search
                               "WHERE patient_id = $1", (patient_id,))
     r = rows[0] if rows else {}
     return SearchPreferences(postcode=r.get("postcode"), max_travel_km=r.get("max_travel_km"), contact=r.get("contact"))
+
+
+_CHECK_COLS = "id, patient_id, text, suggested_term, confidence, status"
+
+
+def _check(r: dict) -> DiagnosisCheck:
+    return DiagnosisCheck(id=r["id"], patient_id=PatientId(r["patient_id"]), text=r["text"],
+                          suggested_term=r["suggested_term"], confidence=float(r["confidence"]), status=r["status"])
+
+
+async def diagnosis_check(reader: SqlReader, check_id: str) -> DiagnosisCheck | None:
+    rows = await reader.fetch(f"SELECT {_CHECK_COLS} FROM {reader.table('diagnosis_check')} WHERE id = $1",
+                              (check_id,))
+    return _check(rows[0]) if rows else None
+
+
+async def settled_diagnosis_check(reader: SqlReader, patient_id: PatientId) -> DiagnosisCheck | None:
+    """The latest check that settled the diagnosis (confirmed, not sure, or unclear). Proposed and rejected ones
+    settle nothing: the Respondent has still to answer, or is being asked again."""
+    rows = await reader.fetch(
+        f"SELECT {_CHECK_COLS} FROM {reader.table('diagnosis_check')} WHERE patient_id = $1 "
+        "AND settled_seq IS NOT NULL ORDER BY settled_seq DESC LIMIT 1", (patient_id,))
+    return _check(rows[0]) if rows else None
 
 
 async def patient_for_token_hash(reader: SqlReader, token_hash: str) -> PatientId | None:
@@ -125,6 +148,24 @@ async def insert_return_token(tx: Tx, token_hash: str, patient_id: PatientId) ->
     """False if the patient already has a return token (one per patient)."""
     rows = await tx.fetch("INSERT INTO return_token (token_hash, patient_id) VALUES ($1, $2) "
                           "ON CONFLICT (patient_id) DO NOTHING RETURNING patient_id", (token_hash, patient_id))
+    return bool(rows)
+
+
+async def insert_diagnosis_check(tx: Tx, check: DiagnosisCheck, at: datetime) -> None:
+    await tx.execute(
+        "INSERT INTO diagnosis_check (id, patient_id, text, suggested_term, confidence, status, created_at, "
+        "answered_at, settled_seq) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, "
+        "CASE WHEN $6 = 'unclear' THEN nextval('diagnosis_check_settled') END)",
+        (check.id, check.patient_id, check.text, check.suggested_term, check.confidence, check.status, at,
+         at if check.status != "proposed" else None))
+
+
+async def answer_diagnosis_check(tx: Tx, check_id: str, status: str, at: datetime) -> bool:
+    """Sets the answer once: False if the check was not awaiting one."""
+    rows = await tx.fetch(
+        "UPDATE diagnosis_check SET status = $2, answered_at = $3, settled_seq = CASE WHEN $2 = 'rejected' THEN NULL "
+        "ELSE nextval('diagnosis_check_settled') END WHERE id = $1 AND status = 'proposed' RETURNING id",
+        (check_id, status, at))
     return bool(rows)
 
 
