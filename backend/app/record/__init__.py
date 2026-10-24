@@ -6,17 +6,15 @@ Postgres transactions, Zetaris read-after-write waits.
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import secrets
 import uuid
 from dataclasses import dataclass, replace
-from pathlib import Path, PurePath
 from typing import Any
 
 from app import trace
 from app.ctx import Ctx
-from app.record import diagnosis as condition_terms, loop, questionnaire, repo
+from app.record import diagnosis as condition_terms, loop, questionnaire, repo, storage
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
 from app.record.pdf import UnreadableDocument, to_pages
@@ -66,6 +64,11 @@ class NotFound(LookupError):
     """Unknown patient, Document or Profile version id."""
 
 
+async def _require_patient(ctx: Ctx, patient_id: PatientId) -> None:
+    if not await repo.patient_exists(ctx.ui_reader, patient_id):
+        raise NotFound(f"patient {patient_id}")
+
+
 async def create_patient(ctx: Ctx, label: str) -> PatientId:
     """A new patient with a de-identified display label (never a real name)."""
     patient_id = PatientId(f"pt_{uuid.uuid4().hex[:16]}")
@@ -82,8 +85,7 @@ async def issue_return_link(ctx: Ctx, patient_id: PatientId) -> str | None:
     """The private, unguessable token behind the patient's return link (no accounts or passwords). Issued
     once per patient, on the first submission; None if the patient already has one. Only its hash is
     stored, so it cannot be shown again."""
-    if not await repo.patient_exists(ctx.ui_reader, patient_id):
-        raise NotFound(f"patient {patient_id}")
+    await _require_patient(ctx, patient_id)
     token = secrets.token_urlsafe(32)
     async with ctx.writer.transaction() as tx:
         issued = await repo.insert_return_token(tx, _token_hash(token), patient_id)
@@ -116,8 +118,7 @@ async def register_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[
         raise InvalidAnswers(f"respondent must be 'patient' or 'other', got {respondent!r}")
     pages = questionnaire.render(answers, respondent)
     preferences = questionnaire.search_preferences(answers)
-    if not await repo.patient_exists(ctx.ui_reader, patient_id):
-        raise NotFound(f"patient {patient_id}")
+    await _require_patient(ctx, patient_id)
     previous = await repo.latest_questionnaire(ctx.ui_reader, patient_id)
     h = questionnaire.document_hash(patient_id, pages, respondent, previous)
     existing = await repo.document(ctx.ui_reader, h)
@@ -167,8 +168,7 @@ async def set_search_preferences(ctx: Ctx, patient_id: PatientId, answers: dict[
     if others:
         raise InvalidAnswers(f"not search preferences: {others}")
     changes = questionnaire.search_preferences(answers)
-    if not await repo.patient_exists(ctx.ui_reader, patient_id):
-        raise NotFound(f"patient {patient_id}")
+    await _require_patient(ctx, patient_id)
     async with ctx.writer.transaction() as tx:
         await repo.upsert_search_preferences(tx, patient_id, changes)
     return await repo.search_preferences(ctx.ui_reader, patient_id)
@@ -181,8 +181,7 @@ async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = No
     otherwise nothing is offered and the check is `unclear`, which settles the diagnosis as needing the GP. What to
     say to the Respondent for each status is the HTTP shell's.
     Raises NotFound (unknown patient, or no diagnosis to check) and llm.LlmUnavailable (nothing stored)."""
-    if not await repo.patient_exists(ctx.ui_reader, patient_id):
-        raise NotFound(f"patient {patient_id}")
+    await _require_patient(ctx, patient_id)
     if text is None:
         answered = await latest_answers(ctx, patient_id)
         text = (answered.answers.get("diagnosis") if answered else None) or None
@@ -234,42 +233,24 @@ class Registered:
     deduplicated: bool    # this Document was already stored for this patient; nothing was parsed or stored
 
 
-def document_hash(patient_id: PatientId, content: bytes) -> DocumentHash:
-    """Document hashes are global keys, so the patient is part of an added Document's identity: the same bytes from two
-    patients are two Documents, and one patient's Document can never resolve to another patient's pages."""
-    return DocumentHash(hashlib.sha256(f"document\n{patient_id}\n".encode() + content).hexdigest())
-
-
 async def register_document(ctx: Ctx, patient_id: PatientId, filename: str, content: bytes) -> Registered:
     """Hash content, parse pages, de-identify, persist document+pages. Idempotent on hash (per patient):
     adding the same bytes twice returns the existing Document and does not re-parse.
     De-identified page text is what Citations display; raw bytes are kept only on disk (settings.raw_documents_dir).
     Raises UnreadableDocument (not a PDF, or no text layer) and NotFound before anything is stored."""
-    if not await repo.patient_exists(ctx.ui_reader, patient_id):
-        raise NotFound(f"patient {patient_id}")
-    h = document_hash(patient_id, content)
+    await _require_patient(ctx, patient_id)
+    h = storage.document_hash(patient_id, content)
     existing = await repo.document(ctx.ui_reader, h)
     if existing is not None:
         return Registered(existing, deduplicated=True)
     pages = deidentify(to_pages(content))
     now = ctx.now()
-    doc = Document(hash=h, patient_id=patient_id, filename=PurePath(filename.replace("\\", "/")).name or "document.pdf",
-                   pages=pages, uploaded_at=now.date())
-    raw = Path(ctx.settings.raw_documents_dir)
-    raw.mkdir(parents=True, exist_ok=True)
-    (raw / f"{h}.pdf").write_bytes(content)
+    doc = Document(hash=h, patient_id=patient_id, filename=storage.filename(filename), pages=pages,
+                   uploaded_at=now.date())
+    storage.keep_raw(ctx.settings.raw_documents_dir, h, content)
     async with ctx.writer.transaction() as tx:
         await repo.insert_document(tx, doc, uploaded_at=now)
     return Registered(doc, deduplicated=False)
-
-
-_patient_locks: dict[PatientId, asyncio.Lock] = {}
-
-
-def _patient_lock(patient_id: PatientId) -> asyncio.Lock:
-    """One ingest at a time per patient (in this process): each commit numbers its version from the previous
-    one, so several Documents added in one go become v2, v3, ... in turn instead of racing for the same number."""
-    return _patient_locks.setdefault(patient_id, asyncio.Lock())
 
 
 async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None = None) -> IngestOutcome:
@@ -300,7 +281,7 @@ async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None 
             return waiting
         run_id = trace.new_id()
     await trace.open(ctx.writer, run_id, "ingest", patient_id=doc.patient_id, document_hash=doc.hash)
-    async with _patient_lock(doc.patient_id):
+    async with loop.patient_lock(doc.patient_id):
         existing = await repo.version_for_document(ctx.ui_reader, doc.hash)
         if existing is not None:   # the caller's run ends where an earlier run for these bytes already did
             await trace.append(ctx.writer, run_id, ProfileCommitted(
@@ -326,7 +307,7 @@ async def confirm(ctx: Ctx, run_id: RunId, resolutions: list[Resolution]) -> Ing
     log = await trace.read(ctx.ui_reader, run_id)
     started = next(e.event for e in log.events if e.event.kind == "ingest.started")
     doc = await repo.document(ctx.ui_reader, DocumentHash(started.document_hash))
-    async with _patient_lock(doc.patient_id):
+    async with loop.patient_lock(doc.patient_id):
         return await loop.resume_after_confirm(ctx, doc, run_id, resolutions)
 
 

@@ -6,6 +6,7 @@ from those trace events on confirm(). Accepted Facts are committed through the W
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, dataclass, replace
 from datetime import date
 from typing import Awaitable, Callable
@@ -16,7 +17,7 @@ from app.record import critic, intake, questionnaire, repo
 from app.worldmodel import timeline
 from app.record.types import (
     AwaitingPatient, Committed, Conflict, ConflictId, Document, DocumentHash, DraftFact, Fact, FactId, FactResource,
-    Finding, FindingKind, IngestOutcome, ProfileVersion, Rejected, Resolution,
+    Finding, FindingKind, IngestOutcome, PatientId, ProfileVersion, Rejected, Resolution,
 )
 from app import trace
 from app.trace.events import (
@@ -24,6 +25,15 @@ from app.trace.events import (
     RunRejected,
 )
 from app.trace.state import IngestRunState, reduce_ingest
+
+
+_patient_locks: dict[PatientId, asyncio.Lock] = {}
+
+
+def patient_lock(patient_id: PatientId) -> asyncio.Lock:
+    """One ingest at a time per patient (in this process): each commit numbers its version from the previous
+    one, so several Documents added in one go become v2, v3, ... in turn instead of racing for the same number."""
+    return _patient_locks.setdefault(patient_id, asyncio.Lock())
 
 
 # ---- step results (closed set) ---------------------------------------------
