@@ -97,6 +97,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │
 ├── db/
 │   ├── schema.sql                Postgres tables, with the owner of each one noted at the top
+│   ├── migrations/               additive scripts for a database created from an older schema.sql
 │   └── zetaris_register.sql      registers our Postgres and ClinicalTrials.gov in Zetaris (to finish)
 │
 ├── docs/
@@ -130,7 +131,8 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 
 ```bash
 cp .env.example .env              # fill in Zetaris API key and Nightshift token
-docker compose up -d              # our Postgres with db/schema.sql
+docker compose up -d              # our Postgres with db/schema.sql (first start only)
+# A Postgres volume made from an older schema.sql: run each db/migrations/*.sql once, in order (see its header)
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest                  # boundary test passes; conformance fails until the engine exists
