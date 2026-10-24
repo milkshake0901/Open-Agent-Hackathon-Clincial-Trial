@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from app.matching import Verdict
     from app.record import Document, DraftFact, PatientId, ProfileVersion
     from app.trace import RunId
-    from app.trials import Criterion, Site, Trial
+    from app.trials import Criterion, TrialSite, Trial
     from app.worldmodel.engine import IngestReport, WorldModel
 
 
@@ -78,7 +78,7 @@ def trial_entity_id(nct_id: str) -> str:
     return f"trial:{nct_id}"
 
 
-async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Criterion, ...], *tuple[tuple[Site, ...], ...]]]",
+async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Criterion, ...], *tuple[tuple[TrialSite, ...], ...]]]",
                         run_id: "RunId | None") -> "IngestReport":
     """One ingest of (Trial, its Criteria[, its Sites]) tuples keyed by NCT id. Unchanged content appends nothing
     (the fetch time is the observation time, not content), so changed_ids are the new or edited Trials. Sites, when

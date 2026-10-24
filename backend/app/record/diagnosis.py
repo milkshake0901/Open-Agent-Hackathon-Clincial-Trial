@@ -23,7 +23,7 @@ JSON only: {"term": "...", "confidence": 0.0}
   not a diagnosis, or could mean several different conditions, give your best term with a low confidence, or null."""
 
 
-async def propose_term(ctx: Ctx, text: str) -> tuple[str | None, float]:
+async def propose_condition_term(ctx: Ctx, text: str) -> tuple[str | None, float]:
     """(term, confidence); the term is None when it is missing or below MIN_CONFIDENCE. The model sees only the
     diagnosis words. Raises llm.LlmUnavailable."""
     out = (await complete(ctx, Lane.FAST, system=SYSTEM, user=f"Diagnosis, in the Respondent's words:\n{text}",

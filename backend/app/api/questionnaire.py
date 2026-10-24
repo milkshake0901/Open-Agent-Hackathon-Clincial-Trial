@@ -52,12 +52,12 @@ async def submit(pid: str, body: QuestionnaireSubmission, background: Background
     run_id = await start_ingest(ctx, background, registered)
     return QuestionnaireAccepted(document_hash=registered.document.hash, run_id=run_id,
                                  deduplicated=registered.deduplicated,
-                                 return_token=await record.issue_return_token(ctx, record.PatientId(pid)))
+                                 return_token=await record.issue_return_link(ctx, record.PatientId(pid)))
 
 
 def _check_out(c: record.DiagnosisCheck, rescan: RescanSummary | None = None) -> DiagnosisCheckOut:
     return DiagnosisCheckOut(id=c.id, text=c.text, suggested_term=c.suggested_term, confidence=c.confidence,
-                             status=c.status, condition=c.condition, needs_gp=c.needs_gp, ask_again=c.ask_again,
+                             status=c.status, condition=c.condition_term, needs_gp=c.needs_gp, ask_again=c.ask_again,
                              message=c.message, rescan=rescan)
 
 
@@ -85,7 +85,7 @@ async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerI
     except record.InvalidAnswers as e:
         raise HTTPException(409, str(e))
     summary = None
-    if check.condition is not None and (current := await record.current_version(ctx, patient_id)) is not None:
+    if check.condition_term is not None and (current := await record.current_version(ctx, patient_id)) is not None:
         report = await matching.rescan(ctx, current.id)
         summary = RescanSummary(judged=len(report.judged), failed=len(report.failed))
     return _check_out(check, summary)

@@ -43,7 +43,7 @@ class Criterion:
 
 
 @dataclass(frozen=True)
-class Site:
+class TrialSite:
     """One of a Trial's locations as ClinicalTrials.gov lists it. lat/lon is the registry's geoPoint (None if absent)."""
     facility: str
     city: str
@@ -77,12 +77,12 @@ def _words(text: str) -> frozenset[str]:
     return frozenset(w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOP_WORDS)
 
 
-def studies_condition(trial: Trial, term: str) -> bool:
+def studies_condition(trial: Trial, condition_term: str) -> bool:
     """Does the Trial list this condition (#14: a confirmed diagnosis term selects which snapshot Trials are judged)?
     Word-set containment either way against each listed condition, ignoring case, punctuation and filler words:
     "lung cancer" and "non-small cell lung cancer stage iv" both match "Non-Small Cell Lung Cancer"; "breast cancer"
     does not. No MeSH or synonym expansion yet (a live condition search is trials.sync)."""
-    want = _words(term)
+    want = _words(condition_term)
     return bool(want) and any(want <= have or have <= want for have in map(_words, trial.conditions) if have)
 
 
@@ -133,7 +133,7 @@ async def active_trials(ctx: Ctx) -> list[Trial]:
     return await repo.active_trials(ctx.ui_reader)
 
 
-async def sites(ctx: Ctx, nct_id: NctId) -> tuple[Site, ...]:
+async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:
     """The Trial's locations as last loaded, in registry order (empty for an unknown Trial)."""
     return await repo.sites(ctx.ui_reader, nct_id)
 

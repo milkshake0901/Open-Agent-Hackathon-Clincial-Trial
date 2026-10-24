@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.sql.reader import SqlReader
-from app.trials import ACTIVE_STATUSES, Criterion, CriterionId, CriterionKind, NctId, Site, Trial
+from app.trials import ACTIVE_STATUSES, Criterion, CriterionId, CriterionKind, NctId, TrialSite, Trial
 
 _TRIAL_COLS = ("nct_id", "title", "conditions", "status", "eligibility_text", "eligibility_hash", "fetched_at", "source")
 
@@ -42,10 +42,10 @@ async def criteria(reader: SqlReader, nct_id: NctId, eligibility_hash: str) -> t
     return tuple(Criterion(id=CriterionId(r["id"]), nct_id=NctId(r["nct_id"]), eligibility_hash=r["eligibility_hash"],
                            kind=CriterionKind(r["kind"]), ordinal=r["ordinal"], text=r["text"]) for r in rows)
 
-async def sites(reader: SqlReader, nct_id: NctId) -> tuple[Site, ...]:
+async def sites(reader: SqlReader, nct_id: NctId) -> tuple[TrialSite, ...]:
     rows = await reader.fetch(f"SELECT facility, city, country, status, lat, lon FROM {reader.table('trial_site')} "
                               "WHERE nct_id = $1 ORDER BY ordinal", (nct_id,))
-    return tuple(Site(facility=r["facility"], city=r["city"], country=r["country"], status=r["status"],
+    return tuple(TrialSite(facility=r["facility"], city=r["city"], country=r["country"], status=r["status"],
                       lat=r["lat"], lon=r["lon"]) for r in rows)
 
 # Trials, Criteria and Sites are NOT written here: app.worldmodel.timeline.record_trials (World Model ingest → projector).

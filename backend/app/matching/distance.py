@@ -11,8 +11,8 @@ from math import asin, cos, radians, sin, sqrt
 
 from app import record, trials
 from app.ctx import Ctx
-from app.matching.types import SiteDistance
-from app.trials import NctId, Site
+from app.matching.types import TrialSiteDistance
+from app.trials import NctId, TrialSite
 
 EARTH_KM = 6371.0088
 CLOSED_SITE = {"WITHDRAWN", "TERMINATED", "COMPLETED", "SUSPENDED"}   # listed sites that will never take the patient
@@ -28,8 +28,8 @@ class Origin:
 
 @dataclass(frozen=True)
 class Reach:
-    sites: tuple[SiteDistance, ...]       # open sites, nearest first (unknown distances last)
-    nearest_recruiting: SiteDistance | None
+    sites: tuple[TrialSiteDistance, ...]       # open sites, nearest first (unknown distances last)
+    nearest_recruiting: TrialSiteDistance | None
     further_away: bool                    # a travel limit is set and no recruiting site lies within it
 
 
@@ -49,17 +49,17 @@ def _status(raw: str) -> str:
     return raw.replace("_", " ").lower() if raw else "status unknown"
 
 
-def _name(s: Site) -> str:
+def _name(s: TrialSite) -> str:
     return ", ".join(p for p in (s.facility, s.city, s.country) if p) or "Unnamed site"
 
 
-def reach(sites: tuple[Site, ...], at: Origin) -> Reach:
+def reach(sites: tuple[TrialSite, ...], at: Origin) -> Reach:
     measured = []
     for s in sites:
         if s.status in CLOSED_SITE:
             continue
         d = round(km(at.point, (s.lat, s.lon))) if at.point and s.lat is not None and s.lon is not None else None
-        measured.append((s.status == RECRUITING, SiteDistance(name=_name(s), status=_status(s.status), km=d)))
+        measured.append((s.status == RECRUITING, TrialSiteDistance(name=_name(s), status=_status(s.status), km=d)))
     measured.sort(key=lambda m: (m[1].km is None, m[1].km or 0, not m[0], m[1].name))
     known_recruiting = [sd for recruiting, sd in measured if recruiting and sd.km is not None]
     nearest = known_recruiting[0] if known_recruiting else next((sd for r, sd in measured if r), None)
@@ -73,6 +73,6 @@ async def reach_of(ctx: Ctx, nct_id: NctId, at: Origin) -> Reach:
     return reach(await trials.sites(ctx, nct_id), at)
 
 
-def line(sd: SiteDistance) -> str:
+def line(sd: TrialSiteDistance) -> str:
     """The one way a site is shown to a model: "site name · status · km"."""
     return f"{sd.name} · {sd.status} · {f'{sd.km} km' if sd.km is not None else 'distance unknown'}"

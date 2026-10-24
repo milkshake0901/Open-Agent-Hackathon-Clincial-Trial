@@ -155,7 +155,7 @@ _FACTS: dict[str, tuple[FactResource, str]] = {
     "pregnancy": (FactResource.OBSERVATION, "pregnant, breastfeeding or planning a pregnancy"),
 }
 _NO_FACT_VALUES = {"prefer_not_to_say"}
-PREFERENCES = ("postcode", "max_travel_km", "contact")   # the Search preference question ids
+SEARCH_PREFERENCES = ("postcode", "max_travel_km", "contact")   # the Search preference question ids
 _NOT_ANSWERED = "(not answered)"
 _POSTCODE = re.compile(r"^\d{4}$")     # Australian
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -214,13 +214,13 @@ def normalise(answers: dict[str, Any]) -> dict[str, Any]:
     return kept
 
 
-def preferences(answers: dict[str, Any]) -> dict[str, Any]:
+def search_preferences(answers: dict[str, Any]) -> dict[str, Any]:
     """The answered search preferences, validated, as SearchPreferences field → value. A skipped preference
     is absent (so a resubmission keeps what was stored); "anywhere" is an answered travel limit of None.
     An answered postcode brings its coarse `location` point with it (None if the table does not list it)."""
     normalise(answers)
     got: dict[str, Any] = {}
-    for qid in PREFERENCES:
+    for qid in SEARCH_PREFERENCES:
         value = answers.get(qid)
         if value is None or (isinstance(value, str) and not value.strip()):
             continue

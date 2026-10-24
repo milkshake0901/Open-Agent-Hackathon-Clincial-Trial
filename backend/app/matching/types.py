@@ -80,7 +80,7 @@ class RespondentQuestion:
 
 
 @dataclass(frozen=True)
-class SiteDistance:
+class TrialSiteDistance:
     """A Trial site as models and the Trials page see it: never the patient's postcode, only km from it."""
     name: str          # "Local Institution - 0439, Westmead, Australia"
     status: str        # "recruiting", "not yet recruiting", ... ("status unknown" when the registry gives none)
@@ -102,8 +102,8 @@ class Verdict:
     respondent_questions: tuple[RespondentQuestion, ...] = ()   # each unknown raises one of these or a DoctorQuestion
     # Distance (#16): filled by verdict()/verdicts_for_version() from the CURRENT search preferences, never stored,
     # never part of the outcome.
-    nearest_site: SiteDistance | None = None     # nearest RECRUITING site (None: the Trial lists none)
-    sites: tuple[SiteDistance, ...] = ()         # open sites, nearest first
+    nearest_site: TrialSiteDistance | None = None     # nearest RECRUITING site (None: the Trial lists none)
+    sites: tuple[TrialSiteDistance, ...] = ()         # open sites, nearest first
     further_away: bool = False                   # beyond the travel limit: shown under "Further away", not dropped
 
 

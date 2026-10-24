@@ -48,8 +48,8 @@ async def test_a_confirmed_term_becomes_the_patients_condition_and_the_free_text
 
     answered = await record.answer_diagnosis_check(ctx, patient, check.id, "yes")
 
-    assert answered.status == "confirmed" and answered.condition == "non-small cell lung cancer"
-    assert (await record.diagnosis(ctx, patient)).condition == "non-small cell lung cancer"
+    assert answered.status == "confirmed" and answered.condition_term == "non-small cell lung cancer"
+    assert (await record.diagnosis(ctx, patient)).condition_term == "non-small cell lung cancer"
     facts = (await record.profile_version(ctx, version.id)).facts
     assert [f.quote for f in facts if f.subject == "lung cancer"] == [DIAGNOSIS]
 
@@ -61,13 +61,13 @@ async def test_no_asks_again_and_a_reworded_diagnosis_gets_a_new_proposal(clean_
 
     rejected = await record.answer_diagnosis_check(ctx, patient, first.id, "no")
 
-    assert rejected.status == "rejected" and rejected.ask_again and rejected.condition is None
+    assert rejected.status == "rejected" and rejected.ask_again and rejected.condition_term is None
     assert await record.diagnosis(ctx, patient) is None
     second = await record.check_diagnosis(ctx, patient, "NSCLC, not the small cell type")
     assert "NSCLC, not the small cell type" in fake.calls[-1].user
     assert second.id != first.id and second.suggested_term == "non-small cell lung cancer"
     await record.answer_diagnosis_check(ctx, patient, second.id, "yes")
-    assert (await record.diagnosis(ctx, patient)).condition == "non-small cell lung cancer"
+    assert (await record.diagnosis(ctx, patient)).condition_term == "non-small cell lung cancer"
 
 
 async def test_not_sure_says_check_with_the_gp_and_holds_no_condition(clean_db):
@@ -76,10 +76,10 @@ async def test_not_sure_says_check_with_the_gp_and_holds_no_condition(clean_db):
 
     unsure = await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
 
-    assert unsure.status == "not_sure" and unsure.needs_gp and unsure.condition is None
+    assert unsure.status == "not_sure" and unsure.needs_gp and unsure.condition_term is None
     assert "GP" in unsure.message
     held = await record.diagnosis(ctx, patient)
-    assert held.needs_gp and held.condition is None
+    assert held.needs_gp and held.condition_term is None
 
 
 async def test_a_low_confidence_proposal_is_not_offered_and_goes_straight_to_the_gp_message(clean_db):

@@ -9,7 +9,7 @@ from app import record, trace, trials
 from app.ctx import Ctx
 from app.matching import distance, loop, repo
 from app.matching.types import (
-    Citation, CriterionResult, DoctorQuestion, Outcome, RescanReport, RespondentQuestion, SiteDistance, Verdict,
+    Citation, CriterionResult, DoctorQuestion, Outcome, RescanReport, RespondentQuestion, TrialSiteDistance, Verdict,
     VerdictChange, VerdictOutcome,
 )
 from app.record import ProfileVersionId
@@ -18,7 +18,7 @@ from app.trace import RunId
 
 __all__ = ["rescan", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
            "respondent_questions_for_version", "Verdict", "DoctorQuestion", "RespondentQuestion", "RescanReport",
-           "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation", "SiteDistance"]
+           "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation", "TrialSiteDistance"]
 
 DIAGNOSIS_QUESTION = "diagnosis"   # the questionnaire question (Q6) a Diagnosis check reads
 _RANK = {VerdictOutcome.ELIGIBLE: 0, VerdictOutcome.POSSIBLE: 1, VerdictOutcome.EXCLUDED: 2}
@@ -111,7 +111,7 @@ async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[
 
     profile = await record.profile_version(ctx, version_id)
     held = await record.diagnosis(ctx, profile.patient_id)
-    selected = _selector(held.condition if held else None, await trials.active_trials(ctx))
+    selected = _selector(held.condition_term if held else None, await trials.active_trials(ctx))
     first: dict[str, DoctorQuestion] = {}
     if held is not None and held.needs_gp:
         first["\0diagnosis"] = DoctorQuestion(
@@ -128,17 +128,17 @@ async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[
     return [replace(q, unblocks=tuple(trials_by_subject.get(k, ()))) for k, q in first.items()]
 
 
-def _selector(condition: str | None, active: list[trials.Trial]):
-    if condition is None:
+def _selector(condition_term: str | None, active: list[trials.Trial]):
+    if condition_term is None:
         return lambda nct_id: True
-    chosen = {t.nct_id for t in active if trials.studies_condition(t, condition)}
+    chosen = {t.nct_id for t in active if trials.studies_condition(t, condition_term)}
     return lambda nct_id: nct_id in chosen
 
 
 async def _selected(ctx: Ctx, version_id: ProfileVersionId):
     """Which Trials the version's patient is matched against: all, or those studying the confirmed diagnosis."""
     profile = await record.profile_version(ctx, version_id)
-    return _selector(await loop.condition_for(ctx, profile.patient_id), await trials.active_trials(ctx))
+    return _selector(await loop.condition_term_for(ctx, profile.patient_id), await trials.active_trials(ctx))
 
 
 async def respondent_questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[RespondentQuestion]:

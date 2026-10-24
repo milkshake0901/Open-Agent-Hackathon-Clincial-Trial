@@ -9,7 +9,7 @@ from app.ctx import Ctx
 from app.llm import Lane, complete
 from app import record
 from app.matching import distance
-from app.matching.types import Citation, CriterionResult, Outcome, Rejection, SiteDistance
+from app.matching.types import Citation, CriterionResult, Outcome, Rejection, TrialSiteDistance
 from app.record import Fact, ProfileVersion, Question
 from app.trials import Criterion, CriterionId, Trial
 from app import trace
@@ -73,7 +73,7 @@ def _askable_lines() -> list[str]:
 SITES_SHOWN = 5
 
 
-def _site_lines(sites: tuple[SiteDistance, ...]) -> list[str]:
+def _site_lines(sites: tuple[TrialSiteDistance, ...]) -> list[str]:
     """Sites as "name · status · km" only, nearest first (ADR 0003: the postcode never reaches a model).
 
     Known risk (kept on purpose: the spec puts km in the prompt): nothing but the instruction below stops the
@@ -89,7 +89,7 @@ def _site_lines(sites: tuple[SiteDistance, ...]) -> list[str]:
 
 
 def _prompt(trial: Trial, criteria: tuple[Criterion, ...], profile: ProfileVersion, feedback: tuple[Rejection, ...],
-            today: date, sites: tuple[SiteDistance, ...] = ()) -> str:
+            today: date, sites: tuple[TrialSiteDistance, ...] = ()) -> str:
     lines = [f"Trial {trial.nct_id}: {trial.title}", "", "Criteria:"]
     lines += [f"- {c.id} [{c.kind}] {c.text}" for c in criteria]
     lines += _site_lines(sites)

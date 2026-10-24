@@ -83,9 +83,9 @@ async def test_verdicts_rank_by_outcome_then_nearest_recruiting_site_and_trials_
         ("NCT00000014", "excluded", False),       # nearest of all, but outcome ranks first
     ]
     by_id = {v.nct_id: v for v in ranked}
-    assert by_id["NCT00000011"].nearest_site == matching.SiteDistance(
+    assert by_id["NCT00000011"].nearest_site == matching.TrialSiteDistance(
         "Westmead Hospital, Westmead, Australia", "recruiting", 26)
-    assert by_id["NCT00000011"].sites[0] == matching.SiteDistance(
+    assert by_id["NCT00000011"].sites[0] == matching.TrialSiteDistance(
         "Near Not Yet, Camperdown, Australia", "not yet recruiting", 6)
 
 
@@ -137,10 +137,10 @@ async def test_the_snapshot_trials_nearest_recruiting_site_is_overseas_while_its
     [v] = await matching.verdicts_for_version(ctx, version.id)
 
     # Of its recruiting sites, Taichung (Taiwan) is nearest to Randwick: ~7,200 km.
-    assert v.nearest_site == matching.SiteDistance("China Medical University Hospital, Taichung, Taiwan",
+    assert v.nearest_site == matching.TrialSiteDistance("China Medical University Hospital, Taichung, Taiwan",
                                                    "recruiting", 7219)
     assert v.further_away
-    assert v.sites[0] == matching.SiteDistance("Local Institution - 0424, Camperdown, Australia",
+    assert v.sites[0] == matching.TrialSiteDistance("Local Institution - 0424, Camperdown, Australia",
                                                "not yet recruiting", 6)
     assert not any("withdrawn" in sd.status for sd in v.sites)
     assert v == await matching.verdict(ctx, NCT, version.id)

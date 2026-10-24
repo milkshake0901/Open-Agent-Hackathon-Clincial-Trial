@@ -16,7 +16,7 @@ from typing import Any
 
 from app import trace
 from app.ctx import Ctx
-from app.record import diagnosis as diagnosis_terms, loop, questionnaire, repo
+from app.record import diagnosis as condition_terms, loop, questionnaire, repo
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
 from app.record.pdf import UnreadableDocument, to_pages
@@ -51,7 +51,7 @@ from app.trace.events import ProfileCommitted
 __all__ = [
     "register_document", "register_questionnaire", "ingest", "confirm", "conflicts", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
-    "document", "Registered", "UnreadableDocument", "issue_return_token", "patient_for_return_token",
+    "document", "Registered", "UnreadableDocument", "issue_return_link", "patient_for_return_link",
     "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
     "check_diagnosis", "answer_diagnosis_check", "diagnosis", "DiagnosisCheck", "DiagnosisAnswer",
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
@@ -77,7 +77,7 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-async def issue_return_token(ctx: Ctx, patient_id: PatientId) -> str | None:
+async def issue_return_link(ctx: Ctx, patient_id: PatientId) -> str | None:
     """The private, unguessable token behind the patient's return link (no accounts or passwords). Issued
     once per patient, on the first submission; None if the patient already has one. Only its hash is
     stored, so it cannot be shown again."""
@@ -89,7 +89,7 @@ async def issue_return_token(ctx: Ctx, patient_id: PatientId) -> str | None:
     return token if issued else None
 
 
-async def patient_for_return_token(ctx: Ctx, token: str) -> PatientId:
+async def patient_for_return_link(ctx: Ctx, token: str) -> PatientId:
     """The one patient a return token opens. NotFound (saying nothing about any patient) otherwise."""
     patient_id = await repo.patient_for_token_hash(ctx.ui_reader, _token_hash(token))
     if patient_id is None:
@@ -114,7 +114,7 @@ async def register_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[
     if respondent not in ("patient", "other"):
         raise InvalidAnswers(f"respondent must be 'patient' or 'other', got {respondent!r}")
     pages = questionnaire.render(answers, respondent)
-    preferences = questionnaire.preferences(answers)
+    preferences = questionnaire.search_preferences(answers)
     if not await repo.patient_exists(ctx.ui_reader, patient_id):
         raise NotFound(f"patient {patient_id}")
     previous = await repo.latest_questionnaire(ctx.ui_reader, patient_id)
@@ -162,10 +162,10 @@ async def set_search_preferences(ctx: Ctx, patient_id: PatientId, answers: dict[
     max_travel_km and contact, as the questionnaire takes them and validated the same way; a blank one keeps its
     stored value. Never a Fact, so no new Profile version. Raises InvalidAnswers (before anything is stored) and
     NotFound."""
-    others = sorted(set(answers) - set(questionnaire.PREFERENCES))
+    others = sorted(set(answers) - set(questionnaire.SEARCH_PREFERENCES))
     if others:
         raise InvalidAnswers(f"not search preferences: {others}")
-    changes = questionnaire.preferences(answers)
+    changes = questionnaire.search_preferences(answers)
     if not await repo.patient_exists(ctx.ui_reader, patient_id):
         raise NotFound(f"patient {patient_id}")
     async with ctx.writer.transaction() as tx:
@@ -187,7 +187,7 @@ async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = No
     text = " ".join((text or "").split())
     if not text:
         raise NotFound(f"no diagnosis answer for patient {patient_id}")
-    term, confidence = await diagnosis_terms.propose_term(ctx, text)
+    term, confidence = await condition_terms.propose_condition_term(ctx, text)
     check = DiagnosisCheck(id=f"dx_{uuid.uuid4().hex[:16]}", patient_id=patient_id, text=text, suggested_term=term,
                            confidence=confidence, status="proposed" if term else "unclear")
     async with ctx.writer.transaction() as tx:

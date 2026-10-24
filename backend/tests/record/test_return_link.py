@@ -13,30 +13,30 @@ async def test_a_return_token_reopens_only_the_patient_it_was_issued_for(ctx):
     a = await record.create_patient(ctx, "Demo patient A")
     b = await record.create_patient(ctx, "Demo patient B")
 
-    token_a = await record.issue_return_token(ctx, a)
-    token_b = await record.issue_return_token(ctx, b)
+    token_a = await record.issue_return_link(ctx, a)
+    token_b = await record.issue_return_link(ctx, b)
 
     assert token_a != token_b and len(token_a) >= 32
-    assert await record.patient_for_return_token(ctx, token_a) == a
-    assert await record.patient_for_return_token(ctx, token_b) == b
+    assert await record.patient_for_return_link(ctx, token_a) == a
+    assert await record.patient_for_return_link(ctx, token_b) == b
 
 
 async def test_an_invalid_token_opens_no_patient(ctx):
     a = await record.create_patient(ctx, "Demo patient A")
-    token = await record.issue_return_token(ctx, a)
+    token = await record.issue_return_link(ctx, a)
 
     for wrong in ("nope", token[:-1], token.upper(), ""):
         with pytest.raises(record.NotFound) as e:
-            await record.patient_for_return_token(ctx, wrong)
+            await record.patient_for_return_link(ctx, wrong)
         assert a not in str(e.value) and "Demo" not in str(e.value)
 
 
 async def test_the_token_is_issued_once_per_patient(ctx):
     a = await record.create_patient(ctx, "Demo patient A")
-    first = await record.issue_return_token(ctx, a)
+    first = await record.issue_return_link(ctx, a)
 
-    assert await record.issue_return_token(ctx, a) is None
-    assert await record.patient_for_return_token(ctx, first) == a
+    assert await record.issue_return_link(ctx, a) is None
+    assert await record.patient_for_return_link(ctx, first) == a
 
 
 PRIVATE = {"postcode": "2031", "max_travel_km": "50", "contact": "sam.carer@example.com"}

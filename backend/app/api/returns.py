@@ -14,7 +14,7 @@ async def open_return_link(token: str, ctx: Ctx = Depends(get_ctx)):
     """The patient behind the token and their current Profile version. An unknown token is a bare 404
     that says nothing about any patient."""
     try:
-        patient_id = await record.patient_for_return_token(ctx, token)
+        patient_id = await record.patient_for_return_link(ctx, token)
     except record.NotFound:
         raise HTTPException(404, "This return link is not valid.")
     v = await record.current_version(ctx, patient_id)

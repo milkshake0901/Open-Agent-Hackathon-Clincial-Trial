@@ -74,7 +74,7 @@ async def _verdict_out(ctx: Ctx, v: matching.Verdict) -> VerdictOut:
 SITES_LISTED = 3
 
 
-def _site_out(sd: matching.SiteDistance) -> dict:
+def _site_out(sd: matching.TrialSiteDistance) -> dict:
     return {"name": sd.name, "status": sd.status, "km": sd.km}
 
 

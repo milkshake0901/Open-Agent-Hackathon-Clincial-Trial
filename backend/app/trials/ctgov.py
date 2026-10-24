@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.ctx import Ctx
-from app.trials import NctId, Site, Trial
+from app.trials import NctId, TrialSite, Trial
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class RawStudy:
     conditions: tuple[str, ...]
     status: str
     eligibility_text: str
-    sites: tuple[Site, ...] = ()
+    sites: tuple[TrialSite, ...] = ()
 
 
 async def fetch(ctx: Ctx, condition: str, location: str, max_trials: int) -> tuple[list[RawStudy], str]:
@@ -54,9 +54,9 @@ def parse_study(study: dict[str, Any]) -> RawStudy:
                     sites=tuple(_site(loc) for loc in p.get("contactsLocationsModule", {}).get("locations", ())))
 
 
-def _site(loc: dict[str, Any]) -> Site:
+def _site(loc: dict[str, Any]) -> TrialSite:
     geo = loc.get("geoPoint") or {}
-    return Site(facility=loc.get("facility", ""), city=loc.get("city", ""), country=loc.get("country", ""),
+    return TrialSite(facility=loc.get("facility", ""), city=loc.get("city", ""), country=loc.get("country", ""),
                 status=loc.get("status", ""), lat=geo.get("lat"), lon=geo.get("lon"))
 
 

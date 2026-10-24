@@ -68,8 +68,8 @@ class DiagnosisCheck:
     status: DiagnosisStatus
 
     @property
-    def condition(self) -> str | None:
-        """The confirmed condition term that drives Trial selection; None unless confirmed."""
+    def condition_term(self) -> str | None:
+        """The confirmed Condition term that drives Trial selection; None unless confirmed."""
         return self.suggested_term if self.status == "confirmed" else None
 
     @property
