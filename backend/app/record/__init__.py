@@ -6,15 +6,19 @@ Postgres transactions, Zetaris read-after-write waits.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from pathlib import Path, PurePath
 from typing import Any
 
 from app import trace
 from app.ctx import Ctx
 from app.record import loop, questionnaire, repo
+from app.record.deidentify import deidentify
+from app.record.pdf import UnreadableDocument, to_pages
 from app.record.questionnaire import (
     DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section, SubmittedAnswers,
 )
@@ -38,12 +42,14 @@ from app.record.types import (
     VersionDiff,
 )
 from app.trace import RunId
+from app.trace.events import ProfileCommitted
 
 __all__ = [
     "register_document", "ingest", "confirm", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
-    "document", "issue_return_token", "patient_for_return_token", "latest_answers", "SubmittedAnswers",
-    "search_preferences", "SearchPreferences", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
+    "document", "Registered", "UnreadableDocument", "issue_return_token", "patient_for_return_token",
+    "latest_answers", "SubmittedAnswers", "search_preferences", "SearchPreferences",
+    "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
     "PatientId", "DocumentHash", "ProfileVersionId", "FactId",
@@ -160,11 +166,48 @@ def questionnaire_definition() -> Questionnaire:
     return DEFINITION
 
 
-async def register_document(ctx: Ctx, patient_id: PatientId, filename: str, content: bytes) -> Document:
-    """Hash content, parse pages, de-identify, persist document+pages. Idempotent on hash:
+@dataclass(frozen=True)
+class Registered:
+    document: Document
+    deduplicated: bool    # these bytes were already uploaded for this patient; nothing was parsed or stored
+
+
+def document_hash(patient_id: PatientId, content: bytes) -> DocumentHash:
+    """Document hashes are global keys, so the patient is part of an upload's identity: the same bytes from two
+    patients are two Documents, and one patient's upload can never resolve to another patient's pages."""
+    return DocumentHash(hashlib.sha256(f"document\n{patient_id}\n".encode() + content).hexdigest())
+
+
+async def register_document(ctx: Ctx, patient_id: PatientId, filename: str, content: bytes) -> Registered:
+    """Hash content, parse pages, de-identify, persist document+pages. Idempotent on hash (per patient):
     uploading the same bytes twice returns the existing Document and does not re-parse.
-    De-identified page text is what Citations display; raw bytes are kept only on disk (data/raw)."""
-    raise NotImplementedError
+    De-identified page text is what Citations display; raw bytes are kept only on disk (settings.raw_documents_dir).
+    Raises UnreadableDocument (not a PDF, or no text layer) and NotFound before anything is stored."""
+    if not await repo.patient_exists(ctx.ui_reader, patient_id):
+        raise NotFound(f"patient {patient_id}")
+    h = document_hash(patient_id, content)
+    existing = await repo.document(ctx.ui_reader, h)
+    if existing is not None:
+        return Registered(existing, deduplicated=True)
+    pages = deidentify(to_pages(content))
+    now = ctx.now()
+    doc = Document(hash=h, patient_id=patient_id, filename=PurePath(filename.replace("\\", "/")).name or "document.pdf",
+                   pages=pages, uploaded_at=now.date())
+    raw = Path(ctx.settings.raw_documents_dir)
+    raw.mkdir(parents=True, exist_ok=True)
+    (raw / f"{h}.pdf").write_bytes(content)
+    async with ctx.writer.transaction() as tx:
+        await repo.insert_document(tx, doc, uploaded_at=now)
+    return Registered(doc, deduplicated=False)
+
+
+_patient_locks: dict[PatientId, asyncio.Lock] = {}
+
+
+def _patient_lock(patient_id: PatientId) -> asyncio.Lock:
+    """One ingest at a time per patient (in this process): each commit numbers its version from the previous
+    one, so several uploads in one go become v2, v3, ... in turn instead of racing for the same number."""
+    return _patient_locks.setdefault(patient_id, asyncio.Lock())
 
 
 async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None = None) -> IngestOutcome:
@@ -177,9 +220,27 @@ async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None 
 
     Idempotent: if a ProfileVersion for this document_hash already exists, returns
     Committed for it without calling any model. If a run for this document is already
-    AwaitingPatient, returns that AwaitingPatient.
+    AwaitingPatient, returns that AwaitingPatient (#13: needs trace.project_ingest).
+
+    `run_id` lets the caller open the run first (an upload answers 202 with it); it is opened here otherwise.
+    Ingests for one patient run one at a time.
     """
-    raise NotImplementedError
+    doc = await repo.document(ctx.ui_reader, document_hash)
+    if doc is None:
+        raise NotFound(f"document {document_hash}")
+    if run_id is None:
+        existing = await repo.version_for_document(ctx.ui_reader, doc.hash)
+        if existing is not None:
+            return Committed(await trace.latest_for_document(ctx.ui_reader, doc.hash) or trace.new_id(), existing)
+        run_id = trace.new_id()
+    await trace.open(ctx.writer, run_id, "ingest", patient_id=doc.patient_id, document_hash=doc.hash)
+    async with _patient_lock(doc.patient_id):
+        existing = await repo.version_for_document(ctx.ui_reader, doc.hash)
+        if existing is not None:   # the caller's run ends where an earlier run for these bytes already did
+            await trace.append(ctx.writer, run_id, ProfileCommitted(
+                actor="record", profile_version_id=existing.id, version_number=existing.number, facts_added=0))
+            return Committed(run_id, existing)
+        return await loop.run_ingest(ctx, doc, run_id, ctx.settings.intake_attempts)
 
 
 async def confirm(ctx: Ctx, run_id: RunId, resolutions: list[Resolution]) -> IngestOutcome:

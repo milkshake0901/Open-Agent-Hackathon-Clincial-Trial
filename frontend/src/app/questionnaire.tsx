@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ReturnLink } from "./return-link";
+import { DocumentUploads } from "./uploads";
 import {
   api, trialsHref, type Answers, type Question, type Questionnaire, type Respondent, type SubmissionAccepted,
   type VersionDiff, type VersionOut,
@@ -110,6 +111,7 @@ export function QuestionnaireForm() {
       <div className="flex flex-col gap-4">
         <ProfileSummary version={version} changes={changes} patientId={patientId} rescan={rescan} />
         {returnToken && <ReturnLink token={returnToken} />}
+        {patientId && <DocumentUploads patientId={patientId} />}
         {editError && <p role="alert" className="text-red-700 dark:text-red-400">{editError}</p>}
         <button type="button" onClick={onEdit} disabled={loadingEdit}
                 className="min-h-12 self-start rounded-lg border border-border px-5 text-base font-semibold disabled:opacity-60">

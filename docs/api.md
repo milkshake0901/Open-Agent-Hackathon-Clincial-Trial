@@ -5,13 +5,13 @@ Base: `http://localhost:8000/api`. JSON unless noted. Wire schemas live in `app/
 | Method | Path | Request | Response | Facade call |
 |---|---|---|---|---|
 | POST | `/patients` | `{label}` | `201 {patient_id}` | insert |
-| POST | `/patients/{pid}/documents` | multipart `file` | `202 {document_hash, run_id, deduplicated: bool}` | `record.register_document` then bg `record.ingest` → `matching.rescan` on Committed (same run_id) |
+| POST | `/patients/{pid}/documents` | multipart `file` (one PDF per request; several at once are several requests) | `202 {document_hash, run_id, deduplicated: bool}`; a re-upload of the same bytes answers with the earlier run unless it was rejected; `422` unreadable (not a PDF, no text layer), `413` over 20 MB | `record.register_document` then bg `record.ingest` → `matching.rescan` on Committed (same run_id) |
 | GET | `/patients/{pid}/documents` | | `[{hash, filename, page_count, uploaded_at, version_number?}]` | `record.*` |
 | GET | `/patients/{pid}/documents/{hash}/pages/{n}` | | `{number, text, tables}` (de-identified) | citation viewer |
 | GET | `/patients/{pid}/versions` | | `[{id, number, document_hash, fact_count, created_at}]` | `record.versions` |
 | GET | `/patients/{pid}/versions/{vid}` | | `{id, number, facts: [{id, resource, subject, value, unit, observed_on, citation:{document_hash,page,quote}}], current: {subject: fact_id}}` | `record.profile_version` |
 | GET | `/patients/{pid}/versions/{vid}/diff?from={vid0}` | | `{facts_added: [...], subjects_changed: [{subject, before?, after}], verdicts_changed: [VerdictChange]}` | `record.diff` + `matching.change_between` per trial |
-| GET | `/runs/{run_id}` | | `{run_id, kind, head, state: IngestRunState \| RescanRunState, events: [TracedEvent]}` | `runs.read` + projection |
+| GET | `/runs/{run_id}` | | `{run_id, kind, head, state: IngestRunState \| null, events: [{seq, at, kind, actor, causation_id, payload}]}`; an ingest's `state.phase` is `started\|drafting\|awaiting_patient\|committed\|rejected`, with `version_number` and `reason` | `trace.read` + `reduce_ingest` |
 | GET | `/runs/{run_id}/events?since={seq}` | | `{head, events: [{seq, at, kind, actor, summary, payload}]}` (poll every ~1 s; SSE optional) | `runs.read(since_seq)` |
 | POST | `/runs/{run_id}/confirm` | `{resolutions: [{conflict_id, choice}]}` | `202 {run_id, outcome: "committed"\|"awaiting_patient"}` + bg rescan on committed | `record.confirm` |
 | POST | `/trials/sync` | `{condition, location, max_trials?}` | `200 SyncReport {fetched, new[], changed[], unchanged[], source}`; if `changed` and a current version exists → `202 {run_id}` for the narrowed rescan | `trials.sync` → `matching.rescan(only=changed)` |
