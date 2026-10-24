@@ -4,7 +4,9 @@
 // hard-coded here except the one that says who is answering, whose answer switches "your" / "their".
 
 import { useEffect, useState } from "react";
-import { api, type Answers, type Question, type Questionnaire, type Respondent, type VersionOut } from "@/lib/api";
+import {
+  api, type Answers, type Question, type Questionnaire, type Respondent, type VersionDiff, type VersionOut,
+} from "@/lib/api";
 
 const RESPONDENT_QUESTION = "respondent";
 
@@ -19,6 +21,11 @@ export function QuestionnaireForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [version, setVersion] = useState<VersionOut | null>(null);
+  const [changes, setChanges] = useState<VersionDiff | null>(null);
+  const [patientId, setPatientId] = useState<string | null>(null);
+  const [savedVersionId, setSavedVersionId] = useState<string | null>(null);
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -50,7 +57,9 @@ export function QuestionnaireForm() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const { patient_id } = await api.createPatient("Web respondent");
+      // A correction is a full resubmission for the same patient: a new Profile version.
+      const patient_id = patientId ?? (await api.createPatient("Web respondent")).patient_id;
+      setPatientId(patient_id);
       const result = await api.submit(patient_id, {
         definition_version: status.definition.version,
         respondent,
@@ -60,6 +69,10 @@ export function QuestionnaireForm() {
         throw new Error(result.reason ?? "Your answers could not be recorded yet.");
       }
       setVersion(await api.version(patient_id, result.profile_version_id));
+      setChanges(savedVersionId && savedVersionId !== result.profile_version_id
+        ? await api.diff(patient_id, result.profile_version_id, savedVersionId)
+        : null);
+      setSavedVersionId(result.profile_version_id);
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -67,11 +80,45 @@ export function QuestionnaireForm() {
     }
   }
 
-  if (version) return <ProfileSummary version={version} />;
+  async function onEdit() {
+    if (!patientId) return;
+    setLoadingEdit(true);
+    setEditError(null);
+    try {
+      // Prefill from the latest accepted submission, not from what this page happens to remember.
+      const latest = await api.latestAnswers(patientId);
+      setAnswers({ ...latest.answers, [RESPONDENT_QUESTION]: latest.respondent });
+      setVersion(null);
+      setChanges(null);
+      window.scrollTo({ top: 0 });
+    } catch (err) {
+      setEditError((err as Error).message);
+    } finally {
+      setLoadingEdit(false);
+    }
+  }
+
+  if (version) {
+    return (
+      <div className="flex flex-col gap-4">
+        <ProfileSummary version={version} changes={changes} />
+        {editError && <p role="alert" className="text-red-700 dark:text-red-400">{editError}</p>}
+        <button type="button" onClick={onEdit} disabled={loadingEdit}
+                className="min-h-12 self-start rounded-lg border border-border px-5 text-base font-semibold disabled:opacity-60">
+          {loadingEdit ? "Opening your answers…" : "Edit answers"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
       <p className="text-muted">Every question can be skipped. We never ask for a name or a street address.</p>
+      {patientId && (
+        <p className="text-muted">
+          You are editing your saved answers. Saving sends the whole questionnaire again and keeps the earlier version.
+        </p>
+      )}
       {status.definition.sections.map((section) => (
         <section key={section.id} aria-labelledby={`section-${section.id}`}
                  className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-5">
@@ -147,13 +194,32 @@ function QuestionField({ question: q, respondent, value, onChange, onClear }: {
   );
 }
 
-function ProfileSummary({ version }: { version: VersionOut }) {
+function ProfileSummary({ version, changes }: { version: VersionOut; changes: VersionDiff | null }) {
   return (
     <section aria-labelledby="profile-heading" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
       <h2 id="profile-heading" className="text-lg font-semibold">Thank you. Your answers are saved as version {version.number}.</h2>
+      {changes && (
+        <div className="flex flex-col gap-2">
+          <h3 className="font-semibold">What changed since the previous version</h3>
+          {changes.subjects_changed.length === 0 ? (
+            <p className="text-muted">None of the recorded answers changed.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {changes.subjects_changed.map((c) => (
+                <li key={c.subject} className="rounded-lg border border-accent p-3">
+                  <p className="font-medium first-letter:uppercase">{c.subject}</p>
+                  <p>
+                    {c.before ? <>“{c.before.citation.quote}” → </> : null}“{c.after.citation.quote}”
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <p className="text-muted">This is what we recorded, and where each item came from.</p>
       <ul className="flex flex-col gap-3">
-        {version.facts.map((f) => (
+        {version.facts.filter((f) => version.current[f.subject] === f.id).map((f) => (
           <li key={f.id} className="rounded-lg border border-border p-3">
             <p className="font-medium first-letter:uppercase">{f.subject}</p>
             <p>“{f.citation.quote}”</p>

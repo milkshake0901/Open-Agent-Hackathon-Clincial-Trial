@@ -46,6 +46,20 @@ export type VersionOut = {
   current: Record<string, string>;
 };
 
+export type LatestAnswers = {
+  definition_version: string;
+  document_hash: string;
+  respondent: Respondent;
+  answers: Answers; // postcode and travel are never included
+};
+
+export type VersionDiff = {
+  from_version: string;
+  to_version: string;
+  facts_added: FactOut[];
+  subjects_changed: { subject: string; before: FactOut | null; after: FactOut }[];
+};
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
@@ -67,6 +81,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  latestAnswers: (patientId: string) =>
+    call<LatestAnswers>(`/patients/${encodeURIComponent(patientId)}/questionnaire`),
+  diff: (patientId: string, versionId: string, fromVersionId: string) =>
+    call<VersionDiff>(
+      `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/diff` +
+        `?from=${encodeURIComponent(fromVersionId)}`,
+    ),
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
 };
