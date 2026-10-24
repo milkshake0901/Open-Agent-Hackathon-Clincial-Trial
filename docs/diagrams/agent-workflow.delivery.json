@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "d1c9b771-0312-4555-862a-039bb9cc66de",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/agent-workflow.workflow.json",
+  "output": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/agent-workflow.html",
+  "specification": {
+    "sha256": "42494c0bb111164d5678c5572b8c6839977776b2d46c3469a083fa58d67a471f",
+    "bytes": 11285
+  },
+  "artifact": {
+    "sha256": "4aba3989a09f87654acb76ac87fa40bf916fcc78dadb28da2af1577bd690975d",
+    "bytes": 848770
+  }
+}

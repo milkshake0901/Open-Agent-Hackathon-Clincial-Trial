@@ -22,10 +22,18 @@ class SqlReader(Protocol):
 
 
 class PgReader:
-    def __init__(self, pool) -> None: raise NotImplementedError
-    def table(self, name: str) -> str: raise NotImplementedError
-    async def fetch(self, sql: str, params: Sequence[Any] = ()) -> list[Row]: raise NotImplementedError
-    async def wait_visible(self, sql, params, *, expect_rows, timeout_s): raise NotImplementedError
+    """Reads our Postgres directly (the HTTP shell, and agents in tests). Writes are visible at once."""
+    def __init__(self, pool) -> None:
+        self._pool = pool
+
+    def table(self, name: str) -> str:
+        return name
+
+    async def fetch(self, sql: str, params: Sequence[Any] = ()) -> list[Row]:
+        return [dict(r) for r in await self._pool.fetch(sql, *params)]
+
+    async def wait_visible(self, sql, params, *, expect_rows, timeout_s):
+        return await self.fetch(sql, params)
 
 
 class ZetarisReader:

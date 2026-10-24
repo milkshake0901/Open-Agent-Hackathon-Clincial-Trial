@@ -1,11 +1,15 @@
 -- db/schema.sql — Postgres for the app (our own container, separate from Zetaris's internal postgres).
 -- One writer per table:
 --   patient, document, document_page                    app.record.repo
---   wm_event, wm_audit                                   app.worldmodel.store.PgEventStore (engine log)
---   fact, profile_version*, trial, criterion,
---   verdict, criterion_result, doctor_question           app.worldmodel.projector, inside the wm_event append
---                                                        transaction (projections of the World Model, ADR 0001)
---   trace_run, trace_event, llm_call                     app.trace
+--   search_preference                                   app.record.repo (postcode and its coarse point, travel, contact)
+--   return_token                                        app.record.repo (sha256 of the return link's token)
+--   diagnosis_check                                     app.record.repo (Diagnosis checks and their answers)
+--   wm_event, wm_audit                                  app.worldmodel.store.PgEventStore (engine log)
+--   fact, profile_version, profile_version_fact         app.worldmodel.projector, inside the wm_event append
+--   trial, criterion, trial_site                        transaction (projections of the World Model, ADR 0001)
+--   verdict, criterion_result, doctor_question,
+--   respondent_question
+--   trace_run, trace_event, llm_call                    app.trace
 -- Facts are append-only. Everything is read through Zetaris by agents.
 
 -- ---------- record ----------
@@ -15,11 +19,44 @@ CREATE TABLE patient (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE search_preference (          -- per patient, NOT Facts: never rendered into a Document, never in a prompt (ADR 0003)
+  patient_id    text PRIMARY KEY REFERENCES patient(id),
+  postcode      text,                     -- never shown back, never in a URL, never read for distances (#16)
+  lat           double precision,         -- the postcode's coarse location point, computed when it is stored;
+  lon           double precision,         -- NULL: no postcode, or one not in app.record.postcodes. Distances read this
+  max_travel_km int,                      -- NULL: no limit ("anywhere", or not answered)
+  contact       text,                     -- optional email or phone for "you have new questions" notices
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE return_token (               -- private return link; only the sha256 of the token is stored
+  token_hash    text PRIMARY KEY,
+  patient_id    text NOT NULL UNIQUE REFERENCES patient(id),   -- one per patient, issued on first submission
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE diagnosis_check (            -- proposed condition terms for the free-text diagnosis and the Respondent's answer (#14);
+                                          -- NOT Facts: the diagnosis Fact keeps the Respondent's words as its quote
+  id             text PRIMARY KEY,
+  patient_id     text NOT NULL REFERENCES patient(id),
+  text           text NOT NULL,           -- the words the term was proposed from (the answer, or a re-wording after "no")
+  suggested_term text,                    -- NULL when the model could not propose one with confidence
+  confidence     real NOT NULL,
+  status         text NOT NULL CHECK (status IN ('proposed','confirmed','rejected','not_sure','unclear')),
+  created_at     timestamptz NOT NULL,
+  answered_at    timestamptz,
+  settled_seq    bigint                   -- set from diagnosis_check_settled when confirmed / not_sure / unclear; the
+                                          -- latest settled check holds (a clock can repeat, a sequence cannot)
+);
+CREATE SEQUENCE diagnosis_check_settled;
+CREATE INDEX diagnosis_check_by_patient ON diagnosis_check (patient_id, settled_seq);
+
 CREATE TABLE document (
   hash          text PRIMARY KEY,         -- sha256 of uploaded bytes; identity per GLOSSARY
   patient_id    text NOT NULL REFERENCES patient(id),
   filename      text NOT NULL,
   page_count    int  NOT NULL,
+  respondent    text CHECK (respondent IN ('patient','other')),   -- set only on an Intake questionnaire (ADR 0003)
   uploaded_at   timestamptz NOT NULL DEFAULT now()
 );
 
@@ -35,12 +72,14 @@ CREATE TABLE fact (                        -- FHIR-lite, one table with resource
   id            text PRIMARY KEY,
   document_hash text NOT NULL REFERENCES document(hash),
   page          int  NOT NULL,
-  resource      text NOT NULL CHECK (resource IN ('Condition','Observation','MedicationStatement','Procedure')),
+  resource      text NOT NULL CHECK (resource IN ('Condition','Observation','MedicationStatement','Procedure',
+                                                  'Patient','AllergyIntolerance')),
   subject       text NOT NULL,
   value         text NOT NULL,
   unit          text,
   observed_on   date NOT NULL,
   quote         text NOT NULL,
+  question      text,                     -- "Q3" for a Patient-reported Fact from an Intake questionnaire
   created_at    timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (document_hash, page) REFERENCES document_page(document_hash, number)
 );
@@ -83,6 +122,18 @@ CREATE TABLE criterion (                   -- immutable per (nct, eligibility_ha
 );
 CREATE INDEX criterion_by_hash ON criterion (nct_id, eligibility_hash);
 
+CREATE TABLE trial_site (                  -- the Trial's locations as last fetched; replaced with the trial row
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  ordinal          int  NOT NULL,
+  facility         text NOT NULL,
+  city             text NOT NULL,
+  country          text NOT NULL,
+  status           text NOT NULL,         -- RECRUITING, NOT_YET_RECRUITING, ... ('' when the registry gives none)
+  lat              double precision,      -- ClinicalTrials.gov geoPoint; NULL when the registry has none
+  lon              double precision,
+  PRIMARY KEY (nct_id, ordinal)
+);
+
 -- ---------- matching ----------
 CREATE TABLE verdict (                     -- keyed by (Trial, eligibility hash, Profile version) per ADR 0002
   nct_id                 text NOT NULL REFERENCES trial(nct_id),
@@ -105,6 +156,7 @@ CREATE TABLE criterion_result (
   outcome            text NOT NULL CHECK (outcome IN ('met','not_met','unknown')),
   fact_id            text REFERENCES fact(id),
   rationale          text NOT NULL,
+  ask                text,                 -- unknown only: questionnaire question ("Q8") for a Respondent question
   PRIMARY KEY (nct_id, eligibility_hash, profile_version_id, criterion_id),
   FOREIGN KEY (nct_id, eligibility_hash, profile_version_id) REFERENCES verdict ON DELETE CASCADE,
   CHECK ((outcome = 'unknown') = (fact_id IS NULL))     -- the evaluator invariant, also in the DB
@@ -116,6 +168,19 @@ CREATE TABLE doctor_question (
   profile_version_id text NOT NULL,
   criterion_id       text NOT NULL REFERENCES criterion(id),
   subject            text NOT NULL,
+  text               text NOT NULL,
+  PRIMARY KEY (nct_id, eligibility_hash, profile_version_id, criterion_id),
+  FOREIGN KEY (nct_id, eligibility_hash, profile_version_id) REFERENCES verdict ON DELETE CASCADE
+);
+
+CREATE TABLE respondent_question (       -- an unknown raises this OR a doctor_question, never both
+  nct_id             text NOT NULL,
+  eligibility_hash   text NOT NULL,
+  profile_version_id text NOT NULL,
+  criterion_id       text NOT NULL REFERENCES criterion(id),
+  question_id        text NOT NULL,        -- questionnaire question id, "treatments"
+  question           text NOT NULL,        -- its number, "Q8"
+  subject            text NOT NULL,        -- its wording
   text               text NOT NULL,
   PRIMARY KEY (nct_id, eligibility_hash, profile_version_id, criterion_id),
   FOREIGN KEY (nct_id, eligibility_hash, profile_version_id) REFERENCES verdict ON DELETE CASCADE

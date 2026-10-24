@@ -1,10 +1,12 @@
 """app/trace/state.py — PURE reducers: trace events → run state (what a parked or running run looks like)."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
-from app.trace.events import RunEvent
+from app.trace.events import (
+    CriticReviewed, IntakeDrafted, LlmCalled, PatientResolved, ProfileCommitted, RunAwaitingPatient, RunEvent, RunRejected,
+)
 
 
 @dataclass
@@ -15,7 +17,10 @@ class IngestRunState:
     findings: list[dict] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
     accepted_drafts: list[dict] = field(default_factory=list)
+    resolved: list[dict] = field(default_factory=list)     # {"conflict": <Conflict dict>, "choice": ...}, in order
     profile_version_id: str | None = None
+    version_number: int | None = None
+    reason: str | None = None              # why the run was rejected
     models_answered: list[str] = field(default_factory=list)
 
 
@@ -36,9 +41,30 @@ class RescanRunState:
 
 
 def reduce_ingest(state: IngestRunState, ev: RunEvent) -> IngestRunState:
-    """# TODO: match ev: IntakeDrafted → drafts/attempt; CriticReviewed → findings; RunAwaitingPatient → phase+conflicts;
-    PatientResolved → remove resolved; ProfileCommitted → committed; RunRejected → rejected; LlmCalled → models_answered."""
-    raise NotImplementedError
+    """IntakeDrafted → drafts/attempt (a questionnaire drafts twice per attempt: code, then the Intake agent);
+    CriticReviewed → findings; RunAwaitingPatient → phase+conflicts; PatientResolved → move resolved conflicts (with the choice) to `resolved`;
+    ProfileCommitted → committed; RunRejected → rejected; LlmCalled → models_answered. Returns a new state."""
+    s = replace(state, drafts=list(state.drafts), conflicts=list(state.conflicts), resolved=list(state.resolved),
+                models_answered=list(state.models_answered))
+    match ev:
+        case IntakeDrafted(attempt=attempt, drafts=drafts):
+            s.drafts = s.drafts + drafts if attempt == s.attempt else list(drafts)
+            s.phase, s.attempt = "drafting", attempt
+        case CriticReviewed(findings=findings):
+            s.findings = list(findings)
+        case RunAwaitingPatient(conflicts=conflicts, accepted_drafts=accepted):
+            s.phase, s.conflicts, s.accepted_drafts = "awaiting_patient", list(conflicts), list(accepted)
+        case PatientResolved(resolutions=resolutions):
+            choices = {r.get("conflict_id"): r.get("choice") for r in resolutions}
+            s.resolved += [{"conflict": c, "choice": choices[c.get("id")]} for c in s.conflicts if c.get("id") in choices]
+            s.conflicts = [c for c in s.conflicts if c.get("id") not in choices]
+        case ProfileCommitted(profile_version_id=vid, version_number=number):
+            s.phase, s.profile_version_id, s.version_number = "committed", vid, number
+        case RunRejected(reason=reason):
+            s.phase, s.reason = "rejected", reason
+        case LlmCalled(model_answered=model):
+            s.models_answered.append(model)
+    return s
 
 def reduce_rescan(state: RescanRunState, ev: RunEvent) -> RescanRunState:
     """# TODO: per-nct updates are independent keys, so interleaved events from concurrent Matcher tasks never clobber."""

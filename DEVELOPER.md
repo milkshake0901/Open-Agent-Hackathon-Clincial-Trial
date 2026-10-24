@@ -6,19 +6,20 @@ How the code is laid out, how the agents work together, and the rules that keep 
 
 ## Agent workflow
 
-![Agent workflow: upload → Intake ⇄ Critic → World Model → Re-scan → Matcher ⇄ Evaluator → Verdicts](docs/diagrams/agent-workflow.png)
+![Agent workflow: Intake questionnaire or upload → Intake ⇄ Critic → World Model → Re-scan → Matcher ⇄ Evaluator → Verdicts](docs/diagrams/agent-workflow.png)
 
 Interactive version (dark/light, click a box to open its source lines): open [docs/diagrams/agent-workflow.html](docs/diagrams/agent-workflow.html) in a browser after cloning. It shows the designed flow traced from the scaffold's signatures and pseudocode.
 
 **Reading it:**
 
-1. **Upload.** `record.register_document` hashes the file, splits it into pages and de-identifies them before any model sees the text.
-2. **Intake ⇄ Critic** (max 3 attempts). Intake drafts Facts with page citations; the critic runs pure rule checks. Fixable findings go back to Intake. A Conflict with the existing record goes to the patient instead, because re-reading the same Document can't change what it says.
-3. **Commit.** Accepted Facts are written through the **World Model** (`assert_fact` per Fact, `snapshot` for the Profile version). The engine projects them into Postgres in the same transaction; Zetaris reads those tables.
-4. **Re-scan.** For a new Profile version, judge every active Trial that lacks a Verdict for (NCT, eligibility hash, version). Running it twice does nothing the second time.
-5. **Matcher ⇄ Evaluator** (max 3 attempts). The Matcher judges each Criterion against the patient's Facts, read through Zetaris. The Evaluator rejects any claim without a valid citation. After 3 attempts, unsupported claims become `unknown` and turn into Doctor questions; an uncited "met" is never stored.
-6. **Verdicts + why.** Ranked Verdicts with Citations back to the Document page, what changed since the last version, and the causal trace of how the system decided.
-7. **Trials** arrive separately: the fetcher pulls ClinicalTrials.gov through Zetaris and records them with World Model `ingest`, keyed by NCT ID. Only new or changed Trials trigger work.
+1. **Intake questionnaire.** The Respondent (the patient, or family on their behalf) answers plain-language questions first. A completed questionnaire is itself a Document ([ADR 0003](docs/adr/0003-intake-questionnaire-is-a-document.md)): structured answers map to Patient-reported Facts in code, free-text answers go through Intake. On its own it creates Profile v1, so matching starts before any upload. Postcode is kept as a search preference, never a Fact.
+2. **Upload** (optional, any time). `record.register_document` hashes the file, splits it into pages and de-identifies them before any model sees the text. Each upload creates its own Profile version.
+3. **Intake ⇄ Critic** (max 3 attempts). Intake drafts Facts with page citations; the critic runs pure rule checks. Fixable findings go back to Intake. A Conflict with the existing record goes to the patient instead, because re-reading the same Document can't change what it says.
+4. **Commit.** Accepted Facts are written through the **World Model** (`assert_fact` per Fact, `snapshot` for the Profile version). The engine projects them into Postgres in the same transaction; Zetaris reads those tables.
+5. **Re-scan.** For a new Profile version, judge every active Trial that lacks a Verdict for (NCT, eligibility hash, version). Running it twice does nothing the second time.
+6. **Matcher ⇄ Evaluator** (max 3 attempts). The Matcher judges each Criterion against the patient's Facts, read through Zetaris, and sees each site as "name, status, km": code computes the distances from the postcode, which no model ever sees. The Evaluator rejects any claim without a valid citation. After 3 attempts, unsupported claims become `unknown`: a Doctor question when it needs clinical records, a Respondent question when it turns on something the Respondent could clarify (a vague date, a medicine name). An uncited "met" is never stored.
+7. **Verdicts + why.** Verdicts ranked by outcome, then nearest recruiting site (distance never changes a Verdict), with Citations back to the Document page, what changed since the last version, and the causal trace of how the system decided.
+8. **Trials** arrive separately: the fetcher pulls ClinicalTrials.gov through Zetaris and records them with World Model `ingest`, keyed by NCT ID. Only new or changed Trials trigger work.
 
 ## Folder structure
 
@@ -96,12 +97,13 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │
 ├── db/
 │   ├── schema.sql                Postgres tables, with the owner of each one noted at the top
+│   ├── migrations/               additive scripts for a database created from an older schema.sql
 │   └── zetaris_register.sql      registers our Postgres and ClinicalTrials.gov in Zetaris (to finish)
 │
 ├── docs/
 │   ├── architecture.md           design, synthesis decision, tradeoffs, open risks
 │   ├── api.md                    HTTP endpoints and response shapes
-│   ├── adr/                      decision records (0001 storage split, 0002 append-only + versioned Verdicts)
+│   ├── adr/                      decision records (0001 storage split, 0002 append-only + versioned Verdicts, 0003 questionnaire is a Document)
 │   ├── diagrams/                 agent-workflow.html / .png and its source .workflow.json
 │   └── setup/                    meterless-provider-prompt.md (Nightshift wiring, not yet applied)
 │
@@ -129,7 +131,8 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 
 ```bash
 cp .env.example .env              # fill in Zetaris API key and Nightshift token
-docker compose up -d              # our Postgres with db/schema.sql
+docker compose up -d              # our Postgres with db/schema.sql (first start only)
+# A Postgres volume made from an older schema.sql: run each db/migrations/*.sql once, in order (see its header)
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest                  # boundary test passes; conformance fails until the engine exists

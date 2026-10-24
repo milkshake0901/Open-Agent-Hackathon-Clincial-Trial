@@ -16,7 +16,7 @@
   "lanes": [
     {
       "id": "patient",
-      "label": "Patient & API"
+      "label": "Respondent & API"
     },
     {
       "id": "record",
@@ -38,7 +38,7 @@
   "phases": [
     {
       "id": "ingest",
-      "label": "Ingest a Document",
+      "label": "Questionnaire or Document",
       "fromCol": 0,
       "toCol": 2
     },
@@ -68,7 +68,7 @@
     }
   ],
   "mainPath": [
-    "upload",
+    "questionnaire",
     "intake",
     "critic",
     "wm",
@@ -79,12 +79,20 @@
   ],
   "nodes": [
     {
-      "id": "upload",
+      "id": "questionnaire",
       "lane": "patient",
       "col": 0,
+      "type": "frontend",
+      "label": "Intake questionnaire",
+      "sublabel": "Respondent answers"
+    },
+    {
+      "id": "upload",
+      "lane": "patient",
+      "col": 1,
       "type": "external",
       "label": "Upload Document",
-      "sublabel": "hash + de-identify",
+      "sublabel": "optional, any time",
       "sources": [
         {
           "path": "backend/app/api/documents.py",
@@ -126,7 +134,7 @@
       "col": 5,
       "type": "frontend",
       "label": "Verdicts + why",
-      "sublabel": "citations, questions",
+      "sublabel": "citations, questions, km",
       "sources": [
         {
           "path": "backend/app/api/verdicts.py",
@@ -147,7 +155,7 @@
       "col": 1,
       "type": "backend",
       "label": "Intake agent",
-      "sublabel": "pages → draft Facts",
+      "sublabel": "free text → draft Facts",
       "tag": "fast lane",
       "sources": [
         {
@@ -297,15 +305,32 @@
           "end_line": 63
         }
       ]
+    },
+    {
+      "id": "distances",
+      "lane": "trials",
+      "col": 4,
+      "type": "backend",
+      "label": "Site distances",
+      "sublabel": "postcode → km",
+      "tag": "code, no model"
     }
   ],
   "edges": [
+    {
+      "id": "e-questionnaire-intake",
+      "from": "questionnaire",
+      "to": "intake",
+      "label": "questionnaire Document",
+      "variant": "emphasis"
+    },
     {
       "id": "e-upload-intake",
       "from": "upload",
       "to": "intake",
       "label": "de-identified pages",
-      "variant": "emphasis"
+      "variant": "default",
+      "role": "branch"
     },
     {
       "id": "e-intake-critic",
@@ -373,10 +398,7 @@
       "to": "matcher",
       "label": "Facts + Criteria",
       "variant": "default",
-      "role": "branch",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "route": "straight"
+      "role": "branch"
     },
     {
       "id": "e-matcher-evaluator",
@@ -414,9 +436,39 @@
       "label": "ingest by NCT",
       "variant": "default",
       "role": "branch"
+    },
+    {
+      "id": "e-results-respondent",
+      "from": "results",
+      "to": "questionnaire",
+      "label": "Respondent questions",
+      "variant": "dashed",
+      "role": "return",
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "id": "e-distances-matcher",
+      "from": "distances",
+      "to": "matcher",
+      "label": "site, status, km",
+      "variant": "default",
+      "role": "branch",
+      "fromSide": "top",
+      "toSide": "bottom"
     }
   ],
   "cards": [
+    {
+      "dot": "emerald",
+      "title": "Intake questionnaire (ADR 0003)",
+      "items": [
+        "A completed questionnaire is a Document: structured answers map to Facts in code, free text goes through Intake",
+        "The questionnaire alone makes Profile v1; each optional upload adds a version",
+        "Vague answers a Criterion turns on become Respondent questions; record gaps become Doctor questions",
+        "Distance ranks Trials but never changes a Verdict"
+      ]
+    },
     {
       "dot": "emerald",
       "title": "Loops and bounds",

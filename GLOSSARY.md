@@ -4,9 +4,21 @@ Matches one patient's scattered clinical documents against ClinicalTrials.gov el
 
 ## Patient record
 
+**Intake questionnaire**:
+The plain-language questions a Respondent answers on first contact (age, sex, diagnosis in their own words, treatments, medicines); a completed one is itself a Document.
+_Avoid_: Intake (unqualified, which means the agent that drafts Facts from a Document), form, onboarding
+
+**Respondent**:
+The person who answers the Intake questionnaire: the patient, or a family member or carer on their behalf.
+_Avoid_: User, patient (when someone else is answering)
+
 **Document**:
-One source file the patient supplies (referral letter, blood report, genomic report), identified by the hash of its content.
+One source the patient supplies (referral letter, blood report, genomic report, or a completed Intake questionnaire), identified by the hash of its content.
 _Avoid_: File, upload, record, PDF
+
+**Patient-reported**:
+Describes a Fact whose Document is a completed Intake questionnaire rather than a clinical document.
+_Avoid_: Self-reported, unverified, user-entered
 
 **Fact**:
 One dated clinical statement taken from a Document, such as a diagnosis, a lab value or a medication, always pointing back to its Document and page.
@@ -28,6 +40,22 @@ _Avoid_: Profile (unqualified), snapshot, patient state
 Removing names, addresses, record numbers and clinician names from a Document's text before any model sees it.
 _Avoid_: Anonymisation, redaction, masking
 
+**Return link**:
+A private link the Respondent receives after their first Intake questionnaire that reopens that patient's record without an account.
+_Avoid_: Login, magic link, account
+
+**Search preferences**:
+The patient's postcode, how far they would travel and an optional contact detail; used only to rank Trials by distance and send notices, never part of the patient's Facts.
+_Avoid_: Settings, location Fact, profile
+
+**Diagnosis check**:
+The step where the Respondent confirms, rejects or is unsure about the Condition term understood from their own words.
+_Avoid_: Diagnosis confirmation, normalisation
+
+**Condition term**:
+The formal name of the patient's condition, settled by a Diagnosis check, that decides which Trials are judged.
+_Avoid_: Search term, diagnosis code
+
 ## Trials
 
 **Trial**:
@@ -37,6 +65,14 @@ _Avoid_: Study, protocol
 **Criterion**:
 One inclusion or exclusion rule taken from a Trial's eligibility text.
 _Avoid_: Requirement, condition, rule
+
+**Criterion topic**:
+A kind of patient information a Criterion asks about, such as performance status or CNS metastases; one Criterion can have several.
+_Avoid_: Category, tag, bucket
+
+**Trial site**:
+One place a Trial runs, with its recruitment status and location; distance to it ranks Trials but never changes a Verdict.
+_Avoid_: Location, centre, facility
 
 ## Matching
 
@@ -53,8 +89,12 @@ The link from a claim in a Criterion result back to a Fact, and through it to a 
 _Avoid_: Reference, source, evidence link
 
 **Doctor question**:
-A question for the patient's clinician, generated from a Criterion result that is unknown because no Fact covers it.
+A question for the patient's clinician, generated from a Criterion result that is unknown because no Fact covers it and answering needs clinical records or judgement (performance status, labs, stage).
 _Avoid_: Follow-up, gap, missing info
+
+**Respondent question**:
+A question sent back to the Respondent when a Criterion result turns on something they could plausibly know (a date, a medicine name) but answered too vaguely or not at all.
+_Avoid_: Follow-up, clarification, Doctor question
 
 **Re-scan**:
 Re-running matching for every cached Trial against a new Profile version.

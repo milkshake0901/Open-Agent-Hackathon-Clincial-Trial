@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrialMatch · UI sketch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <a class="wordmark" href="#/"><span class="dot" aria-hidden="true"></span>TrialMatch</a>
+      <button class="btn ghost" id="menu" aria-controls="sidebar" aria-expanded="false">Menu</button>
+    </header>
+
+    <nav class="sidebar" id="sidebar" aria-label="Main">
+      <button class="btn ghost close" id="close">Close</button>
+      <a class="wordmark" href="#/"><span class="dot" aria-hidden="true"></span>TrialMatch</a>
+      <a class="nav-item" href="#/" data-route="home">Trials <span class="count num" id="nav-trials"></span></a>
+      <a class="nav-item" href="#/questions" data-route="questions">Questions <span class="count num" id="nav-questions"></span></a>
+      <a class="nav-item" href="#/answers" data-route="answers">Their answers</a>
+      <a class="nav-item" href="#/documents" data-route="documents">Documents <span class="count num" id="nav-docs"></span></a>
+      <div class="side-bottom">
+        <p>You're answering for someone else. Questions say “their”.</p>
+        <button class="btn" id="copy-link">Copy private link</button>
+        <p>Anyone with the link can see these answers. Keep it to yourself.</p>
+      </div>
+    </nav>
+
+    <main class="canvas" id="main" tabindex="-1">
+      <div class="column" id="view"></div>
+    </main>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

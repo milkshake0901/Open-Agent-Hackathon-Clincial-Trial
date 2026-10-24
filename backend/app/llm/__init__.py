@@ -5,6 +5,7 @@ the provider, headers and Nemotron lane pinning live here and nowhere else. Medi
 Meterless job is `Media` (app/llm/media.py)."""
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 from enum import StrEnum
@@ -48,26 +49,47 @@ async def complete(ctx, lane: Lane, *, system: str, user: str, out: type[T], run
     """JSON-mode call, parse into `out`; ONE transport-level retry on parse failure with the validation error
     appended (this is not a domain loop and is not traced as one). Records an llm_call row and emits LlmCalled to the run when run_id given.
     Timeout 180 s (model load). Raises LlmUnavailable after that; loops treat it as a failed Trial / Rejected run."""
-    try:
-        try:
-            done = await ctx.llm.complete(lane, system, user, out)
-        except ValidationError as e:
-            retry = f"{user}\n\nYour previous reply did not match the schema:\n{e}\nReply with the corrected JSON object only."
-            done = await ctx.llm.complete(lane, system, retry, out)
-    except ValidationError as e:
-        raise LlmUnavailable(f"{lane} lane reply did not parse twice: {e.error_count()} errors") from e
-    if run_id is not None:
-        from app import trace
-        from app.trace.events import LlmCalled
+    from app import trace
+    from app.trace.events import LlmCalled
 
-        call_id = await trace.record_llm_call(ctx.writer, run_id, trace.LlmCall(
-            id=uuid.uuid4().hex, lane=lane.value, model_requested=done.model_requested,
-            model_answered=done.model_answered, latency_ms=done.latency_ms,
-            prompt_tokens=done.prompt_tokens, completion_tokens=done.completion_tokens, ok=True))
-        await trace.append(ctx.writer, run_id, LlmCalled(actor="llm", llm_call_id=call_id, lane=lane.value,
-                                                         model_answered=done.model_answered),
-                           llm_call_ids=(call_id,))
-    return done
+    prompt = user
+    for attempt in (1, 2):
+        try:
+            completion = await asyncio.wait_for(ctx.llm.complete(lane, system, prompt, out), timeout=_TIMEOUT_S)
+        except ValidationError as e:
+            if run_id is not None:
+                await trace.record_llm_call(ctx.writer, run_id, _failed(lane))
+            if attempt == 2:
+                raise LlmUnavailable(f"{lane} lane reply did not parse twice: {e.error_count()} errors") from e
+            prompt = f"{user}\n\nYour previous answer did not match the schema:\n{e}\nAnswer again with valid JSON."
+            continue
+        except Exception as e:   # timeout, transport, provider: one place turns them into LlmUnavailable
+            if run_id is not None:
+                await trace.record_llm_call(ctx.writer, run_id, _failed(lane))
+            raise LlmUnavailable(f"{lane} model unavailable: {e}") from e
+        if run_id is not None:   # an llm_call row and an LlmCalled event belong to a run
+            call_id = await trace.record_llm_call(ctx.writer, run_id, trace.LlmCall(
+                id=_call_id(), lane=lane, model_requested=completion.model_requested,
+                model_answered=completion.model_answered, latency_ms=completion.latency_ms,
+                prompt_tokens=completion.prompt_tokens, completion_tokens=completion.completion_tokens, ok=True))
+            await trace.append(ctx.writer, run_id, LlmCalled(actor="llm", llm_call_id=call_id, lane=lane,
+                                                            model_answered=completion.model_answered),
+                               llm_call_ids=(call_id,))
+        return completion
+    raise AssertionError("unreachable")
+
+
+_TIMEOUT_S = 180
+
+
+def _call_id() -> str:
+    return f"llm_{uuid.uuid4().hex}"
+
+
+def _failed(lane: Lane):
+    from app import trace
+    return trace.LlmCall(id=_call_id(), lane=lane, model_requested="unknown", model_answered="none", latency_ms=0,
+                         prompt_tokens=0, completion_tokens=0, ok=False)
 
 
 class LlmUnavailable(Exception): ...
