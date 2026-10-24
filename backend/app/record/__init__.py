@@ -17,6 +17,7 @@ from typing import Any
 from app import trace
 from app.ctx import Ctx
 from app.record import loop, questionnaire, repo
+from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
 from app.record.pdf import UnreadableDocument, to_pages
 from app.record.questionnaire import (
@@ -49,7 +50,7 @@ __all__ = [
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
     "document", "Registered", "UnreadableDocument", "issue_return_token", "patient_for_return_token",
     "latest_answers", "SubmittedAnswers", "search_preferences", "SearchPreferences",
-    "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
+    "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
     "PatientId", "DocumentHash", "ProfileVersionId", "FactId",
@@ -220,7 +221,7 @@ async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None 
 
     Idempotent: if a ProfileVersion for this document_hash already exists, returns
     Committed for it without calling any model. If a run for this document is already
-    AwaitingPatient, returns that AwaitingPatient (#13: needs trace.project_ingest).
+    AwaitingPatient, returns that AwaitingPatient (rehydrated from the run log, no model call).
 
     `run_id` lets the caller open the run first (an upload answers 202 with it); it is opened here otherwise.
     Ingests for one patient run one at a time.
@@ -232,6 +233,9 @@ async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None 
         existing = await repo.version_for_document(ctx.ui_reader, doc.hash)
         if existing is not None:
             return Committed(await trace.latest_for_document(ctx.ui_reader, doc.hash) or trace.new_id(), existing)
+        earlier = await trace.latest_for_document(ctx.ui_reader, doc.hash)
+        if earlier is not None and (waiting := loop.parked(await trace.project_ingest(ctx.ui_reader, earlier), earlier)):
+            return waiting
         run_id = trace.new_id()
     await trace.open(ctx.writer, run_id, "ingest", patient_id=doc.patient_id, document_hash=doc.hash)
     async with _patient_lock(doc.patient_id):
@@ -246,8 +250,22 @@ async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None 
 async def confirm(ctx: Ctx, run_id: RunId, resolutions: list[Resolution]) -> IngestOutcome:
     """Patient resolves Conflicts on a parked run. Keeps the loop's accepted draft facts,
     applies the chosen values, commits. Partial resolutions leave the run AwaitingPatient
-    with the remaining Conflicts. Rejected drafts are never inserted (Facts stay append-only)."""
-    raise NotImplementedError
+    with the remaining Conflicts. Rejected drafts are never inserted (Facts stay append-only).
+
+    Choices: keep_accepted (the draft is dropped), accept_draft (the draft is committed and the accepted Fact it
+    contradicts is left out of the new version), discard_both (neither is in the new version). Earlier versions
+    are unchanged. Raises NotFound (unknown run), NotAwaitingPatient, InvalidResolution."""
+    try:
+        state = await trace.project_ingest(ctx.ui_reader, run_id)
+    except trace.UnknownRun:
+        raise NotFound(f"run {run_id}")
+    if state.phase != "awaiting_patient":
+        raise NotAwaitingPatient(f"run {run_id} is {state.phase}, not awaiting the patient")
+    log = await trace.read(ctx.ui_reader, run_id)
+    started = next(e.event for e in log.events if e.event.kind == "ingest.started")
+    doc = await repo.document(ctx.ui_reader, DocumentHash(started.document_hash))
+    async with _patient_lock(doc.patient_id):
+        return await loop.resume_after_confirm(ctx, doc, run_id, resolutions)
 
 
 async def versions(ctx: Ctx, patient_id: PatientId) -> list[ProfileVersion]:
