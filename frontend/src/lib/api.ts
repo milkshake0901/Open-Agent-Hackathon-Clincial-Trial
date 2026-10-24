@@ -46,10 +46,22 @@ export type VersionOut = {
   current: Record<string, string>;
 };
 
+export type UploadAccepted = { document_hash: string; run_id: string; deduplicated: boolean };
+
+export type IngestPhase = "started" | "drafting" | "awaiting_patient" | "committed" | "rejected";
+
+export type RunOut = {
+  run_id: string;
+  kind: "ingest" | "rescan";
+  head: number;
+  state: { phase: IngestPhase; version_number: number | null; reason: string | null } | null;
+};
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const json = !(init?.body instanceof FormData); // the browser sets the multipart boundary itself
   const res = await fetch(`/api${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    headers: { ...(json ? { "content-type": "application/json" } : {}), ...init?.headers },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -67,6 +79,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  upload: (patientId: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return call<UploadAccepted>(`/patients/${encodeURIComponent(patientId)}/documents`, { method: "POST", body });
+  },
+  run: (runId: string) => call<RunOut>(`/runs/${encodeURIComponent(runId)}`),
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
 };

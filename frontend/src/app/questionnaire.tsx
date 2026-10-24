@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type Answers, type Question, type Questionnaire, type Respondent, type VersionOut } from "@/lib/api";
+import { DocumentUploads } from "./uploads";
 
 const RESPONDENT_QUESTION = "respondent";
 
@@ -18,7 +19,7 @@ export function QuestionnaireForm() {
   const [answers, setAnswers] = useState<Answers>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [version, setVersion] = useState<VersionOut | null>(null);
+  const [saved, setSaved] = useState<{ patientId: string; version: VersionOut } | null>(null);
 
   useEffect(() => {
     api
@@ -59,7 +60,7 @@ export function QuestionnaireForm() {
       if (result.outcome !== "committed" || !result.profile_version_id) {
         throw new Error(result.reason ?? "Your answers could not be recorded yet.");
       }
-      setVersion(await api.version(patient_id, result.profile_version_id));
+      setSaved({ patientId: patient_id, version: await api.version(patient_id, result.profile_version_id) });
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -67,7 +68,13 @@ export function QuestionnaireForm() {
     }
   }
 
-  if (version) return <ProfileSummary version={version} />;
+  if (saved)
+    return (
+      <div className="flex flex-col gap-6">
+        <ProfileSummary version={saved.version} />
+        <DocumentUploads patientId={saved.patientId} />
+      </div>
+    );
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
