@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from app.matching import Verdict
     from app.record import Document, DraftFact, PatientId, ProfileVersion
     from app.trace import RunId
-    from app.trials import Criterion, Trial
+    from app.trials import Criterion, Site, Trial
     from app.worldmodel.engine import IngestReport, WorldModel
 
 
@@ -76,14 +76,15 @@ def trial_entity_id(nct_id: str) -> str:
     return f"trial:{nct_id}"
 
 
-async def record_trials(wm: "WorldModel", trials: list[tuple["Trial", tuple["Criterion", ...]]],
+async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Criterion, ...], *tuple[tuple[Site, ...], ...]]]",
                         run_id: "RunId | None") -> "IngestReport":
-    """One ingest of (Trial, its Criteria) pairs keyed by NCT id. Unchanged content appends nothing (the fetch
-    time is the observation time, not content), so changed_ids are the new or edited Trials."""
+    """One ingest of (Trial, its Criteria[, its Sites]) tuples keyed by NCT id. Unchanged content appends nothing
+    (the fetch time is the observation time, not content), so changed_ids are the new or edited Trials. Sites, when
+    given, replace the Trial's stored sites; a pair without them leaves the stored sites alone."""
     from app.worldmodel.engine import IngestObservation, Provenance
 
     observations = []
-    for t, criteria in trials:
+    for t, criteria, *sites in trials:
         source = Provenance(kind="api", at=t.fetched_at, by="trials",
                             url=f"https://clinicaltrials.gov/study/{t.nct_id}", run_id=run_id)
         observations.append(IngestObservation(
@@ -92,7 +93,9 @@ async def record_trials(wm: "WorldModel", trials: list[tuple["Trial", tuple["Cri
                 "conditions": list(t.conditions), "status": t.status, "eligibility_hash": t.eligibility_hash,
                 "source": t.source,
                 "criteria": [{"id": c.id, "kind": str(c.kind), "ordinal": c.ordinal, "text": c.text}
-                             for c in criteria]}))
+                             for c in criteria],
+                **({"sites": [{"facility": s.facility, "city": s.city, "country": s.country, "status": s.status,
+                               "lat": s.lat, "lon": s.lon} for s in sites[0]]} if sites else {})}))
     return await wm.ingest(observations, run_id=run_id)
 
 

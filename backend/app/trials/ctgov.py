@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.ctx import Ctx
-from app.trials import NctId, Trial
+from app.trials import NctId, Site, Trial
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class RawStudy:
     conditions: tuple[str, ...]
     status: str
     eligibility_text: str
+    sites: tuple[Site, ...] = ()
 
 
 async def fetch(ctx: Ctx, condition: str, location: str, max_trials: int) -> tuple[list[RawStudy], str]:
@@ -49,7 +50,14 @@ def parse_study(study: dict[str, Any]) -> RawStudy:
     return RawStudy(nct_id=p["identificationModule"]["nctId"], title=p["identificationModule"]["briefTitle"],
                     conditions=tuple(p.get("conditionsModule", {}).get("conditions", ())),
                     status=p["statusModule"]["overallStatus"],
-                    eligibility_text=p.get("eligibilityModule", {}).get("eligibilityCriteria", ""))
+                    eligibility_text=p.get("eligibilityModule", {}).get("eligibilityCriteria", ""),
+                    sites=tuple(_site(loc) for loc in p.get("contactsLocationsModule", {}).get("locations", ())))
+
+
+def _site(loc: dict[str, Any]) -> Site:
+    geo = loc.get("geoPoint") or {}
+    return Site(facility=loc.get("facility", ""), city=loc.get("city", ""), country=loc.get("country", ""),
+                status=loc.get("status", ""), lat=geo.get("lat"), lon=geo.get("lon"))
 
 
 def read_snapshot(directory: Path) -> list[tuple[RawStudy, str]]:

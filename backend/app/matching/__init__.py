@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from app import record, trace
 from app.ctx import Ctx
-from app.matching import loop, repo
+from app.matching import distance, loop, repo
 from app.matching.types import (
-    Citation, CriterionResult, DoctorQuestion, Outcome, RescanReport, Verdict, VerdictChange, VerdictOutcome,
+    Citation, CriterionResult, DoctorQuestion, Outcome, RescanReport, SiteDistance, Verdict, VerdictChange,
+    VerdictOutcome,
 )
 from app.record import ProfileVersionId
 from app.trials import NctId
@@ -17,7 +18,7 @@ from app.trace import RunId
 
 __all__ = ["rescan", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
            "Verdict", "DoctorQuestion", "RescanReport", "VerdictChange", "VerdictOutcome", "Outcome",
-           "CriterionResult", "Citation"]
+           "CriterionResult", "Citation", "SiteDistance"]
 
 _RANK = {VerdictOutcome.ELIGIBLE: 0, VerdictOutcome.POSSIBLE: 1, VerdictOutcome.EXCLUDED: 2}
 
@@ -41,19 +42,40 @@ async def rescan(ctx: Ctx, version_id: ProfileVersionId, *, only: set[NctId] | N
                                  ctx.settings.match_concurrency)
 
 
+async def _with_distances(ctx: Ctx, v: Verdict, at: distance.Origin) -> Verdict:
+    from dataclasses import replace
+
+    r = await distance.reach_of(ctx, v.nct_id, at)
+    return replace(v, nearest_site=r.nearest_recruiting, sites=r.sites, further_away=r.further_away)
+
+
 async def verdict(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId) -> Verdict | None:
     """With criterion results, citations (fact + document + page + quote + question) and doctor questions.
-    The Verdict judged against the Trial's current Criteria."""
-    return await repo.verdict(ctx.ui_reader, nct_id, version_id, with_results=True)
+    The Verdict judged against the Trial's current Criteria. Site distances as in verdicts_for_version."""
+    v = await repo.verdict(ctx.ui_reader, nct_id, version_id, with_results=True)
+    if v is None:
+        return None
+    profile = await record.profile_version(ctx, version_id)
+    return await _with_distances(ctx, v, await distance.origin(ctx, profile.patient_id))
 
 
 async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[Verdict]:
-    """Ranked: eligible, then possible (fewest unknowns first), then excluded; ties by NCT id.
-    Results, Citations and questions are loaded (the Trials page shows them)."""
-    ranked = sorted(await repo.verdicts_for_version(ctx.ui_reader, version_id),
-                    key=lambda vu: (_RANK[vu[0].outcome], vu[1] if vu[0].outcome == VerdictOutcome.POSSIBLE else 0,
-                                    vu[0].nct_id))
-    return [v for v, _ in ranked]
+    """Ranked by outcome: eligible, then possible (fewest unknowns first), then excluded; then by the nearest
+    recruiting site (unknown distance last); ties by NCT id. Results, Citations and questions are loaded (the
+    Trials page shows them). Each Verdict carries its sites' km from the patient's CURRENT postcode, and Trials
+    with no recruiting site within the travel limit are flagged `further_away`, never dropped. Distance only
+    orders and flags: the outcome is the stored one, with or without a postcode."""
+    stored = await repo.verdicts_for_version(ctx.ui_reader, version_id)
+    if not stored:
+        return []
+    at = await distance.origin(ctx, (await record.profile_version(ctx, version_id)).patient_id)
+    located = [(await _with_distances(ctx, v, at), unknowns) for v, unknowns in stored]
+
+    def key(vu: tuple[Verdict, int]):
+        v, unknowns = vu
+        km = v.nearest_site.km if v.nearest_site and v.nearest_site.km is not None else float("inf")
+        return _RANK[v.outcome], unknowns if v.outcome == VerdictOutcome.POSSIBLE else 0, km, v.nct_id
+    return [v for v, _ in sorted(located, key=key)]
 
 
 async def change_between(ctx: Ctx, nct_id: NctId, from_version: ProfileVersionId, to_version: ProfileVersionId) -> VerdictChange:

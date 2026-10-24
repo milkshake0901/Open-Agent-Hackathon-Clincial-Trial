@@ -114,3 +114,25 @@ async def test_the_version_diff_lists_the_verdicts_that_changed_and_the_criteria
         [moved] = changed["criteria_changed"]
         assert "ECOG" in moved["text"] and (moved["outcome_from"], moved["outcome_to"]) == ("unknown", "met")
         assert moved["citation"]["label"] == "Patient-reported, intake questionnaire, Q13"
+
+
+async def test_listed_verdicts_carry_site_lines_and_the_further_away_flag_but_never_the_postcode(clean_db):
+    from tests.conftest import make_ctx
+    ctx = make_ctx(clean_db, FakeLLM(matcher_citing({"ECOG": "daily activity"})))
+    await trials.load_snapshot(ctx, SNAPSHOT)
+    app.state.ctx = ctx
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        definition = (await http.get("/api/questionnaire/definition")).json()
+        patient = (await http.post("/api/patients", json={"label": "Demo patient W"})).json()["patient_id"]
+        body = (await http.post(f"/api/patients/{patient}/questionnaire", json={
+            "definition_version": definition["version"], "respondent": "patient",
+            "answers": {"birth_month": "1958-03", "postcode": "2145", "max_travel_km": "25"}})).json()
+
+        listed = await http.get(f"/api/patients/{patient}/versions/{body['profile_version_id']}/verdicts")
+
+    [v] = listed.json()["verdicts"]
+    assert v["sites"][0] == {"name": "Local Institution - 0439, Westmead, Australia", "status": "not yet recruiting",
+                             "km": 1}
+    assert v["nearest_site"]["status"] == "recruiting" and v["nearest_site"]["km"] > 5000
+    assert v["further_away"] is True
+    assert "2145" not in listed.text

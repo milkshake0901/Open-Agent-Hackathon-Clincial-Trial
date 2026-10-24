@@ -43,6 +43,17 @@ class Criterion:
 
 
 @dataclass(frozen=True)
+class Site:
+    """One of a Trial's locations as ClinicalTrials.gov lists it. lat/lon is the registry's geoPoint (None if absent)."""
+    facility: str
+    city: str
+    country: str
+    status: str                  # per-site recruitment status, e.g. RECRUITING, NOT_YET_RECRUITING; "" if not given
+    lat: float | None
+    lon: float | None
+
+
+@dataclass(frozen=True)
 class SyncReport:
     fetched: int
     new: tuple[NctId, ...]
@@ -51,7 +62,8 @@ class SyncReport:
     source: str
 
 
-__all__ = ["sync", "load_snapshot", "trial", "criteria", "active_trials", "Trial", "Criterion", "CriterionKind",
+__all__ = ["sync", "load_snapshot", "trial", "criteria", "sites", "active_trials", "Trial", "Criterion", "Site",
+           "CriterionKind",
            "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES"]
 
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
@@ -81,13 +93,13 @@ async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
     loaded = []
     for raw, fetched_at in studies:
         t = ctgov.to_trial(raw, "snapshot", fetched_at)
-        loaded.append((t, splitting.split_deterministic(t.nct_id, t.eligibility_hash, t.eligibility_text)))
+        loaded.append((t, splitting.split_deterministic(t.nct_id, t.eligibility_hash, t.eligibility_text), raw.sites))
     report = await timeline.record_trials(ctx.wm, loaded, None)
     changed = {i.split(":", 1)[1] for i in report.changed_ids}
     return SyncReport(fetched=len(loaded),
-                      new=tuple(t.nct_id for t, _ in loaded if before[t.nct_id] is None),
-                      changed=tuple(t.nct_id for t, _ in loaded if before[t.nct_id] is not None and t.nct_id in changed),
-                      unchanged=tuple(t.nct_id for t, _ in loaded if t.nct_id not in changed), source="snapshot")
+                      new=tuple(t.nct_id for t, *_ in loaded if before[t.nct_id] is None),
+                      changed=tuple(t.nct_id for t, *_ in loaded if before[t.nct_id] is not None and t.nct_id in changed),
+                      unchanged=tuple(t.nct_id for t, *_ in loaded if t.nct_id not in changed), source="snapshot")
 
 
 async def trial(ctx: Ctx, nct_id: NctId) -> Trial | None:
@@ -96,6 +108,11 @@ async def trial(ctx: Ctx, nct_id: NctId) -> Trial | None:
 
 async def active_trials(ctx: Ctx) -> list[Trial]:
     return await repo.active_trials(ctx.ui_reader)
+
+
+async def sites(ctx: Ctx, nct_id: NctId) -> tuple[Site, ...]:
+    """The Trial's locations as last loaded, in registry order (empty for an unknown Trial)."""
+    return await repo.sites(ctx.ui_reader, nct_id)
 
 
 async def criteria(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> tuple[Criterion, ...]:

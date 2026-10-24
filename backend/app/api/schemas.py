@@ -140,6 +140,12 @@ class DoctorQuestionOut(BaseModel):
     unblocks: list[str]
 
 
+class SiteOut(BaseModel):
+    name: str
+    status: str                 # "recruiting", "not yet recruiting", ...
+    km: int | None              # None: distance unknown (no or unknown postcode, or the site has no location)
+
+
 class VerdictOut(BaseModel):
     nct_id: str
     title: str
@@ -150,11 +156,14 @@ class VerdictOut(BaseModel):
     attempts: int
     results: list[CriterionResultOut]
     questions: list[DoctorQuestionOut]
+    nearest_site: SiteOut | None = None   # nearest RECRUITING site
+    sites: list[SiteOut] = []             # up to 3 nearest open sites, any status
+    further_away: bool = False            # no recruiting site within the travel limit: show under "Further away"
 
 
 class VerdictListOut(BaseModel):
     profile_version_id: str
-    verdicts: list[VerdictOut]  # ranked: eligible, possible (fewest unknowns first), excluded
+    verdicts: list[VerdictOut]  # ranked: outcome (possible: fewest unknowns first), then nearest recruiting site
 
 
 class RescanOut(BaseModel):

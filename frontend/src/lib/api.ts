@@ -60,7 +60,12 @@ export type VerdictOut = {
   attempts: number;
   results: CriterionResultOut[];
   questions: DoctorQuestion[];
+  nearest_site: SiteOut | null; // nearest recruiting site
+  sites: SiteOut[]; // up to 3 nearest open sites, any status
+  further_away: boolean; // no recruiting site within the travel limit
 };
+
+export type SiteOut = { name: string; status: string; km: number | null };
 
 export type ReturnOpened = {
   patient_id: string;
