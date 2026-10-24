@@ -24,7 +24,7 @@ def matcher_citing(subject_by_text):
         results = []
         for line in (line for line in user.splitlines() if line.startswith("- NCT")):
             cid = line.split()[1]
-            word = next((w for w in subject_by_text if w in line), None)
+            word = next((w for w in subject_by_text if w in line and subject_by_text[w] in facts), None)
             results.append({"criterion_id": cid, "outcome": "met" if word else "unknown",
                             "fact_id": facts[subject_by_text[word]] if word else None, "rationale": "per answers"})
         return {"results": results}
@@ -60,3 +60,57 @@ async def test_a_committed_questionnaire_rescans_and_lists_ranked_cited_verdicts
         assert again["judged"] == [] and again["skipped_existing"] == ["NCT07680790"]
         assert (await http.get(f"/api/patients/{patient}/versions/{vid}/verdicts/NCT07680790")).status_code == 200
         assert (await http.get(f"/api/patients/{patient}/versions/{vid}/verdicts/NCT0")).status_code == 404
+
+
+async def test_an_upload_that_commits_a_new_version_rescans_it(clean_db, tmp_path):
+    from dataclasses import replace
+
+    from app import record
+    from app.config import Settings
+    from tests.conftest import ADMIN_DSN, make_ctx
+    from tests.record.test_document_upload import REFERRAL, REFERRAL_FACTS
+
+    judge = matcher_citing({})
+
+    def respond(lane, system, user):
+        return {"facts": REFERRAL_FACTS} if lane == "fast" else judge(lane, system, user)
+    ctx = make_ctx(clean_db, FakeLLM(respond))
+    ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
+    await trials.load_snapshot(ctx, SNAPSHOT)
+    app.state.ctx = ctx
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        patient = (await http.post("/api/patients", json={"label": "Demo patient U"})).json()["patient_id"]
+        await http.post(f"/api/patients/{patient}/questionnaire", json={
+            "definition_version": record.questionnaire_definition().version, "respondent": "patient",
+            "answers": {"sex": "female"}})
+
+        upload = await http.post(f"/api/patients/{patient}/documents",
+                                 files={"file": ("referral.pdf", REFERRAL, "application/pdf")})
+        run = (await http.get(f"/api/runs/{upload.json()['run_id']}")).json()
+        assert run["state"]["version_number"] == 2
+        v2 = run["state"]["profile_version_id"]
+
+        listed = (await http.get(f"/api/patients/{patient}/versions/{v2}/verdicts")).json()
+        assert [v["nct_id"] for v in listed["verdicts"]] == ["NCT07680790"]
+
+
+async def test_the_version_diff_lists_the_verdicts_that_changed_and_the_criteria_that_moved(clean_db):
+    from tests.conftest import make_ctx
+    ctx = make_ctx(clean_db, FakeLLM(matcher_citing({"ECOG": "daily activity"})))
+    await trials.load_snapshot(ctx, SNAPSHOT)
+    app.state.ctx = ctx
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        version = (await http.get("/api/questionnaire/definition")).json()["version"]
+        patient = (await http.post("/api/patients", json={"label": "Demo patient D"})).json()["patient_id"]
+        submit = lambda answers: http.post(f"/api/patients/{patient}/questionnaire", json={
+            "definition_version": version, "respondent": "patient", "answers": answers})
+        v1 = (await submit({"birth_month": "1958-03"})).json()["profile_version_id"]
+        v2 = (await submit({"birth_month": "1958-03", "daily_activity": "fully_active"})).json()["profile_version_id"]
+
+        diff = (await http.get(f"/api/patients/{patient}/versions/{v2}/diff", params={"from": v1})).json()
+
+        [changed] = diff["verdicts_changed"]
+        assert (changed["nct_id"], changed["outcome_from"], changed["outcome_to"]) == ("NCT07680790", "possible", "possible")
+        [moved] = changed["criteria_changed"]
+        assert "ECOG" in moved["text"] and (moved["outcome_from"], moved["outcome_to"]) == ("unknown", "met")
+        assert moved["citation"]["label"] == "Patient-reported, intake questionnaire, Q13"

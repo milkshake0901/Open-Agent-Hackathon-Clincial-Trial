@@ -217,3 +217,22 @@ async def test_the_matcher_sees_criteria_and_cited_facts_with_age_worked_out_tod
     assert "Patient-reported, intake questionnaire, Q13" in prompt
     assert "68 years old" in prompt          # born March 1958, matched on 24 October 2026
     assert "2031" not in "".join(c.system + c.user for c in fake.calls)
+
+
+async def test_change_between_versions_names_the_criteria_whose_result_moved_and_why(clean_db):
+    ctx, fake, v1 = await _setup(clean_db)
+    criteria = await trials.criteria(ctx, NCT)
+    script(fake, answer_all(criteria))
+    await matching.rescan(ctx, v1.id)
+    changed = await record.submit_questionnaire(ctx, v1.patient_id, {**ANSWERS, "daily_activity": "light_activity"},
+                                                respondent="other")
+    v2 = await record.profile_version(ctx, changed.version.id)
+    script(fake, answer_all(criteria, met=("ECOG",), fact=v2.current()["daily activity"]))
+    await matching.rescan(ctx, v2.id)
+
+    change = await matching.change_between(ctx, NCT, v1.id, v2.id)
+
+    assert (change.outcome_from, change.outcome_to) == ("possible", "possible")
+    [moved] = change.criteria_changed
+    assert "ECOG" in moved.text and (moved.outcome_from, moved.outcome_to) == ("unknown", "met")
+    assert moved.citation.fact_id == v2.current()["daily activity"].id

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import record
 from app.api.deps import get_ctx
+from app.api.verdicts import verdicts_changed
 from app.api.schemas import FactOut, PatientCreated, PatientIn, VersionDiffOut, VersionOut
 from app.ctx import Ctx
 
@@ -52,7 +53,8 @@ async def get_version(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
 
 @router.get("/patients/{pid}/versions/{vid}/diff", response_model=VersionDiffOut)
 async def version_diff(pid: str, vid: str, from_: str = Query(alias="from"), ctx: Ctx = Depends(get_ctx)):
-    """Facts added and subjects changed between two versions (record.diff). Verdicts changed: matching, #12."""
+    """Facts added and subjects changed between two versions (record.diff), and the Verdicts that moved
+    (matching.change_between for each Trial judged at the later version)."""
     try:
         d = await record.diff(ctx, record.ProfileVersionId(from_), record.ProfileVersionId(vid))
         v = await record.profile_version(ctx, d.to_version)
@@ -63,4 +65,5 @@ async def version_diff(pid: str, vid: str, from_: str = Query(alias="from"), ctx
     return VersionDiffOut(from_version=d.from_version, to_version=d.to_version,
                           facts_added=[_fact_out(f) for f in d.facts_added],
                           subjects_changed=[{"subject": s, "before": b and _fact_out(b), "after": _fact_out(a)}
-                                            for s, b, a in d.subjects_changed])
+                                            for s, b, a in d.subjects_changed],
+                          verdicts_changed=await verdicts_changed(ctx, d.from_version, d.to_version))

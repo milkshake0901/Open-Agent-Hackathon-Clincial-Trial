@@ -171,11 +171,27 @@ class SubjectChangeOut(BaseModel):
     after: FactOut
 
 
+class CriterionChangeOut(BaseModel):
+    criterion_id: str
+    text: str
+    outcome_from: Literal["met", "not_met", "unknown"] | None   # None when the Trial was not judged before
+    outcome_to: Literal["met", "not_met", "unknown"]
+    citation: VerdictCitationOut | None
+
+
+class VerdictChangeOut(BaseModel):
+    nct_id: str
+    outcome_from: Literal["eligible", "possible", "excluded"] | None
+    outcome_to: Literal["eligible", "possible", "excluded"]
+    criteria_changed: list[CriterionChangeOut]
+
+
 class VersionDiffOut(BaseModel):
     from_version: str
     to_version: str
     facts_added: list[FactOut]
-    subjects_changed: list[SubjectChangeOut]   # verdicts_changed arrives with matching (#12)
+    subjects_changed: list[SubjectChangeOut]
+    verdicts_changed: list[VerdictChangeOut] = []   # Trials whose outcome or any Criterion result moved
 
 
-# TODO: VerdictChangeOut, SyncReportOut, RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.
+# TODO: SyncReportOut, RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.

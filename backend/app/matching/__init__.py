@@ -57,8 +57,24 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[V
 
 
 async def change_between(ctx: Ctx, nct_id: NctId, from_version: ProfileVersionId, to_version: ProfileVersionId) -> VerdictChange:
-    """Why did the Verdict move? Pure diff of two stored Verdicts' criterion results. The demo moment."""
-    raise NotImplementedError
+    """Why did the Verdict move? Pure diff of two stored Verdicts' criterion results. The demo moment.
+    Lists the Criteria whose outcome differs (all of them when the Trial was not judged at from_version).
+    Raises LookupError when the Trial has no Verdict at to_version."""
+    from app import trials
+    from app.matching.types import CriterionChange
+
+    after = await verdict(ctx, nct_id, to_version)
+    if after is None:
+        raise LookupError(f"no Verdict for {nct_id} at {to_version}")
+    before = await verdict(ctx, nct_id, from_version)
+    was = {r.criterion_id: r.outcome for r in before.results} if before else {}
+    texts = {c.id: c.text for c in await trials.criteria(ctx, nct_id)}
+    return VerdictChange(nct_id=nct_id, outcome_from=before.outcome if before else None, outcome_to=after.outcome,
+                         criteria_changed=tuple(
+                             CriterionChange(criterion_id=r.criterion_id, text=texts.get(r.criterion_id, ""),
+                                             outcome_from=was.get(r.criterion_id), outcome_to=r.outcome,
+                                             citation=r.citation)
+                             for r in after.results if was.get(r.criterion_id) != r.outcome))
 
 
 async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[DoctorQuestion]:
