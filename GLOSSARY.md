@@ -38,6 +38,10 @@ _Avoid_: Study, protocol
 One inclusion or exclusion rule taken from a Trial's eligibility text.
 _Avoid_: Requirement, condition, rule
 
+**Criterion topic**:
+A kind of patient information a Criterion asks about, such as performance status or CNS metastases; one Criterion can have several.
+_Avoid_: Category, tag, bucket
+
 ## Matching
 
 **Criterion result**:
