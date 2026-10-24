@@ -2,21 +2,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import matching, record, trials
-from app.api.deps import get_ctx
+from app.api.deps import get_ctx, patient_version
 from app.api.schemas import DoctorQuestionOut, RescanOut, RespondentQuestionOut, VerdictChangeOut, VerdictListOut, VerdictOut
 from app.ctx import Ctx
 
 router = APIRouter(tags=["verdicts"])
-
-
-async def _version(ctx: Ctx, pid: str, vid: str) -> record.ProfileVersion:
-    try:
-        v = await record.profile_version(ctx, record.ProfileVersionId(vid))
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
-    if v.patient_id != pid:
-        raise HTTPException(404, f"profile version {vid}")
-    return v
 
 
 def citation_label(question: str | None, page: int) -> str:
@@ -81,7 +71,7 @@ def _site_out(sd: matching.TrialSiteDistance) -> dict:
 @router.post("/patients/{pid}/versions/{vid}/rescan", status_code=202, response_model=RescanOut)
 async def rescan(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
     """Idempotent: finishes immediately with everything skipped if nothing changed. Runs inline."""
-    await _version(ctx, pid, vid)
+    await patient_version(ctx, pid, vid)
     r = await matching.rescan(ctx, record.ProfileVersionId(vid))
     return RescanOut(run_id=r.run_id, planned=list(r.planned), judged=list(r.judged),
                      skipped_existing=list(r.skipped_existing), failed=[list(f) for f in r.failed])
@@ -90,14 +80,14 @@ async def rescan(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
 @router.get("/patients/{pid}/versions/{vid}/verdicts", response_model=VerdictListOut)
 async def list_verdicts(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
     """Ranked: eligible, then possible (fewest unknowns first), then excluded."""
-    await _version(ctx, pid, vid)
+    await patient_version(ctx, pid, vid)
     verdicts = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
     return VerdictListOut(profile_version_id=vid, verdicts=[await _verdict_out(ctx, v) for v in verdicts])
 
 
 @router.get("/patients/{pid}/versions/{vid}/verdicts/{nct}", response_model=VerdictOut)
 async def get_verdict(pid: str, vid: str, nct: str, ctx: Ctx = Depends(get_ctx)):
-    await _version(ctx, pid, vid)
+    await patient_version(ctx, pid, vid)
     v = await matching.verdict(ctx, trials.NctId(nct), record.ProfileVersionId(vid))
     if v is None:
         raise HTTPException(404, f"no Verdict for {nct} at {vid}")
@@ -107,8 +97,8 @@ async def get_verdict(pid: str, vid: str, nct: str, ctx: Ctx = Depends(get_ctx))
 @router.get("/patients/{pid}/versions/{vid}/verdicts/{nct}/change", response_model=VerdictChangeOut)
 async def verdict_change(pid: str, vid: str, nct: str, from_: str = Query(alias="from"),
                          ctx: Ctx = Depends(get_ctx)):
-    await _version(ctx, pid, vid)
-    await _version(ctx, pid, from_)
+    await patient_version(ctx, pid, vid)
+    await patient_version(ctx, pid, from_)
     try:
         return change_out(await matching.change_between(ctx, trials.NctId(nct), record.ProfileVersionId(from_),
                                                         record.ProfileVersionId(vid)))
@@ -119,7 +109,7 @@ async def verdict_change(pid: str, vid: str, nct: str, from_: str = Query(alias=
 @router.get("/patients/{pid}/questions", response_model=list[DoctorQuestionOut])
 async def doctor_questions(pid: str, version: str, ctx: Ctx = Depends(get_ctx)):
     """Deduplicated across Trials; each names the Trials it would help decide."""
-    await _version(ctx, pid, version)
+    await patient_version(ctx, pid, version)
     return [question_out(q) for q in await matching.questions_for_version(ctx, record.ProfileVersionId(version))]
 
 
@@ -127,6 +117,6 @@ async def doctor_questions(pid: str, version: str, ctx: Ctx = Depends(get_ctx)):
 async def respondent_questions(pid: str, version: str, ctx: Ctx = Depends(get_ctx)):
     """Deduplicated by questionnaire question; each names the Trials it would help decide. Answering is a
     questionnaire resubmission (POST /patients/{pid}/questionnaire)."""
-    await _version(ctx, pid, version)
+    await patient_version(ctx, pid, version)
     return [respondent_question_out(q)
             for q in await matching.respondent_questions_for_version(ctx, record.ProfileVersionId(version))]

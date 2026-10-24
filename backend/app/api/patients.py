@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import record
-from app.api.deps import get_ctx
+from app.api.deps import get_ctx, patient_version
 from app.api.verdicts import verdicts_changed
 from app.api.schemas import (
     FactOut, PatientCreated, PatientIn, SearchPreferencesIn, SearchPreferencesOut, VersionDiffOut, VersionOut,
@@ -24,8 +24,6 @@ async def set_search_preferences(pid: str, body: SearchPreferencesIn, ctx: Ctx =
         p = await record.set_search_preferences(ctx, record.PatientId(pid), body.model_dump(exclude_none=True))
     except record.InvalidAnswers as e:
         raise HTTPException(422, str(e))
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
     return SearchPreferencesOut(postcode_set=p.postcode is not None, location_known=p.location is not None,
                                 max_travel_km=p.max_travel_km, contact_set=p.contact is not None)
 
@@ -56,12 +54,7 @@ def _fact_out(f: record.Fact) -> FactOut:
 
 @router.get("/patients/{pid}/versions/{vid}", response_model=VersionOut)
 async def get_version(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
-    try:
-        v = await record.profile_version(ctx, record.ProfileVersionId(vid))
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
-    if v.patient_id != pid:
-        raise HTTPException(404, f"profile version {vid}")
+    v = await patient_version(ctx, pid, vid)
     return VersionOut(id=v.id, number=v.number, document_hash=v.document_hash,
                       facts=[_fact_out(f) for f in v.facts], current={s: f.id for s, f in v.current().items()})
 
@@ -70,13 +63,8 @@ async def get_version(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
 async def version_diff(pid: str, vid: str, from_: str = Query(alias="from"), ctx: Ctx = Depends(get_ctx)):
     """Facts added and subjects changed between two versions (record.diff), and the Verdicts that moved
     (matching.change_between for each Trial judged at the later version)."""
-    try:
-        d = await record.diff(ctx, record.ProfileVersionId(from_), record.ProfileVersionId(vid))
-        v = await record.profile_version(ctx, d.to_version)
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
-    if v.patient_id != pid:
-        raise HTTPException(404, f"profile version {vid}")
+    d = await record.diff(ctx, record.ProfileVersionId(from_), record.ProfileVersionId(vid))
+    await patient_version(ctx, pid, d.to_version)
     return VersionDiffOut(from_version=d.from_version, to_version=d.to_version,
                           facts_added=[_fact_out(f) for f in d.facts_added],
                           subjects_changed=[{"subject": s, "before": b and _fact_out(b), "after": _fact_out(a)}

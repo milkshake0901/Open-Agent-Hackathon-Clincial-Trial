@@ -55,6 +55,11 @@ class RescanSummary(BaseModel):
     judged: int                 # Trials given a Verdict by the Re-scan that followed the commit
     failed: int                 # Trials left without one (model unavailable); the next Re-scan retries them
 
+    @classmethod
+    def of(cls, report: Any) -> "RescanSummary":
+        """From a matching.RescanReport."""
+        return cls(judged=len(report.judged), failed=len(report.failed))
+
 
 class DiagnosisCheckIn(BaseModel):
     text: str | None = None     # a re-wording after "no"; omitted: the latest accepted diagnosis answer

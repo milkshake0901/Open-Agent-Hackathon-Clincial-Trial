@@ -7,7 +7,7 @@ import asyncpg
 from fastapi import FastAPI
 
 from app import trials
-from app.api import router
+from app.api import EXCEPTION_HANDLERS, router
 from app.config import Settings
 from app.ctx import Ctx
 from app.llm.nightshift import FakeLLM
@@ -41,5 +41,5 @@ async def lifespan(app: FastAPI):
         await pool.close()
 
 
-app = FastAPI(title="TrialMatch", lifespan=lifespan)
+app = FastAPI(title="TrialMatch", lifespan=lifespan, exception_handlers=EXCEPTION_HANDLERS)
 app.include_router(router)

@@ -28,8 +28,6 @@ async def add_document(pid: str, file: UploadFile, background: BackgroundTasks, 
     try:
         registered = await record.register_document(ctx, record.PatientId(pid), file.filename or "document.pdf",
                                                     content)
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
     except record.UnreadableDocument as e:
         raise HTTPException(422, str(e))
     return DocumentAccepted(document_hash=registered.document.hash, run_id=await start_ingest(ctx, background, registered),

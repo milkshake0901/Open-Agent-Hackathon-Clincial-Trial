@@ -13,10 +13,7 @@ router = APIRouter(tags=["runs"])
 
 
 async def _read(ctx: Ctx, run_id: str, since: int = 0) -> trace.RunLog:
-    try:
-        return await trace.read(ctx.ui_reader, trace.RunId(run_id), since_seq=since)
-    except trace.UnknownRun:
-        raise HTTPException(404, f"run {run_id}")
+    return await trace.read(ctx.ui_reader, trace.RunId(run_id), since_seq=since)
 
 
 def _events(log: trace.RunLog) -> list[dict]:
@@ -65,10 +62,7 @@ async def _conflict_out(ctx: Ctx, c: record.Conflict) -> ConflictOut:
 @router.get("/runs/{run_id}/conflicts", response_model=ConflictsOut)
 async def conflicts(run_id: str, ctx: Ctx = Depends(get_ctx)):
     """The Conflicts a parked ingest run waits on, each side with its Document, page and quote (the Conflict dialog)."""
-    try:
-        found = await record.conflicts(ctx, trace.RunId(run_id))
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
+    found = await record.conflicts(ctx, trace.RunId(run_id))
     return ConflictsOut(run_id=run_id, conflicts=[await _conflict_out(ctx, c) for c in found])
 
 
@@ -90,16 +84,13 @@ async def confirm(run_id: str, body: ConfirmIn, ctx: Ctx = Depends(get_ctx)):
     try:
         outcome = await record.confirm(ctx, trace.RunId(run_id), [
             record.Resolution(record.ConflictId(r.conflict_id), r.choice) for r in body.resolutions])
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
     except record.NotAwaitingPatient as e:
         raise HTTPException(409, str(e))
     except record.InvalidResolution as e:
         raise HTTPException(422, str(e))
     accepted = submission_accepted(outcome)
     if isinstance(outcome, record.Committed):
-        report = await matching.rescan(ctx, outcome.version.id, correlation_id=outcome.run_id)
-        accepted.rescan = RescanSummary(judged=len(report.judged), failed=len(report.failed))
+        accepted.rescan = RescanSummary.of(await matching.rescan(ctx, outcome.version.id, correlation_id=outcome.run_id))
     return accepted
 
 

@@ -94,7 +94,7 @@ async def patient_for_return_link(ctx: Ctx, token: str) -> PatientId:
     """The one patient a return token opens. NotFound (saying nothing about any patient) otherwise."""
     patient_id = await repo.patient_for_token_hash(ctx.ui_reader, _token_hash(token))
     if patient_id is None:
-        raise NotFound("return link")
+        raise NotFound("This return link is not valid.")
     return patient_id
 
 

@@ -47,8 +47,6 @@ async def submit(pid: str, body: QuestionnaireSubmission, background: Background
         registered = await record.register_questionnaire(ctx, record.PatientId(pid), body.answers, body.respondent)
     except record.InvalidAnswers as e:
         raise HTTPException(422, str(e))
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
     run_id = await start_ingest(ctx, background, registered)
     return QuestionnaireAccepted(document_hash=registered.document.hash, run_id=run_id,
                                  deduplicated=registered.deduplicated,
@@ -82,8 +80,6 @@ async def diagnosis_check(pid: str, body: DiagnosisCheckIn, ctx: Ctx = Depends(g
     404: unknown patient or no diagnosis answer yet; 503: model unavailable (nothing stored)."""
     try:
         return _check_out(await record.check_diagnosis(ctx, record.PatientId(pid), body.text))
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
     except llm.LlmUnavailable as e:
         raise HTTPException(503, str(e))
 
@@ -95,12 +91,9 @@ async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerI
     patient_id = record.PatientId(pid)
     try:
         check = await record.answer_diagnosis_check(ctx, patient_id, check_id, body.answer)
-    except record.NotFound as e:
-        raise HTTPException(404, str(e))
     except record.InvalidAnswers as e:
         raise HTTPException(409, str(e))
     summary = None
     if check.condition_term is not None and (current := await record.current_version(ctx, patient_id)) is not None:
-        report = await matching.rescan(ctx, current.id)
-        summary = RescanSummary(judged=len(report.judged), failed=len(report.failed))
+        summary = RescanSummary.of(await matching.rescan(ctx, current.id))
     return _check_out(check, summary)
