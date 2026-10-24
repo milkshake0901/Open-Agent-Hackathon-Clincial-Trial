@@ -29,7 +29,10 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
     #           if impossible_sequence(d, current.facts):   yield IMPOSSIBLE_SEQUENCE (conflict)
     #   also within-draft contradictions (two drafts, same subject+date, different value) -> conflict with accepted=None
 
-    Implemented so far (#7): MISSING_DATE, BAD_PAGE, QUOTE_NOT_ON_PAGE, UNIT_OUT_OF_RANGE. The checks against
+    Dates are parsed by `observed_on` below, which is where an Intake questionnaire's approximate dates are
+    accepted as best estimates (#8); every other check applies to questionnaire Documents unchanged.
+
+    Implemented so far (#7, #8): MISSING_DATE, BAD_PAGE, QUOTE_NOT_ON_PAGE, UNIT_OUT_OF_RANGE. The checks against
     `current` (DUPLICATE_OF_ACCEPTED #9, CONTRADICTS_ACCEPTED and IMPOSSIBLE_SEQUENCE #13) are still to come.
     """
     findings: list[Finding] = []
@@ -47,6 +50,32 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
         if d.unit and not plausible_range(d.subject, d.value, d.unit):
             add(FindingKind.UNIT_OUT_OF_RANGE, i, f"fact {i + 1} ({d.subject}): {d.value} {d.unit} is implausible")
     return tuple(findings)
+
+
+_FULL_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+_APPROXIMATE = re.compile(r"^(\d{4})(?:-(\d{2}))?$")
+
+
+def observed_on(raw: str | None, doc: Document) -> date | None:
+    """The observed-on date the Critic accepts for a drafted date string; None is a MISSING_DATE finding.
+
+    A full ISO date is always accepted. An approximate one ("2025-03", "2025") counts as missing on a clinical
+    Document, but on an Intake questionnaire it is accepted as a best estimate (ADR 0003): the middle of the
+    month or year, never later than the submission. No precision is stored; the Fact's quote keeps the
+    Respondent's own words ("around March 2025") for the Matcher to judge."""
+    raw = (raw or "").strip()
+    if m := _FULL_DATE.match(raw):
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    if not doc.is_questionnaire or not (m := _APPROXIMATE.match(raw)):
+        return None
+    year, month = int(m.group(1)), m.group(2)
+    if month is not None and not 1 <= int(month) <= 12:
+        return None
+    estimate = date(year, int(month), 15) if month else date(year, 7, 1)
+    return min(estimate, doc.uploaded_at)
 
 
 def _squash(text: str) -> str:

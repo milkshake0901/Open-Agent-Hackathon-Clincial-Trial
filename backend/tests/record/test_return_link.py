@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from app import record
+from app.llm.nightshift import FakeLLM
+from tests.conftest import make_ctx
 
 
 async def test_a_return_token_reopens_only_the_patient_it_was_issued_for(ctx):
@@ -49,16 +51,19 @@ async def test_postcode_travel_limit_and_contact_are_stored_as_search_preference
         postcode="2031", max_travel_km=50, contact="sam.carer@example.com")
 
 
-async def test_search_preferences_are_never_facts_document_text_or_model_input(ctx, fake_llm):
+async def test_search_preferences_are_never_facts_document_text_or_model_input(clean_db):
+    model = FakeLLM(lambda lane, system, user: {"facts": []})
+    ctx = make_ctx(clean_db, model)
     patient = await record.create_patient(ctx, "Demo patient A")
 
-    outcome = await record.submit_questionnaire(
+    await record.submit_questionnaire(
         ctx, patient, {"sex": "female", "diagnosis": "breast cancer", **PRIVATE}, respondent="patient")
 
-    version = await record.profile_version(ctx, outcome.version.id)
+    version = await record.current_version(ctx, patient)
     doc = await record.document(ctx, version.document_hash)
     stored = " ".join([p.text for p in doc.pages] + [f"{f.subject} {f.value} {f.quote}" for f in version.facts])
-    prompts = " ".join(f"{c}" for c in fake_llm.calls)
+    prompts = " ".join(f"{c.system} {c.user}" for c in model.calls)
+    assert "breast cancer" in prompts
     for secret in ("2031", "sam.carer", "example.com"):
         assert secret not in stored and secret not in prompts
 

@@ -95,7 +95,14 @@ async def append(writer: "PgWriter", run_id: RunId, event: "RunEvent", *,
 
 
 async def record_llm_call(writer: "PgWriter", run_id: RunId | None, call: LlmCall) -> str:
-    raise NotImplementedError
+    """One row per model call, failed ones included (ok=False), so the trace shows which model answered."""
+    async with writer.transaction() as tx:
+        await tx.execute(
+            "INSERT INTO llm_call (id, run_id, lane, model_requested, model_answered, prompt_tokens, "
+            "completion_tokens, latency_ms, ok) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO NOTHING",
+            (call.id, run_id, str(call.lane), call.model_requested, call.model_answered, call.prompt_tokens,
+             call.completion_tokens, call.latency_ms, call.ok))
+    return call.id
 
 
 async def read(reader: "SqlReader", run_id: RunId, *, since_seq: int = 0) -> RunLog:
