@@ -1,4 +1,5 @@
-"""Upload a Document: register it now, run ingest then Re-scan in the background (one correlation id)."""
+"""Add a Document: register it now, run ingest then Re-scan in the background (one correlation id). A questionnaire
+submission follows the same path (start_ingest)."""
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
@@ -31,15 +32,22 @@ async def upload(pid: str, file: UploadFile, background: BackgroundTasks, ctx: C
         raise HTTPException(404, str(e))
     except record.UnreadableDocument as e:
         raise HTTPException(422, str(e))
-    h = registered.document.hash
+    return UploadAccepted(document_hash=registered.document.hash, run_id=await start_ingest(ctx, background, registered),
+                          deduplicated=registered.deduplicated)
+
+
+async def start_ingest(ctx: Ctx, background: BackgroundTasks, registered: record.Registered) -> trace.RunId:
+    """The run that follows a registered Document: an earlier run for it unless that one was rejected, else a new
+    run opened now, whose ingest (then Re-scan on Committed, same correlation id) runs in the background."""
+    doc = registered.document
     if registered.deduplicated:
-        earlier = await trace.latest_for_document(ctx.ui_reader, h)
+        earlier = await trace.latest_for_document(ctx.ui_reader, doc.hash)
         if earlier is not None and (await trace.project_ingest(ctx.ui_reader, earlier)).phase != "rejected":
-            return UploadAccepted(document_hash=h, run_id=earlier, deduplicated=True)
+            return earlier
     run_id = trace.new_id()
-    await trace.open(ctx.writer, run_id, "ingest", patient_id=pid, document_hash=h)
-    background.add_task(_ingest, ctx, h, run_id)
-    return UploadAccepted(document_hash=h, run_id=run_id, deduplicated=registered.deduplicated)
+    await trace.open(ctx.writer, run_id, "ingest", patient_id=doc.patient_id, document_hash=doc.hash)
+    background.add_task(_ingest, ctx, doc.hash, run_id)
+    return run_id
 
 
 async def _ingest(ctx: Ctx, h: record.DocumentHash, run_id: trace.RunId) -> None:

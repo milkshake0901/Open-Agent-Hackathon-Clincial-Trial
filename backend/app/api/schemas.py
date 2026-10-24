@@ -120,7 +120,12 @@ class LatestAnswersOut(BaseModel):
     answers: dict[str, Any]
 
 
-class SubmissionAccepted(BaseModel):
+class QuestionnaireAccepted(UploadAccepted):
+    """Like an upload: the Document now, its run to follow (GET /runs/{run_id}) for the outcome."""
+    return_token: str | None = None   # first submission only; the frontend shows it as /return/{token}
+
+
+class IngestOutcomeOut(BaseModel):
     run_id: str
     outcome: Literal["committed", "awaiting_patient", "rejected"]
     document_hash: str | None = None
@@ -128,7 +133,6 @@ class SubmissionAccepted(BaseModel):
     version_number: int | None = None
     reason: str | None = None
     rescan: RescanSummary | None = None   # set on "committed"
-    return_token: str | None = None   # first submission only; the frontend shows it as /return/{token}
 
 
 class SearchPreferencesIn(BaseModel):

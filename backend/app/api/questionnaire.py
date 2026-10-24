@@ -1,12 +1,14 @@
 """The Intake questionnaire: its definition, and submitting a completed one for a patient."""
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from app import llm, matching, record
 from app.api.deps import get_ctx
+from app.api.documents import start_ingest
 from app.api.schemas import (
-    DiagnosisAnswerIn, DiagnosisCheckIn, DiagnosisCheckOut, LatestAnswersOut, QuestionnaireOut, QuestionnaireSubmission, RescanSummary, SubmissionAccepted,
+    DiagnosisAnswerIn, DiagnosisCheckIn, DiagnosisCheckOut, LatestAnswersOut, QuestionnaireAccepted, QuestionnaireOut,
+    QuestionnaireSubmission, RescanSummary,
 )
 from app.ctx import Ctx
 
@@ -34,35 +36,23 @@ async def latest(pid: str, ctx: Ctx = Depends(get_ctx)):
                             document_hash=found.document_hash, respondent=found.respondent, answers=found.answers)
 
 
-@router.post("/patients/{pid}/questionnaire", status_code=202, response_model=SubmissionAccepted)
-async def submit(pid: str, body: QuestionnaireSubmission, ctx: Ctx = Depends(get_ctx)):
-    """record.submit_questionnaire, then, on Committed, a Re-scan of the new version under the same correlation id.
-    Both run inline (no background jobs yet), so the response already carries the outcome and the Re-scan counts."""
+@router.post("/patients/{pid}/questionnaire", status_code=202, response_model=QuestionnaireAccepted)
+async def submit(pid: str, body: QuestionnaireSubmission, background: BackgroundTasks, ctx: Ctx = Depends(get_ctx)):
+    """record.register_questionnaire → 202 {document_hash, run_id, deduplicated, return_token}; background:
+    record.ingest → on Committed, matching.rescan with the same correlation id, exactly like an upload. The UI
+    follows the run (GET /runs/{run_id}) to its outcome."""
     if body.definition_version != record.questionnaire_definition().version:
         raise HTTPException(422, f"questionnaire definition {body.definition_version} is out of date")
     try:
-        outcome = await record.submit_questionnaire(ctx, record.PatientId(pid), body.answers, body.respondent)
+        registered = await record.register_questionnaire(ctx, record.PatientId(pid), body.answers, body.respondent)
     except record.InvalidAnswers as e:
         raise HTTPException(422, str(e))
     except record.NotFound as e:
         raise HTTPException(404, str(e))
-    accepted = submission_accepted(outcome)
-    if isinstance(outcome, record.Committed):
-        report = await matching.rescan(ctx, outcome.version.id, correlation_id=outcome.run_id)
-        accepted.rescan = RescanSummary(judged=len(report.judged), failed=len(report.failed))
-    accepted.return_token = await record.issue_return_token(ctx, record.PatientId(pid))
-    return accepted
-
-
-def submission_accepted(outcome: record.IngestOutcome) -> SubmissionAccepted:
-    match outcome:
-        case record.Committed(run_id=run_id, version=v):
-            return SubmissionAccepted(run_id=run_id, outcome="committed", document_hash=v.document_hash,
-                                      profile_version_id=v.id, version_number=v.number)
-        case record.AwaitingPatient(run_id=run_id):
-            return SubmissionAccepted(run_id=run_id, outcome="awaiting_patient")
-        case record.Rejected(run_id=run_id, reason=reason):
-            return SubmissionAccepted(run_id=run_id, outcome="rejected", reason=reason)
+    run_id = await start_ingest(ctx, background, registered)
+    return QuestionnaireAccepted(document_hash=registered.document.hash, run_id=run_id,
+                                 deduplicated=registered.deduplicated,
+                                 return_token=await record.issue_return_token(ctx, record.PatientId(pid)))
 
 
 def _check_out(c: record.DiagnosisCheck, rescan: RescanSummary | None = None) -> DiagnosisCheckOut:

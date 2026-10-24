@@ -19,7 +19,16 @@ export type Questionnaire = { version: string; sections: Section[] };
 export type Respondent = "patient" | "other";
 export type Answers = Record<string, string>;
 
-export type SubmissionAccepted = {
+// A questionnaire submission, like an added Document: its Document and the run to follow for the outcome.
+export type QuestionnaireAccepted = {
+  document_hash: string;
+  run_id: string;
+  deduplicated: boolean;
+  return_token: string | null; // first submission only
+};
+
+// The outcome of answering a Conflict (POST /runs/{id}/confirm).
+export type IngestOutcome = {
   run_id: string;
   outcome: "committed" | "awaiting_patient" | "rejected";
   document_hash: string | null;
@@ -27,7 +36,6 @@ export type SubmissionAccepted = {
   version_number: number | null;
   reason: string | null;
   rescan: { judged: number; failed: number } | null;
-  return_token: string | null; // first submission only
 };
 
 export type VerdictCitation = {
@@ -131,7 +139,12 @@ export type RunOut = {
   run_id: string;
   kind: "ingest" | "rescan";
   head: number;
-  state: { phase: IngestPhase; version_number: number | null; reason: string | null } | null;
+  state: {
+    phase: IngestPhase;
+    profile_version_id: string | null;
+    version_number: number | null;
+    reason: string | null;
+  } | null;
 };
 
 export type LatestAnswers = {
@@ -182,7 +195,7 @@ export const api = {
   createPatient: (label: string) =>
     call<{ patient_id: string }>("/patients", { method: "POST", body: JSON.stringify({ label }) }),
   submit: (patientId: string, body: { definition_version: string; respondent: Respondent; answers: Answers }) =>
-    call<SubmissionAccepted>(`/patients/${encodeURIComponent(patientId)}/questionnaire`, {
+    call<QuestionnaireAccepted>(`/patients/${encodeURIComponent(patientId)}/questionnaire`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -195,7 +208,7 @@ export const api = {
   conflicts: (runId: string) =>
     call<{ run_id: string; conflicts: ConflictOut[] }>(`/runs/${encodeURIComponent(runId)}/conflicts`),
   confirm: (runId: string, resolutions: Resolution[]) =>
-    call<SubmissionAccepted>(`/runs/${encodeURIComponent(runId)}/confirm`, {
+    call<IngestOutcome>(`/runs/${encodeURIComponent(runId)}/confirm`, {
       method: "POST",
       body: JSON.stringify({ resolutions }),
     }),
@@ -235,3 +248,15 @@ export const api = {
 
 export const trialsHref = (patientId: string, versionId: string) =>
   `/trials?patient=${encodeURIComponent(patientId)}&version=${encodeURIComponent(versionId)}`;
+
+const POLL_MS = 1000;
+const ENDED = new Set<IngestPhase>(["committed", "rejected", "awaiting_patient"]);
+
+// Ingest runs in the background after an added Document or a questionnaire submission; poll it until it ends.
+export async function followRun(runId: string): Promise<RunOut> {
+  for (;;) {
+    const run = await api.run(runId);
+    if (run.state && ENDED.has(run.state.phase)) return run;
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+}

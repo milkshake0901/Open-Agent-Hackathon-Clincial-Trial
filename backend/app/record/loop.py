@@ -114,8 +114,18 @@ def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt
     return Accept(tuple(d for i, d in enumerate(drafts) if i not in duplicates))
 
 
-async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts: int, *,
-                     drafter: Drafter | None = None) -> IngestOutcome:
+def drafter_for(doc: Document) -> Drafter:
+    """The Intake agent for a clinical Document. For an Intake questionnaire, its answers are read back from the
+    Document itself: structured ones drafted in code, free-text ones through the agent (questionnaire_drafter)."""
+    if not doc.is_questionnaire:
+        return intake.extract
+    answers = questionnaire.answers_from_pages(doc.pages)
+    structured = questionnaire.structured_drafts(answers, doc.respondent, doc.pages, doc.uploaded_at)
+    free_text = replace(doc, pages=questionnaire.free_text_pages(answers, doc.respondent))
+    return questionnaire_drafter(structured, free_text, questionnaire.settle_free_text)
+
+
+async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts: int) -> IngestOutcome:
     """Drive the loop. One place; reads like the state machine it is.
 
     # TODO pseudocode
@@ -133,7 +143,7 @@ async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts:
     #           case Exhausted(fs):   await trace.append(..., RunRejected(reason)); return Rejected(run_id, reason)
     #   unreachable: decide() returns a terminal step on attempt == max_attempts
     """
-    drafter = drafter or intake.extract
+    drafter = drafter_for(doc)
     current = await repo.current_version(ctx.agent_reader, doc.patient_id)
     await trace.append(ctx.writer, run_id, IngestStarted(actor="record", document_hash=doc.hash, pages=len(doc.pages)))
     feedback: tuple[Finding, ...] = ()

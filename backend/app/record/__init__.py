@@ -49,7 +49,7 @@ from app.trace import RunId
 from app.trace.events import ProfileCommitted
 
 __all__ = [
-    "register_document", "ingest", "confirm", "conflicts", "versions", "profile_version", "diff",
+    "register_document", "register_questionnaire", "ingest", "confirm", "conflicts", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
     "document", "Registered", "UnreadableDocument", "issue_return_token", "patient_for_return_token",
     "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
@@ -105,47 +105,39 @@ async def document(ctx: Ctx, document_hash: DocumentHash) -> Document:
     return doc
 
 
-async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[str, Any],
-                               respondent: Respondent) -> IngestOutcome:
-    """A completed Intake questionnaire becomes a Document (one page per section, each answer under its
-    question number; Respondent stored with the Document) and goes through the ingest loop (ADR 0003).
-    Structured answers map to Patient-reported Facts in code, with no model call. Free-text answers (diagnosis,
-    treatments, medicines, allergies, other illnesses) go through the Intake agent, which sees only those
-    answers; approximate dates are accepted as best estimates and the quote keeps the Respondent's words.
-    Raises InvalidAnswers before anything is stored if an answer does not fit its question. Idempotent on
-    identical answers."""
+async def register_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[str, Any],
+                                 respondent: Respondent) -> Registered:
+    """A completed Intake questionnaire becomes a Document (one page per section, each answer under its question
+    number; Respondent stored with the Document; ADR 0003) and its Search preferences are stored. Ingest it with
+    ingest(), as an uploaded Document. Raises InvalidAnswers and NotFound before anything is stored. Answers identical
+    to the latest accepted submission are that submission's Document (deduplicated)."""
     if respondent not in ("patient", "other"):
         raise InvalidAnswers(f"respondent must be 'patient' or 'other', got {respondent!r}")
     pages = questionnaire.render(answers, respondent)
     preferences = questionnaire.preferences(answers)
     if not await repo.patient_exists(ctx.ui_reader, patient_id):
         raise NotFound(f"patient {patient_id}")
-    now = ctx.now()
-    drafts = questionnaire.structured_drafts(answers, respondent, pages, now.date())
-    # Document hashes are global keys, so the patient is part of a questionnaire's identity: two patients
-    # giving the same answers submit two Documents. A correction is a new Document (ADR 0003) even when it
-    # changes an answer back, so the hash also names the previous accepted questionnaire; answers identical
-    # to that one are the same submission and return its version.
-    body = "\f".join(p.text for p in pages)
     previous = await repo.latest_questionnaire(ctx.ui_reader, patient_id)
-    if previous is not None and previous.respondent == respondent and "\f".join(p.text for p in previous.pages) == body:
-        h = previous.hash
-    else:
-        after = f"after {previous.hash}\n" if previous is not None else ""
-        h = DocumentHash(hashlib.sha256(f"intake-questionnaire\n{patient_id}\n{after}{body}".encode()).hexdigest())
-    doc = Document(hash=h, patient_id=patient_id, filename=questionnaire.DOCUMENT_FILENAME, pages=pages,
-                   uploaded_at=now.date(), respondent=respondent)
+    h = questionnaire.document_hash(patient_id, pages, respondent, previous)
+    existing = await repo.document(ctx.ui_reader, h)
+    now = ctx.now()
+    doc = existing or Document(hash=h, patient_id=patient_id, filename=questionnaire.DOCUMENT_FILENAME, pages=pages,
+                               uploaded_at=now.date(), respondent=respondent)
     async with ctx.writer.transaction() as tx:
         await repo.upsert_search_preferences(tx, patient_id, preferences)
-        await repo.insert_document(tx, doc, uploaded_at=now)
-    existing = await repo.version_for_document(ctx.ui_reader, h)
-    if existing is not None:
-        return Committed(await trace.latest_for_document(ctx.ui_reader, h) or trace.new_id(), existing)
-    run_id = trace.new_id()
-    await trace.open(ctx.writer, run_id, "ingest", patient_id=patient_id, document_hash=h)
-    free_text = replace(doc, pages=questionnaire.free_text_pages(answers, respondent))
-    return await loop.run_ingest(ctx, doc, run_id, ctx.settings.intake_attempts,
-                                 drafter=loop.questionnaire_drafter(drafts, free_text, questionnaire.settle_free_text))
+        if existing is None:
+            await repo.insert_document(tx, doc, uploaded_at=now)
+    return Registered(doc, deduplicated=existing is not None)
+
+
+async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[str, Any],
+                               respondent: Respondent) -> IngestOutcome:
+    """register_questionnaire, then ingest to a terminal state. Structured answers map to Patient-reported Facts in
+    code, with no model call. Free-text answers (diagnosis, treatments, medicines, allergies, other illnesses) go
+    through the Intake agent, which sees only those answers; approximate dates are accepted as best estimates and
+    the quote keeps the Respondent's words. Idempotent on identical answers."""
+    registered = await register_questionnaire(ctx, patient_id, answers, respondent)
+    return await ingest(ctx, registered.document.hash)
 
 
 async def latest_answers(ctx: Ctx, patient_id: PatientId) -> SubmittedAnswers | None:
@@ -239,7 +231,7 @@ def questionnaire_definition() -> Questionnaire:
 @dataclass(frozen=True)
 class Registered:
     document: Document
-    deduplicated: bool    # these bytes were already uploaded for this patient; nothing was parsed or stored
+    deduplicated: bool    # this Document was already stored for this patient; nothing was parsed or stored
 
 
 def document_hash(patient_id: PatientId, content: bytes) -> DocumentHash:
@@ -292,8 +284,9 @@ async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None 
     Committed for it without calling any model. If a run for this document is already
     AwaitingPatient, returns that AwaitingPatient (rehydrated from the run log, no model call).
 
-    `run_id` lets the caller open the run first (an upload answers 202 with it); it is opened here otherwise.
-    Ingests for one patient run one at a time.
+    `run_id` lets the caller open the run first (an upload or a questionnaire submission answers 202 with it); it
+    is opened here otherwise. Ingests for one patient run one at a time. An Intake questionnaire's structured
+    answers are drafted in code and only its free-text answers reach the Intake agent (record.loop.drafter_for).
     """
     doc = await repo.document(ctx.ui_reader, document_hash)
     if doc is None:

@@ -6,8 +6,9 @@ from pathlib import Path
 
 import httpx
 
-from app import record, trials
+from app import trials
 from app.main import app
+from tests.api.questionnaire_http import submit
 from app.llm.nightshift import FakeLLM
 
 SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "trials_snapshot"
@@ -38,13 +39,10 @@ async def test_a_committed_questionnaire_rescans_and_lists_ranked_cited_verdicts
     await trials.load_snapshot(ctx, SNAPSHOT)
     app.state.ctx = ctx
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        definition = (await http.get("/api/questionnaire/definition")).json()
         patient = (await http.post("/api/patients", json={"label": "Demo patient A"})).json()["patient_id"]
-        body = (await http.post(f"/api/patients/{patient}/questionnaire", json={
-            "definition_version": definition["version"], "respondent": "patient",
-            "answers": {"birth_month": "1958-03", "daily_activity": "fully_active"}})).json()
-        assert body["outcome"] == "committed" and body["rescan"] == {"judged": 1, "failed": 0}
-        vid = body["profile_version_id"]
+        _, state = await submit(http, patient, {"birth_month": "1958-03", "daily_activity": "fully_active"})
+        assert state["phase"] == "committed"
+        vid = state["profile_version_id"]
 
         listed = (await http.get(f"/api/patients/{patient}/versions/{vid}/verdicts")).json()
         assert [(v["nct_id"], v["outcome"]) for v in listed["verdicts"]] == [("NCT07680790", "possible")]
@@ -100,12 +98,10 @@ async def test_the_version_diff_lists_the_verdicts_that_changed_and_the_criteria
     await trials.load_snapshot(ctx, SNAPSHOT)
     app.state.ctx = ctx
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        version = (await http.get("/api/questionnaire/definition")).json()["version"]
         patient = (await http.post("/api/patients", json={"label": "Demo patient D"})).json()["patient_id"]
-        submit = lambda answers: http.post(f"/api/patients/{patient}/questionnaire", json={
-            "definition_version": version, "respondent": "patient", "answers": answers})
-        v1 = (await submit({"birth_month": "1958-03"})).json()["profile_version_id"]
-        v2 = (await submit({"birth_month": "1958-03", "daily_activity": "fully_active"})).json()["profile_version_id"]
+        v1 = (await submit(http, patient, {"birth_month": "1958-03"}))[1]["profile_version_id"]
+        v2 = (await submit(http, patient, {"birth_month": "1958-03", "daily_activity": "fully_active"}))[1][
+            "profile_version_id"]
 
         diff = (await http.get(f"/api/patients/{patient}/versions/{v2}/diff", params={"from": v1})).json()
 
@@ -131,9 +127,7 @@ async def test_respondent_questions_are_served_apart_from_doctor_questions(clean
     app.state.ctx = ctx
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         patient = (await http.post("/api/patients", json={"label": "Demo patient Q"})).json()["patient_id"]
-        vid = (await http.post(f"/api/patients/{patient}/questionnaire", json={
-            "definition_version": record.questionnaire_definition().version, "respondent": "patient",
-            "answers": {"birth_month": "1958-03"}})).json()["profile_version_id"]
+        vid = (await submit(http, patient, {"birth_month": "1958-03"}))[1]["profile_version_id"]
 
         asked = (await http.get(f"/api/patients/{patient}/respondent-questions", params={"version": vid})).json()
         doctor = (await http.get(f"/api/patients/{patient}/questions", params={"version": vid})).json()
@@ -153,13 +147,10 @@ async def test_listed_verdicts_carry_site_lines_and_the_further_away_flag_but_ne
     await trials.load_snapshot(ctx, SNAPSHOT)
     app.state.ctx = ctx
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        definition = (await http.get("/api/questionnaire/definition")).json()
         patient = (await http.post("/api/patients", json={"label": "Demo patient W"})).json()["patient_id"]
-        body = (await http.post(f"/api/patients/{patient}/questionnaire", json={
-            "definition_version": definition["version"], "respondent": "patient",
-            "answers": {"birth_month": "1958-03", "postcode": "2145", "max_travel_km": "25"}})).json()
+        _, state = await submit(http, patient, {"birth_month": "1958-03", "postcode": "2145", "max_travel_km": "25"})
 
-        listed = await http.get(f"/api/patients/{patient}/versions/{body['profile_version_id']}/verdicts")
+        listed = await http.get(f"/api/patients/{patient}/versions/{state['profile_version_id']}/verdicts")
 
     [v] = listed.json()["verdicts"]
     assert v["sites"][0] == {"name": "Local Institution - 0439, Westmead, Australia", "status": "not yet recruiting",

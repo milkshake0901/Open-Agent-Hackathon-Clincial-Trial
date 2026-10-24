@@ -9,8 +9,8 @@ import { DiagnosisCheckCard } from "./diagnosis-check";
 import { ReturnLink } from "./return-link";
 import { DocumentUploads } from "./uploads";
 import {
-  api, trialsHref, type Answers, type Question, type Questionnaire, type Respondent, type SubmissionAccepted,
-  type VersionDiff, type VersionOut,
+  api, followRun, trialsHref, type Answers, type Question, type Questionnaire, type Respondent, type VersionDiff,
+  type VersionOut,
 } from "@/lib/api";
 
 const RESPONDENT_QUESTION = "respondent";
@@ -32,7 +32,6 @@ export function QuestionnaireForm() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [returnToken, setReturnToken] = useState<string | null>(null);
-  const [rescan, setRescan] = useState<SubmissionAccepted["rescan"]>(null);
 
   useEffect(() => {
     api
@@ -67,21 +66,23 @@ export function QuestionnaireForm() {
       // A correction is a full resubmission for the same patient: a new Profile version.
       const patient_id = patientId ?? (await api.createPatient("Web respondent")).patient_id;
       setPatientId(patient_id);
-      const result = await api.submit(patient_id, {
+      const accepted = await api.submit(patient_id, {
         definition_version: status.definition.version,
         respondent,
         answers,
       });
-      setReturnToken((t) => result.return_token ?? t); // issued on the first submission only
-      if (result.outcome !== "committed" || !result.profile_version_id) {
-        throw new Error(result.reason ?? "Your answers could not be recorded yet.");
+      setReturnToken((t) => accepted.return_token ?? t); // issued on the first submission only
+      // The answers are checked in the background, like an added letter or report: follow the run.
+      const state = (await followRun(accepted.run_id)).state!;
+      if (state.phase !== "committed" || !state.profile_version_id) {
+        throw new Error(state.reason ?? "Your answers could not be recorded yet.");
       }
-      setVersion(await api.version(patient_id, result.profile_version_id));
-      setChanges(savedVersionId && savedVersionId !== result.profile_version_id
-        ? await api.diff(patient_id, result.profile_version_id, savedVersionId)
+      const versionId = state.profile_version_id;
+      setVersion(await api.version(patient_id, versionId));
+      setChanges(savedVersionId && savedVersionId !== versionId
+        ? await api.diff(patient_id, versionId, savedVersionId)
         : null);
-      setSavedVersionId(result.profile_version_id);
-      setRescan(result.rescan);
+      setSavedVersionId(versionId);
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -111,7 +112,7 @@ export function QuestionnaireForm() {
     return (
       <div className="flex flex-col gap-4">
         {patientId && answers.diagnosis && <DiagnosisCheckCard key={version.id} patientId={patientId} />}
-        <ProfileSummary version={version} changes={changes} patientId={patientId} rescan={rescan} />
+        <ProfileSummary version={version} changes={changes} patientId={patientId} />
         {returnToken && <ReturnLink token={returnToken} />}
         {patientId && <DocumentUploads patientId={patientId} />}
         {editError && <p role="alert" className="text-red-700 dark:text-red-400">{editError}</p>}
@@ -207,23 +208,17 @@ export function QuestionField({ question: q, respondent, value, onChange, onClea
   );
 }
 
-function ProfileSummary({ version, changes, patientId, rescan }: {
+function ProfileSummary({ version, changes, patientId }: {
   version: VersionOut;
   changes: VersionDiff | null;
   patientId: string | null;
-  rescan: SubmissionAccepted["rescan"];
 }) {
   return (
     <section aria-labelledby="profile-heading" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
       <h2 id="profile-heading" className="text-lg font-semibold">Thank you. Your answers are saved as version {version.number}.</h2>
       {patientId && (
         <div className="flex flex-col gap-2">
-          <p>
-            {rescan && rescan.judged > 0
-              ? `We checked your answers against ${rescan.judged} trial${rescan.judged === 1 ? "" : "s"}.`
-              : "We could not check any trials yet."}
-            {rescan && rescan.failed > 0 && ` ${rescan.failed} could not be checked right now; we will try again.`}
-          </p>
+          <p>We are checking your answers against trials now. The list fills in as each trial is checked.</p>
           <Link href={trialsHref(patientId, version.id)}
                 className="self-start min-h-12 inline-flex items-center rounded-lg bg-accent px-5 font-semibold text-white dark:text-black">
             See trials that might fit

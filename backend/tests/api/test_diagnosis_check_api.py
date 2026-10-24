@@ -8,6 +8,7 @@ import httpx
 
 from app import trials
 from app.main import app
+from tests.api.questionnaire_http import submit
 from app.llm.nightshift import FakeLLM
 
 SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "trials_snapshot"
@@ -32,12 +33,9 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
     await trials.load_snapshot(ctx, SNAPSHOT)
     app.state.ctx = ctx
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        definition = (await http.get("/api/questionnaire/definition")).json()
         patient = (await http.post("/api/patients", json={"label": "Demo patient H"})).json()["patient_id"]
-        submitted = (await http.post(f"/api/patients/{patient}/questionnaire", json={
-            "definition_version": definition["version"], "respondent": "patient",
-            "answers": {"diagnosis": DIAGNOSIS}})).json()
-        vid = submitted["profile_version_id"]
+        _, state = await submit(http, patient, {"diagnosis": DIAGNOSIS})
+        vid = state["profile_version_id"]
         url = f"/api/patients/{patient}/questionnaire/diagnosis-check"
 
         proposed = await http.post(url, json={})

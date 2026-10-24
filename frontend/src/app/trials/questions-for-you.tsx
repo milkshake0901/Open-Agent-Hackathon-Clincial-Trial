@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { QuestionField } from "../questionnaire";
-import { api, trialsHref, type Answers, type LatestAnswers, type Question, type RespondentQuestion } from "@/lib/api";
+import { api, followRun, trialsHref, type Answers, type LatestAnswers, type Question, type RespondentQuestion } from "@/lib/api";
 
 type Loaded = { latest: LatestAnswers; byId: Record<string, Question>; version: string };
 
@@ -41,10 +41,12 @@ export function QuestionsForYou({ patientId, questions }: { patientId: string; q
         if (value.trim()) answers[id] = value;
         else delete answers[id];
       }
-      const r = await api.submit(patientId, { definition_version: loaded.version, respondent: loaded.latest.respondent,
-                                              answers });
-      if (r.outcome === "committed" && r.profile_version_id) router.push(trialsHref(patientId, r.profile_version_id));
-      else setError(r.reason ?? "Your answers could not be saved. Please try again.");
+      const accepted = await api.submit(patientId, { definition_version: loaded.version,
+                                                     respondent: loaded.latest.respondent, answers });
+      const state = (await followRun(accepted.run_id)).state!;
+      if (state.phase === "committed" && state.profile_version_id)
+        router.push(trialsHref(patientId, state.profile_version_id));
+      else setError(state.reason ?? "Your answers could not be saved. Please try again.");
     } catch (e) {
       setError((e as Error).message);
     } finally {

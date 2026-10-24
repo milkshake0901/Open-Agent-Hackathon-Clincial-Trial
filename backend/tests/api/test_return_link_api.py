@@ -4,11 +4,12 @@ from __future__ import annotations
 import httpx
 
 from app.main import app
+from tests.api.questionnaire_http import submit
 
 
 async def _submit(http, patient, answers):
-    return (await http.post(f"/api/patients/{patient}/questionnaire", json={
-        "definition_version": "1", "respondent": "patient", "answers": answers})).json()
+    accepted, state = await submit(http, patient, answers)
+    return {**accepted, **state}
 
 
 async def test_first_submission_returns_a_link_that_reopens_only_that_patient(ctx):

@@ -5,10 +5,8 @@
 // one line per file.
 
 import { useState } from "react";
-import { api, type RunOut } from "@/lib/api";
+import { api, followRun } from "@/lib/api";
 import { ConflictDialog } from "./conflict-dialog";
-
-const POLL_MS = 1000;
 
 type Result =
   | { kind: "added"; version: number; already: boolean }
@@ -16,16 +14,6 @@ type Result =
   | { kind: "failed"; reason: string };
 
 type Batch = { files: string[]; done: number } | null;
-
-const ENDED = new Set(["committed", "rejected", "awaiting_patient"]);
-
-async function followRun(runId: string): Promise<RunOut> {
-  for (;;) {
-    const run = await api.run(runId);
-    if (run.state && ENDED.has(run.state.phase)) return run;
-    await new Promise((r) => setTimeout(r, POLL_MS));
-  }
-}
 
 async function check(patientId: string, file: File): Promise<Result> {
   try {

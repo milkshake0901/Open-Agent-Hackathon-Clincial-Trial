@@ -131,3 +131,25 @@ async def test_when_the_model_is_unavailable_the_submission_is_rejected_not_cras
 
     assert isinstance(outcome, record.Rejected)
     assert "unavailable" in outcome.reason
+
+
+async def test_a_registered_questionnaire_is_ingested_later_like_any_document(clean_db):
+    # The HTTP shell registers the submission now and ingests it in the background, as it does an upload.
+    from tests.conftest import make_ctx
+    fake = scripted(MODEL_FACTS)
+    ctx = make_ctx(clean_db, fake)
+    patient = await record.create_patient(ctx, "Demo patient J")
+
+    registered = await record.register_questionnaire(ctx, patient, ANSWERS, respondent="patient")
+
+    assert not registered.deduplicated and registered.document.respondent == "patient"
+    assert await record.current_version(ctx, patient) is None and fake.calls == []
+    outcome = await record.ingest(ctx, registered.document.hash)
+    assert isinstance(outcome, record.Committed)
+    got = {(f.subject, f.question) for f in (await record.profile_version(ctx, outcome.version.id)).facts}
+    assert {("breast cancer", "Q6"), ("sex assigned at birth", "Q3")} <= got
+    [call] = fake.calls
+    assert "Tamoxifen 20 mg daily" in call.user and "2031" not in call.user and "Female" not in call.user
+
+    again = await record.register_questionnaire(ctx, patient, dict(ANSWERS), respondent="patient")
+    assert again.deduplicated and again.document.hash == registered.document.hash

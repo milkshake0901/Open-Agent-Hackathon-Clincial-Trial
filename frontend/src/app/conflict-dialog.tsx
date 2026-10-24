@@ -5,7 +5,7 @@
 // as the next Profile version.
 
 import { useEffect, useRef, useState } from "react";
-import { api, type ConflictOut, type ConflictSide, type Resolution, type SubmissionAccepted } from "@/lib/api";
+import { api, type ConflictOut, type ConflictSide, type IngestOutcome, type Resolution } from "@/lib/api";
 
 const CHOICES: { value: Resolution["choice"]; label: (c: ConflictOut) => string }[] = [
   { value: "accept_draft", label: (c) => `${c.draft.filename} is right` },
@@ -34,7 +34,7 @@ function Side({ title, side }: { title: string; side: ConflictSide }) {
   );
 }
 
-export function ConflictDialog({ runId, onDone }: { runId: string; onDone: (outcome: SubmissionAccepted) => void }) {
+export function ConflictDialog({ runId, onDone }: { runId: string; onDone: (outcome: IngestOutcome) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [conflicts, setConflicts] = useState<ConflictOut[] | null>(null);
   const [choices, setChoices] = useState<Record<string, Resolution["choice"]>>({});

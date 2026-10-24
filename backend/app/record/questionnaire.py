@@ -13,13 +13,14 @@ street address, labs, biomarkers, stage, histology, contraception.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, Literal
 
 from app.record import postcodes
-from app.record.types import DraftFact, FactResource, Page, Respondent
+from app.record.types import Document, DocumentHash, DraftFact, FactResource, Page, PatientId, Respondent
 
 DEFINITION_VERSION = "1"
 DOCUMENT_FILENAME = "Intake questionnaire"
@@ -333,3 +334,16 @@ def answers_from_pages(pages: tuple[Page, ...]) -> dict[str, Any]:
             else:
                 answers[q.id] = text
     return answers
+
+
+def document_hash(patient_id: PatientId, pages: tuple[Page, ...], respondent: Respondent,
+                  previous: Document | None) -> DocumentHash:
+    """A questionnaire Document's identity. Document hashes are global keys, so the patient is part of it: two
+    patients giving the same answers submit two Documents. A correction is a new Document (ADR 0003) even when it
+    changes an answer back, so the hash also names the previous accepted questionnaire; answers identical to that one
+    are the same submission and keep its hash."""
+    body = "\f".join(p.text for p in pages)
+    if previous is not None and previous.respondent == respondent and "\f".join(p.text for p in previous.pages) == body:
+        return previous.hash
+    after = f"after {previous.hash}\n" if previous is not None else ""
+    return DocumentHash(hashlib.sha256(f"intake-questionnaire\n{patient_id}\n{after}{body}".encode()).hexdigest())

@@ -5,8 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app import matching, record, trace
 from app.api.deps import get_ctx
-from app.api.questionnaire import submission_accepted
-from app.api.schemas import ConfirmIn, ConflictOut, ConflictSideOut, ConflictsOut, RescanSummary, SubmissionAccepted
+from app.api.schemas import ConfirmIn, ConflictOut, ConflictSideOut, ConflictsOut, RescanSummary, IngestOutcomeOut
 from app.ctx import Ctx
 from app.trace.state import IngestRunState, reduce_ingest
 
@@ -73,7 +72,18 @@ async def conflicts(run_id: str, ctx: Ctx = Depends(get_ctx)):
     return ConflictsOut(run_id=run_id, conflicts=[await _conflict_out(ctx, c) for c in found])
 
 
-@router.post("/runs/{run_id}/confirm", status_code=202, response_model=SubmissionAccepted)
+def submission_accepted(outcome: record.IngestOutcome) -> IngestOutcomeOut:
+    match outcome:
+        case record.Committed(run_id=run_id, version=v):
+            return IngestOutcomeOut(run_id=run_id, outcome="committed", document_hash=v.document_hash,
+                                      profile_version_id=v.id, version_number=v.number)
+        case record.AwaitingPatient(run_id=run_id):
+            return IngestOutcomeOut(run_id=run_id, outcome="awaiting_patient")
+        case record.Rejected(run_id=run_id, reason=reason):
+            return IngestOutcomeOut(run_id=run_id, outcome="rejected", reason=reason)
+
+
+@router.post("/runs/{run_id}/confirm", status_code=202, response_model=IngestOutcomeOut)
 async def confirm(run_id: str, body: ConfirmIn, ctx: Ctx = Depends(get_ctx)):
     """Patient resolves Conflicts on a parked ingest run → record.confirm. Committed re-scans the new version under
     the run's correlation id, as an upload does. 404 unknown run, 409 not awaiting the patient, 422 unknown Conflict."""
