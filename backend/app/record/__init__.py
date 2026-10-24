@@ -16,7 +16,7 @@ from typing import Any
 
 from app import trace
 from app.ctx import Ctx
-from app.record import loop, questionnaire, repo
+from app.record import diagnosis as diagnosis_terms, loop, questionnaire, repo
 from app.record.deidentify import deidentify
 from app.record.pdf import UnreadableDocument, to_pages
 from app.record.questionnaire import (
@@ -26,6 +26,8 @@ from app.record.types import (
     AwaitingPatient,
     Committed,
     Conflict,
+    DiagnosisAnswer,
+    DiagnosisCheck,
     Document,
     DocumentHash,
     DraftFact,
@@ -49,6 +51,7 @@ __all__ = [
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
     "document", "Registered", "UnreadableDocument", "issue_return_token", "patient_for_return_token",
     "latest_answers", "SubmittedAnswers", "search_preferences", "SearchPreferences",
+    "check_diagnosis", "answer_diagnosis_check", "diagnosis", "DiagnosisCheck", "DiagnosisAnswer",
     "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
@@ -158,6 +161,55 @@ async def search_preferences(ctx: Ctx, patient_id: PatientId) -> SearchPreferenc
     """Postcode, travel limit and optional contact from the latest submissions that answered them (a skipped
     preference keeps its stored value). Never a Fact; never pass any of it to a model (ADR 0003)."""
     return await repo.search_preferences(ctx.ui_reader, patient_id)
+
+
+async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = None) -> DiagnosisCheck:
+    """A model proposes a condition term for the diagnosis in the Respondent's words: `text` (a re-wording after
+    "no"), else the latest accepted questionnaire's diagnosis answer. The model sees only those words. A confident
+    term comes back `proposed`, for the Respondent to answer ("We understood this as ..., is that right?");
+    otherwise nothing is offered and the check is `unclear`, which settles the diagnosis as needing the GP.
+    Raises NotFound (unknown patient, or no diagnosis to check) and llm.LlmUnavailable (nothing stored)."""
+    if not await repo.patient_exists(ctx.ui_reader, patient_id):
+        raise NotFound(f"patient {patient_id}")
+    if text is None:
+        answered = await latest_answers(ctx, patient_id)
+        text = (answered.answers.get("diagnosis") if answered else None) or None
+    text = " ".join((text or "").split())
+    if not text:
+        raise NotFound(f"no diagnosis answer for patient {patient_id}")
+    term, confidence = await diagnosis_terms.propose_term(ctx, text)
+    check = DiagnosisCheck(id=f"dx_{uuid.uuid4().hex[:16]}", patient_id=patient_id, text=text, suggested_term=term,
+                           confidence=confidence, status="proposed" if term else "unclear")
+    async with ctx.writer.transaction() as tx:
+        await repo.insert_diagnosis_check(tx, check, ctx.now())
+    return check
+
+
+_ANSWER_STATUS = {"yes": "confirmed", "no": "rejected", "not_sure": "not_sure"}
+
+
+async def answer_diagnosis_check(ctx: Ctx, patient_id: PatientId, check_id: str,
+                                 answer: DiagnosisAnswer) -> DiagnosisCheck:
+    """The Respondent's yes / no / not sure to a proposed term. "yes" makes it the patient's condition (it selects
+    which Trials are judged); "no" asks again (check_diagnosis with their re-wording); "not sure" tells them to
+    check with their GP and raises a Doctor question for the diagnosis. Answered once. Raises NotFound (not this
+    patient's check) and InvalidAnswers (an unknown answer, or the check is not awaiting one)."""
+    if answer not in _ANSWER_STATUS:
+        raise InvalidAnswers(f"answer must be yes, no or not_sure, got {answer!r}")
+    check = await repo.diagnosis_check(ctx.ui_reader, check_id)
+    if check is None or check.patient_id != patient_id:
+        raise NotFound(f"diagnosis check {check_id}")
+    async with ctx.writer.transaction() as tx:
+        answered = await repo.answer_diagnosis_check(tx, check_id, _ANSWER_STATUS[answer], ctx.now())
+    if not answered:
+        raise InvalidAnswers(f"diagnosis check {check_id} is {check.status}, not awaiting an answer")
+    return replace(check, status=_ANSWER_STATUS[answer])
+
+
+async def diagnosis(ctx: Ctx, patient_id: PatientId) -> DiagnosisCheck | None:
+    """The check that holds for the patient: the latest one settled as confirmed (its `condition` drives Trial
+    selection), not sure or unclear (`needs_gp`). None while nothing is settled, so every active Trial is judged."""
+    return await repo.settled_diagnosis_check(ctx.ui_reader, patient_id)
 
 
 def questionnaire_definition() -> Questionnaire:

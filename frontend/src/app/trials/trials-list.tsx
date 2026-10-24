@@ -58,10 +58,12 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
           <p className="text-muted">These need the patient&apos;s medical records. Take this list to the next appointment.</p>
           <ol className="flex flex-col gap-2 list-decimal pl-5">
             {state.questions.map((q) => (
-              <li key={q.criterion_id}>
+              <li key={q.criterion_id ?? q.subject}>
                 {q.text}
                 <span className="block text-sm text-muted">
-                  Helps decide {q.unblocks.length} trial{q.unblocks.length === 1 ? "" : "s"}
+                  {q.criterion_id === null
+                    ? "Helps us search for the right trials"
+                    : `Helps decide ${q.unblocks.length} trial${q.unblocks.length === 1 ? "" : "s"}`}
                 </span>
               </li>
             ))}

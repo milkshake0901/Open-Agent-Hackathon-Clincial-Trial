@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { DiagnosisCheckCard } from "./diagnosis-check";
 import { ReturnLink } from "./return-link";
 import { DocumentUploads } from "./uploads";
 import {
@@ -109,6 +110,7 @@ export function QuestionnaireForm() {
   if (version) {
     return (
       <div className="flex flex-col gap-4">
+        {patientId && answers.diagnosis && <DiagnosisCheckCard key={version.id} patientId={patientId} />}
         <ProfileSummary version={version} changes={changes} patientId={patientId} rescan={rescan} />
         {returnToken && <ReturnLink token={returnToken} />}
         {patientId && <DocumentUploads patientId={patientId} />}

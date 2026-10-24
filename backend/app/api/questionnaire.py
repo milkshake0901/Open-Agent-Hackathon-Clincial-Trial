@@ -3,9 +3,11 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app import matching, record
+from app import llm, matching, record
 from app.api.deps import get_ctx
-from app.api.schemas import LatestAnswersOut, QuestionnaireOut, QuestionnaireSubmission, RescanSummary, SubmissionAccepted
+from app.api.schemas import (
+    DiagnosisAnswerIn, DiagnosisCheckIn, DiagnosisCheckOut, LatestAnswersOut, QuestionnaireOut, QuestionnaireSubmission, RescanSummary, SubmissionAccepted,
+)
 from app.ctx import Ctx
 
 router = APIRouter(tags=["questionnaire"])
@@ -61,3 +63,39 @@ def _accepted(outcome: record.IngestOutcome) -> SubmissionAccepted:
             return SubmissionAccepted(run_id=run_id, outcome="awaiting_patient")
         case record.Rejected(run_id=run_id, reason=reason):
             return SubmissionAccepted(run_id=run_id, outcome="rejected", reason=reason)
+
+
+def _check_out(c: record.DiagnosisCheck, rescan: RescanSummary | None = None) -> DiagnosisCheckOut:
+    return DiagnosisCheckOut(id=c.id, text=c.text, suggested_term=c.suggested_term, confidence=c.confidence,
+                             status=c.status, condition=c.condition, needs_gp=c.needs_gp, ask_again=c.ask_again,
+                             message=c.message, rescan=rescan)
+
+
+@router.post("/patients/{pid}/questionnaire/diagnosis-check", status_code=201, response_model=DiagnosisCheckOut)
+async def diagnosis_check(pid: str, body: DiagnosisCheckIn, ctx: Ctx = Depends(get_ctx)):
+    """record.check_diagnosis: a proposed condition term for the Respondent to answer, or (unclear) the GP message.
+    404: unknown patient or no diagnosis answer yet; 503: model unavailable (nothing stored)."""
+    try:
+        return _check_out(await record.check_diagnosis(ctx, record.PatientId(pid), body.text))
+    except record.NotFound as e:
+        raise HTTPException(404, str(e))
+    except llm.LlmUnavailable as e:
+        raise HTTPException(503, str(e))
+
+
+@router.post("/patients/{pid}/questionnaire/diagnosis-check/{check_id}", response_model=DiagnosisCheckOut)
+async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerIn, ctx: Ctx = Depends(get_ctx)):
+    """record.answer_diagnosis_check. A "yes" re-scans the current version inline, so Trials the confirmed term
+    selects get a Verdict. 404: not this patient's check; 409: already answered (or unclear)."""
+    patient_id = record.PatientId(pid)
+    try:
+        check = await record.answer_diagnosis_check(ctx, patient_id, check_id, body.answer)
+    except record.NotFound as e:
+        raise HTTPException(404, str(e))
+    except record.InvalidAnswers as e:
+        raise HTTPException(409, str(e))
+    summary = None
+    if check.condition is not None and (current := await record.current_version(ctx, patient_id)) is not None:
+        report = await matching.rescan(ctx, current.id)
+        summary = RescanSummary(judged=len(report.judged), failed=len(report.failed))
+    return _check_out(check, summary)

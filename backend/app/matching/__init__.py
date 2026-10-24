@@ -5,7 +5,7 @@ Hides: parallelism, idempotent planning, citation validation, verdict derivation
 """
 from __future__ import annotations
 
-from app import record, trace
+from app import record, trace, trials
 from app.ctx import Ctx
 from app.matching import loop, repo
 from app.matching.types import (
@@ -49,8 +49,10 @@ async def verdict(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId) -> Verd
 
 async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[Verdict]:
     """Ranked: eligible, then possible (fewest unknowns first), then excluded; ties by NCT id.
-    Results, Citations and questions are loaded (the Trials page shows them)."""
-    ranked = sorted(await repo.verdicts_for_version(ctx.ui_reader, version_id),
+    Results, Citations and questions are loaded (the Trials page shows them). Once the patient's diagnosis term is
+    confirmed (#14), only Trials that study it are listed, including Verdicts judged before it was confirmed."""
+    selected = await _selected(ctx, version_id)
+    ranked = sorted([vu for vu in await repo.verdicts_for_version(ctx.ui_reader, version_id) if selected(vu[0].nct_id)],
                     key=lambda vu: (_RANK[vu[0].outcome], vu[1] if vu[0].outcome == VerdictOutcome.POSSIBLE else 0,
                                     vu[0].nct_id))
     return [v for v, _ in ranked]
@@ -79,14 +81,38 @@ async def change_between(ctx: Ctx, nct_id: NctId, from_version: ProfileVersionId
 
 async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[DoctorQuestion]:
     """Deduplicated across Trials by criterion subject; each carries the Trials it would unblock (`unblocks`).
-    The first occurrence (Trial, then Criterion order) supplies criterion_id, nct_id and text."""
+    The first occurrence (Trial, then Criterion order) supplies criterion_id, nct_id and text. Only Trials selected
+    by a confirmed diagnosis term count (#14). When the diagnosis needs the GP ("not sure", or no confident term),
+    a patient-level question for the diagnosis comes first: criterion_id and nct_id None, subject "diagnosis"."""
     from dataclasses import replace
 
+    profile = await record.profile_version(ctx, version_id)
+    held = await record.diagnosis(ctx, profile.patient_id)
+    selected = _selector(held.condition if held else None, await trials.active_trials(ctx))
     first: dict[str, DoctorQuestion] = {}
+    if held is not None and held.needs_gp:
+        first["\0diagnosis"] = DoctorQuestion(
+            criterion_id=None, nct_id=None, subject="diagnosis",
+            text=f"Please confirm the patient's diagnosis and its exact name. In their own words: \"{held.text}\".")
     trials_by_subject: dict[str, list[NctId]] = {}
     for q in await repo.questions_for_version(ctx.ui_reader, version_id):
+        if not selected(q.nct_id):
+            continue
         key = q.subject.lower()
         first.setdefault(key, q)
         if q.nct_id not in trials_by_subject.setdefault(key, []):
             trials_by_subject[key].append(q.nct_id)
-    return [replace(q, unblocks=tuple(trials_by_subject[k])) for k, q in first.items()]
+    return [replace(q, unblocks=tuple(trials_by_subject.get(k, ()))) for k, q in first.items()]
+
+
+def _selector(condition: str | None, active: list[trials.Trial]):
+    if condition is None:
+        return lambda nct_id: True
+    chosen = {t.nct_id for t in active if trials.studies_condition(t, condition)}
+    return lambda nct_id: nct_id in chosen
+
+
+async def _selected(ctx: Ctx, version_id: ProfileVersionId):
+    """Which Trials the version's patient is matched against: all, or those studying the confirmed diagnosis."""
+    profile = await record.profile_version(ctx, version_id)
+    return _selector(await loop.condition_for(ctx, profile.patient_id), await trials.active_trials(ctx))

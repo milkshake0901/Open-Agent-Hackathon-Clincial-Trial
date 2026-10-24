@@ -55,8 +55,10 @@ class ValidatedResults(tuple[CriterionResult, ...]):
 
 @dataclass(frozen=True)
 class DoctorQuestion:
-    criterion_id: CriterionId
-    nct_id: NctId
+    """From an unknown Criterion result on one Trial, or (criterion_id and nct_id None) patient-level: the
+    diagnosis question raised when the Respondent is not sure of the diagnosis (#14), which belongs to no Criterion."""
+    criterion_id: CriterionId | None
+    nct_id: NctId | None
     subject: str      # the missing Fact subject, e.g. "ECOG performance status"
     text: str         # "Is the patient's ECOG performance status 0 or 1?"
     unblocks: tuple[NctId, ...] = ()   # questions_for_version: every Trial this answer would help decide

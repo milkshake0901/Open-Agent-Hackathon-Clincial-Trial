@@ -56,6 +56,28 @@ class RescanSummary(BaseModel):
     failed: int                 # Trials left without one (model unavailable); the next Re-scan retries them
 
 
+class DiagnosisCheckIn(BaseModel):
+    text: str | None = None     # a re-wording after "no"; omitted: the latest accepted diagnosis answer
+
+
+class DiagnosisAnswerIn(BaseModel):
+    answer: Literal["yes", "no", "not_sure"]
+
+
+class DiagnosisCheckOut(BaseModel):
+    """record.DiagnosisCheck. `message` is what to show the Respondent ("We understood this as ...")."""
+    id: str
+    text: str
+    suggested_term: str | None          # None when the model was not confident enough to offer one
+    confidence: float
+    status: Literal["proposed", "confirmed", "rejected", "not_sure", "unclear"]
+    condition: str | None               # the confirmed term that selects Trials
+    needs_gp: bool                      # show the GP message; a diagnosis Doctor question is raised
+    ask_again: bool                     # "no": ask the Respondent to re-word, then POST the check again
+    message: str
+    rescan: RescanSummary | None = None   # set when a "yes" re-scanned the current version
+
+
 class LatestAnswersOut(BaseModel):
     """The latest accepted submission, to prefill "edit answers". Postcode and travel are never included."""
     definition_version: str
@@ -133,8 +155,8 @@ class CriterionResultOut(BaseModel):
 
 
 class DoctorQuestionOut(BaseModel):
-    criterion_id: str
-    nct_id: str
+    criterion_id: str | None    # None (with nct_id) for a patient-level question: the diagnosis (#14)
+    nct_id: str | None
     subject: str
     text: str
     unblocks: list[str]
