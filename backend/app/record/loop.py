@@ -13,7 +13,7 @@ from app.ctx import Ctx
 from app.record import critic, intake, repo
 from app.worldmodel import timeline
 from app.record.types import (
-    AwaitingPatient, Committed, Conflict, Document, DraftFact, Finding, IngestOutcome,
+    AwaitingPatient, Committed, Conflict, Document, DraftFact, Finding, FindingKind, IngestOutcome,
     ProfileVersion, Rejected, Resolution,
 )
 from app import trace
@@ -73,6 +73,9 @@ def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt
     #   elif not drafts: -> Exhausted(())             # intake found nothing twice
     #   else: -> Accept(drafts)
     """
+    # A duplicate of an accepted Fact is dropped, not retried: the record already says it (#9).
+    duplicates = {f.draft_index for f in findings if f.kind == FindingKind.DUPLICATE_OF_ACCEPTED}
+    findings = tuple(f for f in findings if f.draft_index not in duplicates)
     conflicts = tuple(f for f in findings if f.severity == "conflict")
     retryable = tuple(f for f in findings if f.severity == "retryable")
     if conflicts:
@@ -80,12 +83,13 @@ def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt
         return Escalate(
             conflicts=tuple(Conflict(id=f"conflict:{n}:{f.draft_index}", draft=drafts[f.draft_index], accepted=None,
                                      message=f.message) for n, f in enumerate(conflicts)),
-            accepted_drafts=tuple(d for i, d in enumerate(drafts) if i not in flagged))
+            accepted_drafts=tuple(d for i, d in enumerate(drafts) if i not in flagged | duplicates))
     if retryable:
         return Retry(retryable) if attempt < max_attempts else Exhausted(retryable)
     if not drafts:
         return Exhausted(())
-    return Accept(drafts)
+    # Every draft a duplicate (only free text or the Respondent changed): a new version with no new Facts.
+    return Accept(tuple(d for i, d in enumerate(drafts) if i not in duplicates))
 
 
 async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts: int, *,

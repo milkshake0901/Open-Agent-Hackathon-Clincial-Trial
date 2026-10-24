@@ -65,6 +65,16 @@ async def version(reader: SqlReader, version_id: ProfileVersionId, *, with_facts
 async def versions(reader: SqlReader, patient_id: PatientId) -> list[ProfileVersion]:
     raise NotImplementedError
 
+async def latest_questionnaire(reader: SqlReader, patient_id: PatientId) -> Document | None:
+    """The Intake questionnaire Document behind the patient's latest version made from one (the latest
+    accepted submission), with its pages."""
+    rows = await reader.fetch(
+        f"SELECT d.hash FROM {reader.table('profile_version')} pv JOIN {reader.table('document')} d "
+        "ON d.hash = pv.document_hash WHERE pv.patient_id = $1 AND d.respondent IS NOT NULL "
+        "ORDER BY pv.number DESC LIMIT 1", (patient_id,))
+    return await document(reader, DocumentHash(rows[0]["hash"])) if rows else None
+
+
 async def version_for_document(reader: SqlReader, h: DocumentHash) -> ProfileVersion | None:
     """Idempotency probe for ingest()."""
     rows = await reader.fetch(f"SELECT {_VERSION_COLS} FROM {reader.table('profile_version')} "

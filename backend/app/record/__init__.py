@@ -80,9 +80,16 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
     now = ctx.now()
     drafts = questionnaire.structured_drafts(answers, respondent, pages, now.date())
     # Document hashes are global keys, so the patient is part of a questionnaire's identity: two patients
-    # giving the same answers submit two Documents.
+    # giving the same answers submit two Documents. A correction is a new Document (ADR 0003) even when it
+    # changes an answer back, so the hash also names the previous accepted questionnaire; answers identical
+    # to that one are the same submission and return its version.
     body = "\f".join(p.text for p in pages)
-    h = DocumentHash(hashlib.sha256(f"intake-questionnaire\n{patient_id}\n{body}".encode()).hexdigest())
+    previous = await repo.latest_questionnaire(ctx.ui_reader, patient_id)
+    if previous is not None and previous.respondent == respondent and "\f".join(p.text for p in previous.pages) == body:
+        h = previous.hash
+    else:
+        after = f"after {previous.hash}\n" if previous is not None else ""
+        h = DocumentHash(hashlib.sha256(f"intake-questionnaire\n{patient_id}\n{after}{body}".encode()).hexdigest())
     doc = Document(hash=h, patient_id=patient_id, filename=questionnaire.DOCUMENT_FILENAME, pages=pages,
                    uploaded_at=now.date(), respondent=respondent)
     async with ctx.writer.transaction() as tx:
@@ -150,5 +157,15 @@ async def profile_version(ctx: Ctx, version_id: ProfileVersionId, *, for_agent: 
 
 
 async def diff(ctx: Ctx, from_version: ProfileVersionId, to_version: ProfileVersionId) -> VersionDiff:
-    """Facts added between two versions and subjects whose current value changed. Pure over two loads."""
-    raise NotImplementedError
+    """Facts added between two versions and subjects whose current value changed. Pure over two loads.
+    A subject is changed when its current value (or unit) differs, or it is new; a later Fact repeating the
+    same value is added but not a change."""
+    before, after = await profile_version(ctx, from_version), await profile_version(ctx, to_version)
+    if before.patient_id != after.patient_id:
+        raise NotFound(f"profile versions {from_version} and {to_version} belong to different patients")
+    was, now = before.current(), after.current()
+    changed = tuple((s, was.get(s), f) for s, f in now.items()
+                    if s not in was or (was[s].value, was[s].unit) != (f.value, f.unit))
+    return VersionDiff(from_version=before.id, to_version=after.id,
+                       facts_added=tuple(f for f in after.facts if f.id not in before.fact_ids),
+                       subjects_changed=changed)
