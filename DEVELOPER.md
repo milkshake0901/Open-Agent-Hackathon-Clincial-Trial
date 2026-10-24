@@ -79,7 +79,8 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │
 │   │   ├── llm/                  AI CONNECTION
 │   │   │   ├── __init__.py       complete(lane, ...) — the only way to call a model
-│   │   │   └── nightshift.py     Meterless Nightshift client; FakeLLM for tests
+│   │   │   ├── nightshift.py     Meterless Nightshift client + LangChain chat models; FakeLLM for tests
+│   │   │   └── media.py          image, speech, music, video on a Meterless job
 │   │   │
 │   │   ├── sql/                  STORAGE SPLIT (ADR 0001)
 │   │   │   ├── reader.py         PgReader (UI) and ZetarisReader (agents), same queries
@@ -117,7 +118,8 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 - **Import a module's facade, never its internals.** Write `from app.record import ingest`, not `from app.record.loop import run_ingest`. `tests/test_boundaries.py` enforces this.
 - **One writer per table.** The World Model writes facts, Profile versions, trials, criteria and verdicts (via `worldmodel/timeline.py`). `record/repo.py` writes documents and pages. `app.trace` writes trace events and model calls. The owner of each table is listed at the top of `db/schema.sql`.
 - **Agents read through Zetaris.** Use `ctx.agent_reader`. The UI routes use `ctx.ui_reader` (Postgres). Both run the same query functions.
-- **Every model call goes through `app.llm.complete`** with a lane (`fast`, `deep`, `judge`). It records which model answered. Which model serves each lane is a setting (`LANE_MODELS`), decided later.
+- **Agents are built with LangChain.** An agent takes its model from `ctx.llm.chat_model(lane)`, a `ChatOpenAI` already pointed at Nightshift with the required headers and pinned to the lane's model. Never construct a chat model or OpenAI client anywhere else.
+- **One-shot structured calls go through `app.llm.complete`** with a lane (`fast`, `deep`, `judge`). It records which model answered. Which model serves each lane is a setting (`LANE_MODELS`); all three default to `nvidia/nemotron-3.5-lightning-30b-a3b`.
 - **Loops are bounded.** Each loop has a pure `decide()` with a closed set of outcomes and a max-attempt setting. Exhaustion is an outcome, not an exception.
 - **No model sees raw patient text.** De-identification runs in `register_document`. Real documents live only in `data/raw/`.
 - **Trace every step.** Append a trace event for each loop step so the Why page can show it.
@@ -136,12 +138,33 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
 Zetaris and Meterless Nightshift run on your own machine (hackathon rule); install them from the Participant Setup Guide first.
 
+## Check the LLM connection yourself
+
+Nightshift must be running (default `http://127.0.0.1:8088`), and `.env` at the repo root needs `METERLESS_RUNTIME_TOKEN`. Run these from the repo root. None of them prints the token.
+
+```bash
+backend/.venv/bin/python scripts/meterless.py status       # online | unauthorized | offline, plus whether each lane's model is listed
+backend/.venv/bin/python scripts/meterless.py detect       # Auto Detect: ports 8088, 8090, 8787, 11434
+backend/.venv/bin/python scripts/meterless.py chat "Reply with exactly: pong"   # plain text on METERLESS_MODEL
+backend/.venv/bin/python scripts/meterless.py lane fast    # JSON reply through the fast lane's LangChain model (also: deep, judge)
+backend/.venv/bin/python scripts/meterless.py media        # which of image, speech, music, video this runtime can make, and why not
+backend/.venv/bin/python scripts/meterless.py illustrate "A calm watercolour of a hospital garden" --privacy cloud-ok
+backend/.venv/bin/pytest tests/llm                         # run from backend/: provider and media tests, mocked runtime, no network
+```
+
+What good looks like:
+
+- `status` prints `online` and `listed` for every lane. `unauthorized` means the token is wrong: copy it again from `<stateDir>/proxy-token`. `offline` means nothing answered `GET /v1/models`.
+- `chat` prints `pong`. `lane fast` prints `requested … answered nvidia/nemotron-3.5-lightning-30b-a3b`; that line is what proves the Nemotron lane served the call.
+- `illustrate` prints `stored data/media/<job>/<seq>-<file>.png` (gitignored). On a runtime without a media engine it prints `Images unavailable: <reason>` and exits 2. The Nightshift web build has no media engine, so seat an image lane (still-sdcpp and weights) first.
+- Media source jobs use `MEDIA_PRIVACY` (default `local-only`). That floor is never widened, so on a box whose only local lane is the in-browser device model, a `local-only` job waits until the Nightshift page is open.
+
 ## Where to start
 
 1. `backend/app/worldmodel/` until `tests/worldmodel/test_conformance.py` passes 8/8. Everything else writes through it.
 2. `record/critic.py`, `record/loop.py: decide`, `matching/loop.py: decide` and `matching/verdict.py`: pure functions, easy to test.
 3. `sql/reader.py` against a running Zetaris (check how Lightning SQL handles our queries).
-4. `llm/nightshift.py` from [docs/setup/meterless-provider-prompt.md](docs/setup/meterless-provider-prompt.md).
+4. ~~`llm/nightshift.py`~~ done: see [Check the LLM connection yourself](#check-the-llm-connection-yourself).
 
 ## Updating the workflow diagram
 

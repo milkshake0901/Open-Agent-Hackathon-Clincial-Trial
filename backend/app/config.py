@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pydantic_settings import BaseSettings
 
+NEMOTRON_LIGHTNING = "nvidia/nemotron-3.5-lightning-30b-a3b"   # listed by this box's GET /v1/models
+
 
 class Settings(BaseSettings):
     pg_dsn: str = "postgresql://trialmatch:trialmatch@localhost:5433/trialmatch"
@@ -15,7 +17,13 @@ class Settings(BaseSettings):
     meterless_base_url: str = "http://127.0.0.1:8088/v1"
     meterless_runtime_token: str = ""
     meterless_app_id: str = "trialmatch"
-    lane_models: dict[str, str] = {}          # lane → Nightshift model id; decided later
+    meterless_model: str = NEMOTRON_LIGHTNING  # plain text calls outside a lane
+    # lane → Nightshift model id. Pinned to a Nemotron lane (meterless/auto may route elsewhere);
+    # override with LANE_MODELS='{"deep": "..."}'. Per-lane choice is still open.
+    lane_models: dict[str, str] = {"fast": NEMOTRON_LIGHTNING, "deep": NEMOTRON_LIGHTNING, "judge": NEMOTRON_LIGHTNING}
+
+    media_dir: str = "data/media"             # generated images and audio; gitignored
+    media_privacy: str = "local-only"         # floor for media source jobs: local-only | edge-only | cloud-ok
 
     intake_attempts: int = 3
     match_attempts: int = 3
@@ -24,4 +32,4 @@ class Settings(BaseSettings):
 
     raw_documents_dir: str = "data/raw"       # gitignored
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ("../.env", ".env")}   # repo root .env, whether run from the root or backend/
