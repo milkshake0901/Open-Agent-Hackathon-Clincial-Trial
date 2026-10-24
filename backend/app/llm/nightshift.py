@@ -5,6 +5,9 @@ URL normalisation, Bearer token, meterless-app / meterless-scope headers, /v1/mo
 Auto Detect. Not applied yet."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Callable
+
 from app.llm import Completion, Lane, T
 
 
@@ -19,8 +22,27 @@ class Nightshift:
         raise NotImplementedError
 
 
+@dataclass(frozen=True)
+class FakeCall:
+    lane: Lane
+    system: str
+    user: str
+
+
 class FakeLLM:
-    """tests/fixtures/llm/<lane>/<sha256(system+user)[:16]>.json → recorded Completion. Missing fixture raises,
-    so a test cannot silently hit the network. Also powers the offline demo rehearsal."""
-    def __init__(self, fixtures_dir: str, record: bool = False) -> None: raise NotImplementedError
-    async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Completion[T]: raise NotImplementedError
+    """The test (and offline demo) model. Every prompt is captured in `.calls`, so tests can assert that no
+    call was made or that a prompt never contains the postcode.
+
+    Scripted mode (#7): `responder(lane, system, user) -> dict` returns the JSON the model would answer.
+    Without a responder every call raises, so a test cannot silently reach a model.
+    Planned fixture mode (#8): tests/fixtures/llm/<lane>/<sha256(system+user)[:16]>.json → recorded Completion."""
+    def __init__(self, responder: Callable[[Lane, str, str], dict] | None = None) -> None:
+        self.responder = responder
+        self.calls: list[FakeCall] = []
+
+    async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Completion[T]:
+        self.calls.append(FakeCall(lane, system, user))
+        if self.responder is None:
+            raise LookupError(f"FakeLLM has no response scripted for a {lane} call")
+        return Completion(value=out.model_validate(self.responder(lane, system, user)), model_requested="fake",
+                          model_answered="fake", prompt_tokens=0, completion_tokens=0, latency_ms=0)

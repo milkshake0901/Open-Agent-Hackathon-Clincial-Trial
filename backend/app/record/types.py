@@ -13,6 +13,7 @@ DocumentHash = NewType("DocumentHash", str)      # sha256 hex of the uploaded by
 FactId = NewType("FactId", str)
 ProfileVersionId = NewType("ProfileVersionId", str)
 ConflictId = NewType("ConflictId", str)
+Respondent = Literal["patient", "other"]   # who answered an Intake questionnaire (GLOSSARY)
 
 
 class FactResource(StrEnum):
@@ -21,6 +22,8 @@ class FactResource(StrEnum):
     OBSERVATION = "Observation"
     MEDICATION_STATEMENT = "MedicationStatement"
     PROCEDURE = "Procedure"
+    PATIENT = "Patient"                         # birth month, sex (ADR 0003)
+    ALLERGY_INTOLERANCE = "AllergyIntolerance"
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,11 @@ class Document:
     filename: str
     pages: tuple[Page, ...]
     uploaded_at: date
+    respondent: Respondent | None = None   # set only on a completed Intake questionnaire; never a Fact
+
+    @property
+    def is_questionnaire(self) -> bool:
+        return self.respondent is not None
 
 
 @dataclass(frozen=True)
@@ -50,6 +58,7 @@ class DraftFact:
     observed_on: date | None   # None is a Retryable finding, never stored
     page: int
     quote: str            # verbatim span from the page; evaluator and UI use it
+    question: str | None = None   # "Q3" when drafted from an Intake questionnaire answer
 
 
 @dataclass(frozen=True)
@@ -64,6 +73,7 @@ class Fact:
     unit: str | None
     observed_on: date
     quote: str
+    question: str | None = None   # "Q3": Patient-reported Facts cite "intake questionnaire, Q3"
 
 
 @dataclass(frozen=True)
@@ -76,8 +86,13 @@ class ProfileVersion:
     facts: tuple[Fact, ...] = ()  # loaded on demand; empty in list views
 
     def current(self) -> dict[str, Fact]:
-        """subject → Fact with latest observed_on (ADR 0002). Pure; ties broken by document upload order."""
-        raise NotImplementedError
+        """subject → Fact with latest observed_on (ADR 0002). Pure; ties go to the later Fact in `facts`,
+        which repo loads in upload order."""
+        out: dict[str, Fact] = {}
+        for f in self.facts:
+            if f.subject not in out or f.observed_on >= out[f.subject].observed_on:
+                out[f.subject] = f
+        return out
 
 
 # ---- critic findings -------------------------------------------------------

@@ -6,7 +6,8 @@ from those trace events on confirm(). Accepted Facts are committed through the W
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Awaitable, Callable
 
 from app.ctx import Ctx
 from app.record import critic, intake, repo
@@ -17,7 +18,7 @@ from app.record.types import (
 )
 from app import trace
 from app.trace.events import (
-    CriticReviewed, IngestRetried, IngestStarted, ProfileCommitted, RunAwaitingPatient, RunRejected,
+    CriticReviewed, IngestRetried, IngestStarted, IntakeDrafted, ProfileCommitted, RunAwaitingPatient, RunRejected,
 )
 from app.trace.state import IngestRunState
 
@@ -43,6 +44,20 @@ class Exhausted:
 
 Step = Retry | Escalate | Accept | Exhausted
 
+# One drafting attempt: (ctx, doc, feedback, run_id) -> drafts. intake.extract is the default (model, FAST lane);
+# a questionnaire's structured answers use structured_drafter (code, no model).
+Drafter = Callable[[Ctx, Document, tuple[Finding, ...], trace.RunId], Awaitable[tuple[DraftFact, ...]]]
+
+
+def structured_drafter(drafts: tuple[DraftFact, ...]) -> Drafter:
+    """Drafts already made in code (structured questionnaire answers). Traced like an Intake attempt."""
+    async def draft(ctx: Ctx, doc: Document, feedback: tuple[Finding, ...], run_id: trace.RunId):
+        await trace.append(ctx.writer, run_id, IntakeDrafted(
+            actor="questionnaire", attempt=1 + bool(feedback), drafts=[asdict(d) for d in drafts],
+            model_answered="none: structured answers"))
+        return drafts
+    return draft
+
 
 def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt: int, max_attempts: int,
            current: ProfileVersion | None) -> Step:
@@ -58,10 +73,23 @@ def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt
     #   elif not drafts: -> Exhausted(())             # intake found nothing twice
     #   else: -> Accept(drafts)
     """
-    raise NotImplementedError
+    conflicts = tuple(f for f in findings if f.severity == "conflict")
+    retryable = tuple(f for f in findings if f.severity == "retryable")
+    if conflicts:
+        flagged = {f.draft_index for f in findings}
+        return Escalate(
+            conflicts=tuple(Conflict(id=f"conflict:{n}:{f.draft_index}", draft=drafts[f.draft_index], accepted=None,
+                                     message=f.message) for n, f in enumerate(conflicts)),
+            accepted_drafts=tuple(d for i, d in enumerate(drafts) if i not in flagged))
+    if retryable:
+        return Retry(retryable) if attempt < max_attempts else Exhausted(retryable)
+    if not drafts:
+        return Exhausted(())
+    return Accept(drafts)
 
 
-async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts: int) -> IngestOutcome:
+async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts: int, *,
+                     drafter: Drafter | None = None) -> IngestOutcome:
     """Drive the loop. One place; reads like the state machine it is.
 
     # TODO pseudocode
@@ -79,7 +107,31 @@ async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts:
     #           case Exhausted(fs):   await trace.append(..., RunRejected(reason)); return Rejected(run_id, reason)
     #   unreachable: decide() returns a terminal step on attempt == max_attempts
     """
-    raise NotImplementedError
+    drafter = drafter or intake.extract
+    current = await repo.current_version(ctx.agent_reader, doc.patient_id)
+    await trace.append(ctx.writer, run_id, IngestStarted(actor="record", document_hash=doc.hash, pages=len(doc.pages)))
+    feedback: tuple[Finding, ...] = ()
+    for attempt in range(1, max_attempts + 1):
+        drafts = await drafter(ctx, doc, feedback, run_id)
+        findings = critic.review(drafts, doc, current)
+        await trace.append(ctx.writer, run_id, CriticReviewed(actor="critic", attempt=attempt,
+                                                              findings=[asdict(f) for f in findings]))
+        match decide(findings, drafts, attempt, max_attempts, current):
+            case Accept(drafts=ds):
+                return await commit(ctx, doc, ds, run_id)
+            case Escalate(conflicts=cs, accepted_drafts=ok):
+                await trace.append(ctx.writer, run_id, RunAwaitingPatient(
+                    actor="critic", conflicts=[asdict(c) for c in cs], accepted_drafts=[asdict(d) for d in ok]))
+                return AwaitingPatient(run_id, cs)
+            case Retry(feedback=fb):
+                await trace.append(ctx.writer, run_id, IngestRetried(actor="critic", attempt=attempt,
+                                                                     feedback=[f.message for f in fb]))
+                feedback = fb
+            case Exhausted(last_findings=fs):
+                reason = "; ".join(f.message for f in fs) or "no Facts found in the document"
+                await trace.append(ctx.writer, run_id, RunRejected(actor="record", reason=reason))
+                return Rejected(run_id, reason)
+    raise AssertionError("decide() returns a terminal step on the last attempt")
 
 
 async def resume_after_confirm(ctx: Ctx, run_id: trace.RunId, resolutions: list[Resolution], ) -> IngestOutcome:
@@ -104,4 +156,7 @@ async def commit(ctx: Ctx, doc: Document, drafts: tuple[DraftFact, ...], run_id:
     Idempotent: fact ids are content-derived and the snapshot is keyed by document hash, so a
     retry after a crash returns the existing version and only the missing trace event is appended.
     """
-    raise NotImplementedError
+    version = await timeline.commit_profile_version(ctx.wm, doc.patient_id, doc, drafts, run_id)
+    await trace.append(ctx.writer, run_id, ProfileCommitted(actor="record", profile_version_id=version.id,
+                                                            version_number=version.number, facts_added=len(drafts)))
+    return Committed(run_id, version)

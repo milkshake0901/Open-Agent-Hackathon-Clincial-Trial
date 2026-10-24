@@ -51,4 +51,55 @@ class PgEventStore:
     the only writer of the domain tables fact, profile_version, trial, criterion, verdict, ..."""
 
     def __init__(self, writer: "PgWriter", namespace: str) -> None:
-        raise NotImplementedError
+        self._writer = writer
+        self.namespace = namespace
+
+    async def append(self, event: "WorldEvent", audit: "AuditEntry") -> bool:
+        from dataclasses import asdict
+
+        from app.worldmodel import projector
+        from app.worldmodel.stable_ids import canonical_json
+
+        async with self._writer.transaction() as tx:
+            inserted = await tx.fetch(
+                "INSERT INTO wm_event (namespace, seq, id, kind, payload, at) VALUES ($1, $2, $3, $4, $5::jsonb, $6) "
+                "ON CONFLICT (id) DO NOTHING RETURNING id",
+                (event.namespace, event.seq, event.id, event.kind, canonical_json(asdict(event.payload)), event.at))
+            if not inserted:
+                return False
+            await tx.execute(
+                "INSERT INTO wm_audit (namespace, seq, at, kind, actor, summary, event_id, run_id) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                (event.namespace, audit.seq, audit.at, audit.kind, audit.actor, audit.summary, audit.event_id,
+                 audit.run_id))
+            await projector.project(tx, event)
+        return True
+
+    async def load(self, namespace: str, *, since_seq: int = 0) -> list["WorldEvent"]:
+        async with self._writer.transaction() as tx:
+            rows = await tx.fetch("SELECT seq, id, kind, payload, at FROM wm_event WHERE namespace = $1 AND seq > $2 "
+                                  "ORDER BY seq", (namespace, since_seq))
+        return [_event_from_row(namespace, r) for r in rows]
+
+    async def head(self, namespace: str) -> int:
+        async with self._writer.transaction() as tx:
+            rows = await tx.fetch("SELECT coalesce(max(seq), 0) AS head FROM wm_event WHERE namespace = $1",
+                                  (namespace,))
+        return int(rows[0]["head"])
+
+
+def _event_from_row(namespace: str, row: dict) -> "WorldEvent":
+    """Rebuild the dataclasses a WorldEvent payload was serialised from (asdict → JSON)."""
+    import json
+
+    from app.worldmodel.engine import Context, Entity, Fact, Provenance, Relationship, Snapshot, WorldEvent
+
+    payload = json.loads(row["payload"]) if isinstance(row["payload"], str) else dict(row["payload"])
+    payload["source"] = Provenance(**payload["source"])
+    cls = {"upsertEntity": Entity, "upsertContext": Context, "relate": Relationship, "assertFact": Fact,
+           "snapshot": Snapshot}[row["kind"]]
+    for key in ("aliases", "entities"):
+        if key in payload:
+            payload[key] = tuple(payload[key])
+    return WorldEvent(id=row["id"], seq=row["seq"], kind=row["kind"], payload=cls(**payload), at=row["at"],
+                      namespace=namespace)

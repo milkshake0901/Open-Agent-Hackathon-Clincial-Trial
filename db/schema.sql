@@ -20,6 +20,7 @@ CREATE TABLE document (
   patient_id    text NOT NULL REFERENCES patient(id),
   filename      text NOT NULL,
   page_count    int  NOT NULL,
+  respondent    text CHECK (respondent IN ('patient','other')),   -- set only on an Intake questionnaire (ADR 0003)
   uploaded_at   timestamptz NOT NULL DEFAULT now()
 );
 
@@ -35,12 +36,14 @@ CREATE TABLE fact (                        -- FHIR-lite, one table with resource
   id            text PRIMARY KEY,
   document_hash text NOT NULL REFERENCES document(hash),
   page          int  NOT NULL,
-  resource      text NOT NULL CHECK (resource IN ('Condition','Observation','MedicationStatement','Procedure')),
+  resource      text NOT NULL CHECK (resource IN ('Condition','Observation','MedicationStatement','Procedure',
+                                                  'Patient','AllergyIntolerance')),
   subject       text NOT NULL,
   value         text NOT NULL,
   unit          text,
   observed_on   date NOT NULL,
   quote         text NOT NULL,
+  question      text,                     -- "Q3" for a Patient-reported Fact from an Intake questionnaire
   created_at    timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (document_hash, page) REFERENCES document_page(document_hash, number)
 );

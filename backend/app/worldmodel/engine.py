@@ -176,6 +176,15 @@ class WorldModel:
         self._facts: dict[str, Fact] = {}
         self._snapshots: dict[str, Snapshot] = {}
 
+    async def replay(self) -> int:
+        """Fold the store's existing log into memory (app start-up over PgEventStore). Returns the head seq.
+        Appends nothing, so it is safe to call on an empty store."""
+        for event in await self._store.load(self.namespace, since_seq=self._seq):
+            self._events.append(event)
+            self._fold(event)
+            self._seq = event.seq
+        return self._seq
+
     # ---- the single append path: store first, then fold ----
 
     async def _append(self, kind: EventKind, payload: Any, source: Provenance, summary: str) -> bool:
@@ -352,6 +361,10 @@ class WorldModel:
                 return e.valid_to is None
             return (e.valid_from is None or e.valid_from <= at) and (e.valid_to is None or at < e.valid_to)
         return [e for e in self._edges.values() if e.from_id == id and (via is None or e.type == via) and valid(e)]
+
+    def snapshots(self) -> list[Snapshot]:
+        """In append order."""
+        return [e.payload for e in self._events if isinstance(e.payload, Snapshot)]
 
     def events(self, *, since_seq: int = 0) -> list[WorldEvent]:
         return [e for e in self._events if e.seq > since_seq]
