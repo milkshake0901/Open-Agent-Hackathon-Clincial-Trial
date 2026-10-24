@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app import record
 from app.api.deps import get_ctx
 from app.api.verdicts import verdicts_changed
-from app.api.schemas import FactOut, PatientCreated, PatientIn, VersionDiffOut, VersionOut
+from app.api.schemas import (
+    FactOut, PatientCreated, PatientIn, SearchPreferencesIn, SearchPreferencesOut, VersionDiffOut, VersionOut,
+)
 from app.ctx import Ctx
 
 router = APIRouter(tags=["patients"])
@@ -13,6 +15,19 @@ router = APIRouter(tags=["patients"])
 @router.post("/patients", status_code=201, response_model=PatientCreated)
 async def create_patient(body: PatientIn, ctx: Ctx = Depends(get_ctx)):
     return PatientCreated(patient_id=await record.create_patient(ctx, body.label))
+
+
+@router.put("/patients/{pid}/search-preferences", response_model=SearchPreferencesOut)
+async def set_search_preferences(pid: str, body: SearchPreferencesIn, ctx: Ctx = Depends(get_ctx)):
+    """record.set_search_preferences. 422: a preference that does not fit its question; 404: unknown patient."""
+    try:
+        p = await record.set_search_preferences(ctx, record.PatientId(pid), body.model_dump(exclude_none=True))
+    except record.InvalidAnswers as e:
+        raise HTTPException(422, str(e))
+    except record.NotFound as e:
+        raise HTTPException(404, str(e))
+    return SearchPreferencesOut(postcode_set=p.postcode is not None, location_known=p.location is not None,
+                                max_travel_km=p.max_travel_km, contact_set=p.contact is not None)
 
 
 @router.get("/patients/{pid}/documents")

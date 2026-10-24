@@ -154,6 +154,7 @@ _FACTS: dict[str, tuple[FactResource, str]] = {
     "pregnancy": (FactResource.OBSERVATION, "pregnant, breastfeeding or planning a pregnancy"),
 }
 _NO_FACT_VALUES = {"prefer_not_to_say"}
+PREFERENCES = ("postcode", "max_travel_km", "contact")   # the Search preference question ids
 _NOT_ANSWERED = "(not answered)"
 _POSTCODE = re.compile(r"^\d{4}$")     # Australian
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -218,7 +219,7 @@ def preferences(answers: dict[str, Any]) -> dict[str, Any]:
     An answered postcode brings its coarse `location` point with it (None if the table does not list it)."""
     normalise(answers)
     got: dict[str, Any] = {}
-    for qid in ("postcode", "max_travel_km", "contact"):
+    for qid in PREFERENCES:
         value = answers.get(qid)
         if value is None or (isinstance(value, str) and not value.strip()):
             continue

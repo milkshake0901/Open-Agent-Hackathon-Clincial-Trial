@@ -52,7 +52,7 @@ __all__ = [
     "register_document", "ingest", "confirm", "conflicts", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
     "document", "Registered", "UnreadableDocument", "issue_return_token", "patient_for_return_token",
-    "latest_answers", "SubmittedAnswers", "search_preferences", "SearchPreferences",
+    "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
     "check_diagnosis", "answer_diagnosis_check", "diagnosis", "DiagnosisCheck", "DiagnosisAnswer",
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
@@ -162,6 +162,22 @@ async def latest_answers(ctx: Ctx, patient_id: PatientId) -> SubmittedAnswers | 
 async def search_preferences(ctx: Ctx, patient_id: PatientId) -> SearchPreferences:
     """Postcode, travel limit and optional contact from the latest submissions that answered them (a skipped
     preference keeps its stored value). Never a Fact; never pass any of it to a model (ADR 0003)."""
+    return await repo.search_preferences(ctx.ui_reader, patient_id)
+
+
+async def set_search_preferences(ctx: Ctx, patient_id: PatientId, answers: dict[str, Any]) -> SearchPreferences:
+    """Set Search preferences on their own, outside a questionnaire submission: `answers` holds only postcode,
+    max_travel_km and contact, as the questionnaire takes them and validated the same way; a blank one keeps its
+    stored value. Never a Fact, so no new Profile version. Raises InvalidAnswers (before anything is stored) and
+    NotFound."""
+    others = sorted(set(answers) - set(questionnaire.PREFERENCES))
+    if others:
+        raise InvalidAnswers(f"not search preferences: {others}")
+    changes = questionnaire.preferences(answers)
+    if not await repo.patient_exists(ctx.ui_reader, patient_id):
+        raise NotFound(f"patient {patient_id}")
+    async with ctx.writer.transaction() as tx:
+        await repo.upsert_search_preferences(tx, patient_id, changes)
     return await repo.search_preferences(ctx.ui_reader, patient_id)
 
 

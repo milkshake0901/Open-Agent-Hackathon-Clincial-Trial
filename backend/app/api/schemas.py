@@ -131,6 +131,21 @@ class SubmissionAccepted(BaseModel):
     return_token: str | None = None   # first submission only; the frontend shows it as /return/{token}
 
 
+class SearchPreferencesIn(BaseModel):
+    """As the questionnaire takes them (Q4, Q5, Q15); a field left out or blank keeps its stored value."""
+    postcode: str | None = None
+    max_travel_km: str | None = None    # "10" | "25" | "50" | "100" | "anywhere"
+    contact: str | None = None
+
+
+class SearchPreferencesOut(BaseModel):
+    """What was stored, without the postcode or contact themselves: they are never sent back."""
+    postcode_set: bool
+    location_known: bool                # the postcode has a coarse location point, so distances can be shown
+    max_travel_km: int | None           # None: no limit
+    contact_set: bool
+
+
 class ReturnOpened(BaseModel):
     patient_id: str
     profile_version_id: str | None    # current version, None if nothing was committed yet

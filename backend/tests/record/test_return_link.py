@@ -108,3 +108,20 @@ async def test_malformed_preferences_are_rejected_before_anything_is_stored(ctx,
         await record.submit_questionnaire(ctx, patient, {"sex": "female", **answers}, respondent="patient")
     assert await record.search_preferences(ctx, patient) == record.SearchPreferences(None, None, None)
     assert await record.current_version(ctx, patient) is None
+
+
+async def test_search_preferences_can_be_set_on_their_own_with_the_same_validation(ctx):
+    patient = await record.create_patient(ctx, "Demo patient A")
+    await record.submit_questionnaire(ctx, patient, {"sex": "female", **PRIVATE}, respondent="patient")
+    version = await record.current_version(ctx, patient)
+
+    await record.set_search_preferences(ctx, patient, {"postcode": "2000", "max_travel_km": "anywhere"})
+
+    assert await record.search_preferences(ctx, patient) == record.SearchPreferences(
+        postcode="2000", max_travel_km=None, contact="sam.carer@example.com", location=(-33.87, 151.21))
+    assert (await record.current_version(ctx, patient)).id == version.id     # not a Fact: no new version
+    for bad in ({"postcode": "Sydney"}, {"contact": "not a contact"}, {"sex": "male"}):
+        with pytest.raises(record.InvalidAnswers):
+            await record.set_search_preferences(ctx, patient, bad)
+    with pytest.raises(record.NotFound):
+        await record.set_search_preferences(ctx, record.PatientId("pt_nobody"), {"postcode": "2000"})

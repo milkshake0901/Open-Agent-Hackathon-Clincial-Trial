@@ -6,6 +6,7 @@ Base: `http://localhost:8000/api`. JSON unless noted. Wire schemas live in `app/
 |---|---|---|---|---|
 | POST | `/patients` | `{label}` | `201 {patient_id}` | insert |
 | POST | `/patients/{pid}/documents` | multipart `file` (one PDF per request; several at once are several requests) | `202 {document_hash, run_id, deduplicated: bool}`; a re-upload of the same bytes answers with the earlier run unless it was rejected; `422` unreadable (not a PDF, no text layer), `413` over 20 MB | `record.register_document` then bg `record.ingest` → `matching.rescan` on Committed (same run_id) |
+| PUT | `/patients/{pid}/search-preferences` | `{postcode?, max_travel_km?: 10\|25\|50\|100\|anywhere, contact?}` (as the questionnaire takes them; a field left out or blank keeps its stored value) | `200 {postcode_set, location_known, max_travel_km, contact_set}`; the postcode and contact are never sent back. Not a Fact: no new Profile version. `422` a value that does not fit its question, `404` unknown patient | `record.set_search_preferences` |
 | GET | `/patients/{pid}/documents` | | `[{hash, filename, page_count, uploaded_at, version_number?}]` | `record.*` |
 | GET | `/patients/{pid}/documents/{hash}/pages/{n}` | | `{number, text, tables}` (de-identified) | citation viewer |
 | GET | `/patients/{pid}/versions` | | `[{id, number, document_hash, fact_count, created_at}]` | `record.versions` |
