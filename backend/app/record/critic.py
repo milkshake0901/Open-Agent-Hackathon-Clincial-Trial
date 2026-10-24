@@ -14,26 +14,17 @@ from app.record.types import Document, DraftFact, Fact, Finding, FindingKind, Pr
 
 
 def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion | None) -> tuple[Finding, ...]:
-    """All findings for a draft set. Order: per draft, retryable checks then conflict checks.
-
-    # TODO pseudocode
-    #   for i, d in enumerate(drafts):
-    #       if d.observed_on is None:                     yield MISSING_DATE (retryable)
-    #       if not 1 <= d.page <= len(doc.pages):         yield BAD_PAGE (retryable)
-    #       elif not quote_on_page(d.quote, doc.pages[d.page-1]):  yield QUOTE_NOT_ON_PAGE (retryable)
-    #       if d.unit and not plausible_range(d.subject, d.value, d.unit):  yield UNIT_OUT_OF_RANGE (retryable)
-    #       if current:
-    #           same = [f for f in current.facts if same_subject(f, d) and f.observed_on == d.observed_on]
-    #           if any(f.value == d.value for f in same):   yield DUPLICATE_OF_ACCEPTED (retryable: drop it)
-    #           elif same:                                  yield CONTRADICTS_ACCEPTED (conflict)
-    #           if impossible_sequence(d, current.facts):   yield IMPOSSIBLE_SEQUENCE (conflict)
-    #   also within-draft contradictions (two drafts, same subject+date, different value) -> conflict with accepted=None
+    """All findings for a draft set. Per draft, in order:
+      MISSING_DATE        no observed-on date (retryable)
+      BAD_PAGE            the page is not in the Document (retryable), else
+      QUOTE_NOT_ON_PAGE   the quote is not on that page (retryable)
+      UNIT_OUT_OF_RANGE   an implausible lab value for its unit (retryable)
+      DUPLICATE_OF_ACCEPTED  the record already says it (duplicate_of_accepted; the loop drops it), else
+      CONTRADICTS_ACCEPTED   it cannot be true alongside an accepted Fact (contradicts_accepted; a conflict)
 
     Dates are parsed by `observed_on` below, which is where an Intake questionnaire's approximate dates are
     accepted as best estimates (#8); every other check applies to questionnaire Documents unchanged.
-
-    Implemented so far: MISSING_DATE, BAD_PAGE, QUOTE_NOT_ON_PAGE, UNIT_OUT_OF_RANGE (#7, #8) and
-    DUPLICATE_OF_ACCEPTED (#9, see duplicate_of_accepted). CONTRADICTS_ACCEPTED and IMPOSSIBLE_SEQUENCE are #13.
+    Not yet checked: IMPOSSIBLE_SEQUENCE (impossible_sequence), and two drafts contradicting each other.
     """
     findings: list[Finding] = []
 
@@ -47,7 +38,7 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
             add(FindingKind.BAD_PAGE, i, f"fact {i + 1} ({d.subject}): page {d.page} is not in the document")
         elif not quote_on_page(d.quote, doc.pages[d.page - 1].text):
             add(FindingKind.QUOTE_NOT_ON_PAGE, i, f"fact {i + 1} ({d.subject}): quote not found on page {d.page}")
-        if d.unit and not plausible_range(d.subject, d.value, d.unit):
+        if d.unit and not plausible_range(d):
             add(FindingKind.UNIT_OUT_OF_RANGE, i, f"fact {i + 1} ({d.subject}): {d.value} {d.unit} is implausible")
         if current is not None and duplicate_of_accepted(d, doc, current):
             add(FindingKind.DUPLICATE_OF_ACCEPTED, i, f"fact {i + 1} ({d.subject}): already in the record")
@@ -104,10 +95,16 @@ _VALUE_SYNONYMS = {
 }
 
 
+def subject_key(subject: str) -> str:
+    """The one subject normaliser: lowercase, punctuation stripped, whitespace collapsed, synonyms resolved
+    ("ECOG PS" and the questionnaire's "daily activity" are both "ecog performance status")."""
+    norm = " ".join(re.sub(r"[^\w\s]", " ", subject.lower()).split())
+    return _SUBJECT_SYNONYMS.get(norm, norm)
+
+
 def _canonical(f: Fact | DraftFact) -> tuple[str, str]:
     """(subject, value) with synonyms resolved; unit folded into the value except for unitless scores."""
-    subject = _norm_subject(f.subject)
-    subject = _SUBJECT_SYNONYMS.get(subject, subject)
+    subject = subject_key(f.subject)
     value = _squash(f.value)
     if subject == "ecog performance status":
         value = _VALUE_SYNONYMS[subject].get(f.value.strip(), re.sub(r"^(ecog|ps)\s*", "", value))
@@ -124,7 +121,7 @@ def duplicate_of_accepted(draft: DraftFact, doc: Document, current: ProfileVersi
     def same(f: Fact) -> bool:
         return same_subject(f, draft) and f.value == draft.value and (f.unit or None) == (draft.unit or None)
     if doc.is_questionnaire:
-        now = next((f for s, f in current.current().items() if _norm_subject(s) == _norm_subject(draft.subject)), None)
+        now = next((f for s, f in current.current().items() if subject_key(s) == subject_key(draft.subject)), None)
         return now is not None and same(now) and now.quote == draft.quote
     return any(same(f) and f.observed_on == draft.observed_on for f in current.facts)
 
@@ -166,13 +163,8 @@ def quote_on_page(quote: str, page_text: str) -> bool:
 
 
 def same_subject(a: Fact | DraftFact, b: Fact | DraftFact) -> bool:
-    """Normalised subject equality (lowercase, collapsed whitespace, punctuation stripped).
-    # TODO (#13): units in subjects and a small synonym table."""
-    return _norm_subject(a.subject) == _norm_subject(b.subject)
-
-
-def _norm_subject(subject: str) -> str:
-    return " ".join(re.sub(r"[^\w\s]", " ", subject.lower()).split())
+    """Subject equality after subject_key (synonyms included)."""
+    return subject_key(a.subject) == subject_key(b.subject)
 
 
 _RANGES: dict[tuple[str, str], tuple[float, float]] = {
@@ -180,17 +172,17 @@ _RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("haemoglobin", "g/dl"): (3, 25),
     ("creatinine", "umol/l"): (10, 2000),
     ("platelets", "x10^9/l"): (1, 2000),
-    ("ecog", "score"): (0, 5),
+    ("ecog performance status", "score"): (0, 5),
 }
 
 
-def plausible_range(subject: str, value: str, unit: str) -> bool:
-    """Tiny table for common labs (Hb, creatinine, platelets, ECOG 0-5). Unknown subject → True."""
-    bounds = _RANGES.get((subject.strip().lower(), unit.strip().lower()))
+def plausible_range(d: DraftFact) -> bool:
+    """Tiny table for common labs (Hb, creatinine, platelets, ECOG 0-5), keyed by subject_key. Unknown → True."""
+    bounds = _RANGES.get((subject_key(d.subject), (d.unit or "").strip().lower()))
     if bounds is None:
         return True
     try:
-        return bounds[0] <= float(value) <= bounds[1]
+        return bounds[0] <= float(d.value) <= bounds[1]
     except ValueError:
         return False
 
