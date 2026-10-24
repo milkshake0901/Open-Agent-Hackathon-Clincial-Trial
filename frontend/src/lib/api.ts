@@ -26,6 +26,13 @@ export type SubmissionAccepted = {
   profile_version_id: string | null;
   version_number: number | null;
   reason: string | null;
+  return_token: string | null; // first submission only
+};
+
+export type ReturnOpened = {
+  patient_id: string;
+  profile_version_id: string | null;
+  version_number: number | null;
 };
 
 export type FactOut = {
@@ -57,6 +64,20 @@ export type RunOut = {
   state: { phase: IngestPhase; version_number: number | null; reason: string | null } | null;
 };
 
+export type LatestAnswers = {
+  definition_version: string;
+  document_hash: string;
+  respondent: Respondent;
+  answers: Answers; // search preferences (postcode, travel, contact) are never included
+};
+
+export type VersionDiff = {
+  from_version: string;
+  to_version: string;
+  facts_added: FactOut[];
+  subjects_changed: { subject: string; before: FactOut | null; after: FactOut }[];
+};
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const json = !(init?.body instanceof FormData); // the browser sets the multipart boundary itself
   const res = await fetch(`/api${path}`, {
@@ -85,6 +106,14 @@ export const api = {
     return call<UploadAccepted>(`/patients/${encodeURIComponent(patientId)}/documents`, { method: "POST", body });
   },
   run: (runId: string) => call<RunOut>(`/runs/${encodeURIComponent(runId)}`),
+  latestAnswers: (patientId: string) =>
+    call<LatestAnswers>(`/patients/${encodeURIComponent(patientId)}/questionnaire`),
+  diff: (patientId: string, versionId: string, fromVersionId: string) =>
+    call<VersionDiff>(
+      `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/diff` +
+        `?from=${encodeURIComponent(fromVersionId)}`,
+    ),
+  openReturnLink: (token: string) => call<ReturnOpened>(`/return/${encodeURIComponent(token)}`),
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
 };

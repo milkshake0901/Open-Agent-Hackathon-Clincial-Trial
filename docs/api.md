@@ -24,6 +24,7 @@ Base: `http://localhost:8000/api`. JSON unless noted. Wire schemas live in `app/
 | GET | `/patients/{pid}/questions?version={vid}` | | `[{subject, text, criterion_ids[], nct_ids[]}]` deduped by subject | `matching.questions_for_version` |
 | GET | `/traces/{correlation_id}` | | causal tree of every event across an ingest and its Re-scan, with `llm_call` rows (requested vs answered model) | `trace.causal_tree` |
 | GET | `/health` | | `{postgres, zetaris, nightshift: {ok, lanes: {fast, deep, judge}}, world_model}` | startup checks |
+| GET | `/return/{token}` | | `{patient_id, profile_version_id?, version_number?}`; unknown token → bare `404`. The token comes once, as `return_token` on the first `POST /patients/{pid}/questionnaire` response | `record.patient_for_return_token` + `record.current_version` |
 
 Errors: `404` unknown ids; `409` when `/confirm` is called on a run not in `awaiting_patient`; `422` validation; `503 {reason}` when Nightshift is unavailable (runs then end `run.rejected` / `rescan.finished` with `failed`).
 

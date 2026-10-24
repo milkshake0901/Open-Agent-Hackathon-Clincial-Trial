@@ -136,6 +136,12 @@ DEFINITION = Questionnaire(DEFINITION_VERSION, (
                  "Are they currently pregnant, breastfeeding or planning a pregnancy?", "single", "fact",
                  YES_NO_PREFER_NOT, help="Optional."),
     )),
+    Section("contact", "Staying in touch", (
+        Question("contact", 15, "If you'd like to hear when there are new questions to answer, leave an email or phone number.",
+                 "If you'd like to hear when there are new questions to answer, leave an email or phone number.",
+                 "text", "preference",
+                 help="Optional. Used only to tell you there is something new to look at, never to identify the patient."),
+    )),
 ))
 
 # Structured question → (resource, subject). Options listed here are answered but make no Fact.
@@ -147,8 +153,21 @@ _FACTS: dict[str, tuple[FactResource, str]] = {
     "pregnancy": (FactResource.OBSERVATION, "pregnant, breastfeeding or planning a pregnancy"),
 }
 _NO_FACT_VALUES = {"prefer_not_to_say"}
+_NOT_ANSWERED = "(not answered)"
+_POSTCODE = re.compile(r"^\d{4}$")     # Australian
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE = re.compile(r"^\+?[\d ()-]+$")
 _MONTH = re.compile(r"^(\d{4})-(\d{2})$")
 _MONTHS = ("January February March April May June July August September October November December").split()
+
+
+@dataclass(frozen=True)
+class SubmittedAnswers:
+    """A submission read back from its Document, to prefill an edit. Preferences (postcode, travel) are not
+    in the Document, so they are never here."""
+    document_hash: str
+    respondent: Respondent
+    answers: dict[str, Any]   # question id → value, in the shape submit_questionnaire takes
 
 
 class InvalidAnswers(ValueError):
@@ -192,6 +211,31 @@ def normalise(answers: dict[str, Any]) -> dict[str, Any]:
     return kept
 
 
+def preferences(answers: dict[str, Any]) -> dict[str, Any]:
+    """The answered search preferences, validated, as SearchPreferences field → value. A skipped preference
+    is absent (so a resubmission keeps what was stored); "anywhere" is an answered travel limit of None."""
+    normalise(answers)
+    got: dict[str, Any] = {}
+    for qid in ("postcode", "max_travel_km", "contact"):
+        value = answers.get(qid)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        if not isinstance(value, str):
+            raise InvalidAnswers(f"{qid}: expected text")
+        value = value.strip()
+        if qid == "postcode" and not _POSTCODE.match(value):
+            raise InvalidAnswers("postcode: expected 4 digits")
+        if qid == "max_travel_km":
+            _answer_text(_by_id()[qid], value)
+            got[qid] = None if value == "anywhere" else int(value)
+            continue
+        if qid == "contact" and not (_EMAIL.match(value) or (_PHONE.match(value)
+                                                             and 8 <= sum(c.isdigit() for c in value) <= 15)):
+            raise InvalidAnswers("contact: expected an email or a phone number")
+        got[qid] = value
+    return got
+
+
 def _pages(answers: dict[str, Any], respondent: Respondent, uses: tuple[QuestionUse, ...],
            answered_only: bool) -> tuple[Page, ...]:
     """Pages numbered as in the full Document (one per section with fact or free-text questions), keeping only
@@ -209,7 +253,7 @@ def _pages(answers: dict[str, Any], respondent: Respondent, uses: tuple[Question
             continue
         lines = [f"Intake questionnaire: {section.title}"]
         for q in shown:
-            answer = _answer_text(q, answers[q.id]) if q.id in answers else "(not answered)"
+            answer = _answer_text(q, answers[q.id]) if q.id in answers else _NOT_ANSWERED
             lines += [f"{q.ref}. {q.wording(respondent)}", f"Answer: {answer}"]
         pages.append(Page(number=number, text="\n".join(lines)))
     return tuple(pages)
@@ -255,3 +299,26 @@ def structured_drafts(answers: dict[str, Any], respondent: Respondent, pages: tu
                                 observed_on=submitted_on, page=page.number, quote=_answer_text(q, value),
                                 question=q.ref))
     return tuple(drafts)
+
+
+
+def answers_from_pages(pages: tuple[Page, ...]) -> dict[str, Any]:
+    """The inverse of render for the answers it keeps: each "Answer:" line under its question number.
+    Free text comes back with whitespace collapsed, as the Document shows it."""
+    by_ref = {q.ref: q for q in DEFINITION.questions()}
+    answers: dict[str, Any] = {}
+    for page in pages:
+        lines = page.text.split("\n")
+        for line, nxt in zip(lines, lines[1:]):
+            q = by_ref.get(line.split(". ", 1)[0])
+            if q is None or not nxt.startswith("Answer: ") or nxt == f"Answer: {_NOT_ANSWERED}":
+                continue
+            text = nxt.removeprefix("Answer: ")
+            if q.kind == "month_year":
+                month, year = text.split(" ")
+                answers[q.id] = f"{year}-{_MONTHS.index(month) + 1:02d}"
+            elif q.kind == "single":
+                answers[q.id] = next(o.value for o in q.options if o.label == text)
+            else:
+                answers[q.id] = text
+    return answers

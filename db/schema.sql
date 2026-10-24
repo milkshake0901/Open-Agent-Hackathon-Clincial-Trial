@@ -1,6 +1,7 @@
 -- db/schema.sql — Postgres for the app (our own container, separate from Zetaris's internal postgres).
 -- One writer per table:
---   patient, document, document_page                    app.record.repo
+--   patient, document, document_page,
+--   search_preference, return_token                     app.record.repo
 --   wm_event, wm_audit                                   app.worldmodel.store.PgEventStore (engine log)
 --   fact, profile_version*, trial, criterion,
 --   verdict, criterion_result, doctor_question           app.worldmodel.projector, inside the wm_event append
@@ -12,6 +13,20 @@
 CREATE TABLE patient (
   id            text PRIMARY KEY,
   label         text NOT NULL,            -- de-identified display label, e.g. "Demo patient A"
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE search_preference (          -- per patient, NOT Facts: never rendered into a Document, never in a prompt (ADR 0003)
+  patient_id    text PRIMARY KEY REFERENCES patient(id),
+  postcode      text,                     -- never shown back, never in a URL; only code computing distances reads it (#16)
+  max_travel_km int,                      -- NULL: no limit ("anywhere", or not answered)
+  contact       text,                     -- optional email or phone for "you have new questions" notices
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE return_token (               -- private return link; only the sha256 of the token is stored
+  token_hash    text PRIMARY KEY,
+  patient_id    text NOT NULL UNIQUE REFERENCES patient(id),   -- one per patient, issued on first submission
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 

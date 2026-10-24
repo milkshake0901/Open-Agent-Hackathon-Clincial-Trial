@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import secrets
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
@@ -18,7 +19,9 @@ from app.ctx import Ctx
 from app.record import loop, questionnaire, repo
 from app.record.deidentify import deidentify
 from app.record.pdf import UnreadableDocument, to_pages
-from app.record.questionnaire import DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section
+from app.record.questionnaire import (
+    DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section, SubmittedAnswers,
+)
 from app.record.types import (
     AwaitingPatient,
     Committed,
@@ -35,6 +38,7 @@ from app.record.types import (
     Rejected,
     Resolution,
     Respondent,
+    SearchPreferences,
     VersionDiff,
 )
 from app.trace import RunId
@@ -43,7 +47,9 @@ from app.trace.events import ProfileCommitted
 __all__ = [
     "register_document", "ingest", "confirm", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
-    "document", "Registered", "UnreadableDocument", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
+    "document", "Registered", "UnreadableDocument", "issue_return_token", "patient_for_return_token",
+    "latest_answers", "SubmittedAnswers", "search_preferences", "SearchPreferences",
+    "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
     "PatientId", "DocumentHash", "ProfileVersionId", "FactId",
@@ -59,6 +65,30 @@ async def create_patient(ctx: Ctx, label: str) -> PatientId:
     patient_id = PatientId(f"pt_{uuid.uuid4().hex[:16]}")
     async with ctx.writer.transaction() as tx:
         await repo.insert_patient(tx, patient_id, label)
+    return patient_id
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def issue_return_token(ctx: Ctx, patient_id: PatientId) -> str | None:
+    """The private, unguessable token behind the patient's return link (no accounts or passwords). Issued
+    once per patient, on the first submission; None if the patient already has one. Only its hash is
+    stored, so it cannot be shown again."""
+    if not await repo.patient_exists(ctx.ui_reader, patient_id):
+        raise NotFound(f"patient {patient_id}")
+    token = secrets.token_urlsafe(32)
+    async with ctx.writer.transaction() as tx:
+        issued = await repo.insert_return_token(tx, _token_hash(token), patient_id)
+    return token if issued else None
+
+
+async def patient_for_return_token(ctx: Ctx, token: str) -> PatientId:
+    """The one patient a return token opens. NotFound (saying nothing about any patient) otherwise."""
+    patient_id = await repo.patient_for_token_hash(ctx.ui_reader, _token_hash(token))
+    if patient_id is None:
+        raise NotFound("return link")
     return patient_id
 
 
@@ -82,17 +112,26 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
     if respondent not in ("patient", "other"):
         raise InvalidAnswers(f"respondent must be 'patient' or 'other', got {respondent!r}")
     pages = questionnaire.render(answers, respondent)
+    preferences = questionnaire.preferences(answers)
     if not await repo.patient_exists(ctx.ui_reader, patient_id):
         raise NotFound(f"patient {patient_id}")
     now = ctx.now()
     drafts = questionnaire.structured_drafts(answers, respondent, pages, now.date())
     # Document hashes are global keys, so the patient is part of a questionnaire's identity: two patients
-    # giving the same answers submit two Documents.
+    # giving the same answers submit two Documents. A correction is a new Document (ADR 0003) even when it
+    # changes an answer back, so the hash also names the previous accepted questionnaire; answers identical
+    # to that one are the same submission and return its version.
     body = "\f".join(p.text for p in pages)
-    h = DocumentHash(hashlib.sha256(f"intake-questionnaire\n{patient_id}\n{body}".encode()).hexdigest())
+    previous = await repo.latest_questionnaire(ctx.ui_reader, patient_id)
+    if previous is not None and previous.respondent == respondent and "\f".join(p.text for p in previous.pages) == body:
+        h = previous.hash
+    else:
+        after = f"after {previous.hash}\n" if previous is not None else ""
+        h = DocumentHash(hashlib.sha256(f"intake-questionnaire\n{patient_id}\n{after}{body}".encode()).hexdigest())
     doc = Document(hash=h, patient_id=patient_id, filename=questionnaire.DOCUMENT_FILENAME, pages=pages,
                    uploaded_at=now.date(), respondent=respondent)
     async with ctx.writer.transaction() as tx:
+        await repo.upsert_search_preferences(tx, patient_id, preferences)
         await repo.insert_document(tx, doc, uploaded_at=now)
     existing = await repo.version_for_document(ctx.ui_reader, h)
     if existing is not None:
@@ -102,6 +141,23 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
     free_text = replace(doc, pages=questionnaire.free_text_pages(answers, respondent))
     return await loop.run_ingest(ctx, doc, run_id, ctx.settings.intake_attempts,
                                  drafter=loop.questionnaire_drafter(drafts, free_text, questionnaire.settle_free_text))
+
+
+async def latest_answers(ctx: Ctx, patient_id: PatientId) -> SubmittedAnswers | None:
+    """The latest accepted Intake questionnaire's answers and Respondent, read back from its Document, so an
+    edit starts prefilled. None before the first accepted submission. Search preferences (postcode, travel, contact)
+    are never in a Document, so never here: a resubmission that leaves them blank keeps the stored values."""
+    doc = await repo.latest_questionnaire(ctx.ui_reader, patient_id)
+    if doc is None:
+        return None
+    return SubmittedAnswers(document_hash=doc.hash, respondent=doc.respondent,
+                            answers=questionnaire.answers_from_pages(doc.pages))
+
+
+async def search_preferences(ctx: Ctx, patient_id: PatientId) -> SearchPreferences:
+    """Postcode, travel limit and optional contact from the latest submissions that answered them (a skipped
+    preference keeps its stored value). Never a Fact; never pass any of it to a model (ADR 0003)."""
+    return await repo.search_preferences(ctx.ui_reader, patient_id)
 
 
 def questionnaire_definition() -> Questionnaire:
@@ -213,5 +269,15 @@ async def profile_version(ctx: Ctx, version_id: ProfileVersionId, *, for_agent: 
 
 
 async def diff(ctx: Ctx, from_version: ProfileVersionId, to_version: ProfileVersionId) -> VersionDiff:
-    """Facts added between two versions and subjects whose current value changed. Pure over two loads."""
-    raise NotImplementedError
+    """Facts added between two versions and subjects whose current value changed. Pure over two loads.
+    A subject is changed when its current value (or unit) differs, or it is new; a later Fact repeating the
+    same value is added but not a change."""
+    before, after = await profile_version(ctx, from_version), await profile_version(ctx, to_version)
+    if before.patient_id != after.patient_id:
+        raise NotFound(f"profile versions {from_version} and {to_version} belong to different patients")
+    was, now = before.current(), after.current()
+    changed = tuple((s, was.get(s), f) for s, f in now.items()
+                    if s not in was or (was[s].value, was[s].unit) != (f.value, f.unit))
+    return VersionDiff(from_version=before.id, to_version=after.id,
+                       facts_added=tuple(f for f in after.facts if f.id not in before.fact_ids),
+                       subjects_changed=changed)

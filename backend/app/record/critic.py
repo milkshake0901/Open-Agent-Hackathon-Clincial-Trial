@@ -32,8 +32,8 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
     Dates are parsed by `observed_on` below, which is where an Intake questionnaire's approximate dates are
     accepted as best estimates (#8); every other check applies to questionnaire Documents unchanged.
 
-    Implemented so far (#7, #8): MISSING_DATE, BAD_PAGE, QUOTE_NOT_ON_PAGE, UNIT_OUT_OF_RANGE. The checks against
-    `current` (DUPLICATE_OF_ACCEPTED #9, CONTRADICTS_ACCEPTED and IMPOSSIBLE_SEQUENCE #13) are still to come.
+    Implemented so far: MISSING_DATE, BAD_PAGE, QUOTE_NOT_ON_PAGE, UNIT_OUT_OF_RANGE (#7, #8) and
+    DUPLICATE_OF_ACCEPTED (#9, see duplicate_of_accepted). CONTRADICTS_ACCEPTED and IMPOSSIBLE_SEQUENCE are #13.
     """
     findings: list[Finding] = []
 
@@ -49,7 +49,22 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
             add(FindingKind.QUOTE_NOT_ON_PAGE, i, f"fact {i + 1} ({d.subject}): quote not found on page {d.page}")
         if d.unit and not plausible_range(d.subject, d.value, d.unit):
             add(FindingKind.UNIT_OUT_OF_RANGE, i, f"fact {i + 1} ({d.subject}): {d.value} {d.unit} is implausible")
+        if current is not None and duplicate_of_accepted(d, doc, current):
+            add(FindingKind.DUPLICATE_OF_ACCEPTED, i, f"fact {i + 1} ({d.subject}): already in the record")
     return tuple(findings)
+
+
+def duplicate_of_accepted(draft: DraftFact, doc: Document, current: ProfileVersion) -> bool:
+    """The draft says nothing the accepted record does not already say: same subject, value and unit, and
+    - from a clinical Document: the same observed-on date as any accepted Fact (re-reading an old report);
+    - from an Intake questionnaire: the subject's current value. A resubmission repeats unchanged answers on a
+      new date, which is no new observation; but an answer changed back to an earlier value is a correction."""
+    def same(f: Fact) -> bool:
+        return same_subject(f, draft) and f.value == draft.value and (f.unit or None) == (draft.unit or None)
+    if doc.is_questionnaire:
+        now = next((f for s, f in current.current().items() if _norm_subject(s) == _norm_subject(draft.subject)), None)
+        return now is not None and same(now)
+    return any(same(f) and f.observed_on == draft.observed_on for f in current.facts)
 
 
 _FULL_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
@@ -89,8 +104,13 @@ def quote_on_page(quote: str, page_text: str) -> bool:
 
 
 def same_subject(a: Fact | DraftFact, b: Fact | DraftFact) -> bool:
-    """Normalised subject equality (lowercase, strip units/punctuation, small synonym table)."""
-    raise NotImplementedError
+    """Normalised subject equality (lowercase, collapsed whitespace, punctuation stripped).
+    # TODO (#13): units in subjects and a small synonym table."""
+    return _norm_subject(a.subject) == _norm_subject(b.subject)
+
+
+def _norm_subject(subject: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", subject.lower()).split())
 
 
 _RANGES: dict[tuple[str, str], tuple[float, float]] = {
