@@ -51,6 +51,14 @@ class QuestionnaireSubmission(BaseModel):
     answers: dict[str, Any]     # question id → value; month_year is "YYYY-MM", single is an option value
 
 
+class LatestAnswersOut(BaseModel):
+    """The latest accepted submission, to prefill "edit answers". Postcode and travel are never included."""
+    definition_version: str
+    document_hash: str
+    respondent: Literal["patient", "other"]
+    answers: dict[str, Any]
+
+
 class SubmissionAccepted(BaseModel):
     run_id: str
     outcome: Literal["committed", "awaiting_patient", "rejected"]
@@ -91,6 +99,19 @@ class VersionOut(BaseModel):
     document_hash: str
     facts: list[FactOut]
     current: dict[str, str]     # subject → fact id
+
+
+class SubjectChangeOut(BaseModel):
+    subject: str
+    before: FactOut | None      # None when the subject is new in the later version
+    after: FactOut
+
+
+class VersionDiffOut(BaseModel):
+    from_version: str
+    to_version: str
+    facts_added: list[FactOut]
+    subjects_changed: list[SubjectChangeOut]   # verdicts_changed arrives with matching (#12)
 
 
 # TODO: VerdictSummaryOut, VerdictOut, VerdictChangeOut,

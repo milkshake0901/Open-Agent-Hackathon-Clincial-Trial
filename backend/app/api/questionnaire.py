@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app import record
 from app.api.deps import get_ctx
-from app.api.schemas import QuestionnaireOut, QuestionnaireSubmission, SubmissionAccepted
+from app.api.schemas import LatestAnswersOut, QuestionnaireOut, QuestionnaireSubmission, SubmissionAccepted
 from app.ctx import Ctx
 
 router = APIRouter(tags=["questionnaire"])
@@ -20,6 +20,16 @@ async def definition():
              "options": [asdict(o) for o in q.options], "required": q.required, "help": q.help}
             for q in s.questions]}
         for s in d.sections]}
+
+
+@router.get("/patients/{pid}/questionnaire", response_model=LatestAnswersOut)
+async def latest(pid: str, ctx: Ctx = Depends(get_ctx)):
+    """record.latest_answers: the latest accepted submission, to prefill "edit answers". 404 before the first."""
+    found = await record.latest_answers(ctx, record.PatientId(pid))
+    if found is None:
+        raise HTTPException(404, f"no accepted questionnaire for patient {pid}")
+    return LatestAnswersOut(definition_version=record.questionnaire_definition().version,
+                            document_hash=found.document_hash, respondent=found.respondent, answers=found.answers)
 
 
 @router.post("/patients/{pid}/questionnaire", status_code=202, response_model=SubmissionAccepted)

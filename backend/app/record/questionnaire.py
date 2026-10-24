@@ -149,6 +149,15 @@ _MONTH = re.compile(r"^(\d{4})-(\d{2})$")
 _MONTHS = ("January February March April May June July August September October November December").split()
 
 
+@dataclass(frozen=True)
+class SubmittedAnswers:
+    """A submission read back from its Document, to prefill an edit. Preferences (postcode, travel) are not
+    in the Document, so they are never here."""
+    document_hash: str
+    respondent: Respondent
+    answers: dict[str, Any]   # question id → value, in the shape submit_questionnaire takes
+
+
 class InvalidAnswers(ValueError):
     """An answer that does not fit its question (unknown id, unknown option, malformed month)."""
 
@@ -200,7 +209,7 @@ def render(answers: dict[str, Any], respondent: Respondent) -> tuple[Page, ...]:
             continue
         lines = [f"Intake questionnaire: {section.title}"]
         for q in qs:
-            answer = _answer_text(q, answers[q.id]) if q.id in answers else "(not answered)"
+            answer = _answer_text(q, answers[q.id]) if q.id in answers else _NOT_ANSWERED
             lines += [f"{q.ref}. {q.wording(respondent)}", f"Answer: {answer}"]
         pages.append(Page(number=len(pages) + 1, text="\n".join(lines)))
     return tuple(pages)
@@ -223,3 +232,28 @@ def structured_drafts(answers: dict[str, Any], respondent: Respondent, pages: tu
                                 observed_on=submitted_on, page=page.number, quote=_answer_text(q, value),
                                 question=q.ref))
     return tuple(drafts)
+
+
+_NOT_ANSWERED = "(not answered)"
+
+
+def answers_from_pages(pages: tuple[Page, ...]) -> dict[str, Any]:
+    """The inverse of render for the answers it keeps: each "Answer:" line under its question number.
+    Free text comes back with whitespace collapsed, as the Document shows it."""
+    by_ref = {q.ref: q for q in DEFINITION.questions()}
+    answers: dict[str, Any] = {}
+    for page in pages:
+        lines = page.text.split("\n")
+        for line, nxt in zip(lines, lines[1:]):
+            q = by_ref.get(line.split(". ", 1)[0])
+            if q is None or not nxt.startswith("Answer: ") or nxt == f"Answer: {_NOT_ANSWERED}":
+                continue
+            text = nxt.removeprefix("Answer: ")
+            if q.kind == "month_year":
+                month, year = text.split(" ")
+                answers[q.id] = f"{year}-{_MONTHS.index(month) + 1:02d}"
+            elif q.kind == "single":
+                answers[q.id] = next(o.value for o in q.options if o.label == text)
+            else:
+                answers[q.id] = text
+    return answers

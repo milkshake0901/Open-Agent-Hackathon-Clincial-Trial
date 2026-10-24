@@ -13,7 +13,9 @@ from typing import Any
 from app import trace
 from app.ctx import Ctx
 from app.record import loop, questionnaire, repo
-from app.record.questionnaire import DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section
+from app.record.questionnaire import (
+    DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section, SubmittedAnswers,
+)
 from app.record.types import (
     AwaitingPatient,
     Committed,
@@ -37,7 +39,7 @@ from app.trace import RunId
 __all__ = [
     "register_document", "ingest", "confirm", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
-    "document", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
+    "document", "latest_answers", "SubmittedAnswers", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
     "PatientId", "DocumentHash", "ProfileVersionId", "FactId",
@@ -101,6 +103,16 @@ async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[st
     await trace.open(ctx.writer, run_id, "ingest", patient_id=patient_id, document_hash=h)
     return await loop.run_ingest(ctx, doc, run_id, ctx.settings.intake_attempts,
                                  drafter=loop.structured_drafter(drafts))
+
+
+async def latest_answers(ctx: Ctx, patient_id: PatientId) -> SubmittedAnswers | None:
+    """The latest accepted Intake questionnaire's answers and Respondent, read back from its Document, so an
+    edit starts prefilled. None before the first accepted submission. Postcode and travel are not included."""
+    doc = await repo.latest_questionnaire(ctx.ui_reader, patient_id)
+    if doc is None:
+        return None
+    return SubmittedAnswers(document_hash=doc.hash, respondent=doc.respondent,
+                            answers=questionnaire.answers_from_pages(doc.pages))
 
 
 def questionnaire_definition() -> Questionnaire:

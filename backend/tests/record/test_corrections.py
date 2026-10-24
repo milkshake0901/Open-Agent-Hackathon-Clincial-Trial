@@ -77,3 +77,18 @@ async def test_changing_only_a_free_text_answer_makes_a_version_with_no_new_fact
     assert v2.number == 2 and v2.document_hash != v1.document_hash
     d = await record.diff(ctx, v1.id, v2.id)
     assert d.facts_added == () and d.subjects_changed == ()
+
+
+async def test_the_latest_submission_can_be_read_back_to_prefill_an_edit(ctx):
+    patient = await record.create_patient(ctx, "Demo patient F")
+    assert await record.latest_answers(ctx, patient) is None
+    await _submit(ctx, patient, ANSWERS)
+    edited = {**ANSWERS, "sex": "prefer_not_to_say", "pregnancy": None,
+              "treatments": "Chemotherapy  in 2024,\nthen surgery", "postcode": "2031"}
+    await _submit(ctx, patient, edited, respondent="other")
+
+    latest = await record.latest_answers(ctx, patient)
+
+    assert latest.respondent == "other"
+    assert latest.answers == {"birth_month": "1958-03", "sex": "prefer_not_to_say", "has_allergies": "no",
+                              "daily_activity": "light_activity", "treatments": "Chemotherapy in 2024, then surgery"}
