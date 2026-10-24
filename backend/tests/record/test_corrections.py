@@ -146,3 +146,22 @@ async def test_a_free_text_answer_reworded_more_exactly_is_kept_though_its_value
 
     d = await record.diff(ctx, v1.id, v2.id)
     assert [(f.subject, f.quote) for f in d.facts_added] == [("chemotherapy", exact)]
+
+
+async def test_clearing_an_answered_question_withdraws_its_fact_from_the_new_version_only(clean_db):
+    from tests.conftest import make_ctx
+    tamoxifen = {"resource": "MedicationStatement", "subject": "tamoxifen", "value": "20 mg daily",
+                 "observed_on": "2026-10-24", "page": 4, "quote": "Tamoxifen 20 mg daily", "question": "Q9"}
+    ctx = make_ctx(clean_db, FakeLLM(lambda lane, system, user: {"facts": [tamoxifen]}))
+    patient = await record.create_patient(ctx, "Demo patient W")
+    v1 = await _submit(ctx, patient, {**ANSWERS, "medicines": "Tamoxifen 20 mg daily"})
+    assert {"tamoxifen", "any allergy"} <= set((await record.profile_version(ctx, v1.id)).current())
+
+    # no longer taking it, and the allergy and pregnancy questions left blank this time
+    cleared = {k: v for k, v in ANSWERS.items() if k not in ("has_allergies", "pregnancy")}
+    v2 = await record.profile_version(ctx, (await _submit(ctx, patient, {**cleared, "sex": "intersex"})).id)
+
+    assert not {"tamoxifen", "any allergy", "pregnant, breastfeeding or planning a pregnancy"} & set(v2.current())
+    assert {"birth month", "sex assigned at birth", "daily activity"} <= set(v2.current())
+    v1_again = await record.profile_version(ctx, v1.id)
+    assert "tamoxifen" in v1_again.current()          # earlier versions keep citing it

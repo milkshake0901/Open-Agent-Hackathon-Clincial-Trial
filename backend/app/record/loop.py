@@ -12,7 +12,7 @@ from typing import Awaitable, Callable
 
 from app.ctx import Ctx
 from app.llm import LlmUnavailable
-from app.record import critic, intake, repo
+from app.record import critic, intake, questionnaire, repo
 from app.worldmodel import timeline
 from app.record.types import (
     AwaitingPatient, Committed, Conflict, ConflictId, Document, DocumentHash, DraftFact, Fact, FactId, FactResource,
@@ -241,8 +241,20 @@ async def commit(ctx: Ctx, doc: Document, drafts: tuple[DraftFact, ...], run_id:
 
     Idempotent: fact ids are content-derived and the snapshot is keyed by document hash, so a
     retry after a crash returns the existing version and only the missing trace event is appended.
+
+    A questionnaire resubmission that clears a question answered before (a medicine no longer taken) also withdraws
+    that question's Patient-reported Facts from the new version; earlier versions keep them.
     """
+    if doc.is_questionnaire:
+        withdrawn |= await _cleared(ctx, doc)
     version = await timeline.commit_profile_version(ctx.wm, doc.patient_id, doc, drafts, run_id, withdrawn=withdrawn)
     await trace.append(ctx.writer, run_id, ProfileCommitted(actor="record", profile_version_id=version.id,
                                                             version_number=version.number, facts_added=len(drafts)))
     return Committed(run_id, version)
+
+
+async def _cleared(ctx: Ctx, doc: Document) -> frozenset[FactId]:
+    """The current Patient-reported Facts whose question this questionnaire Document leaves unanswered."""
+    current = await repo.current_version(ctx.agent_reader, doc.patient_id)
+    blank = questionnaire.skipped(doc.pages)
+    return frozenset(f.id for f in (current.facts if current else ()) if f.question in blank)

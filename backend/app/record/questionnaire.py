@@ -306,6 +306,12 @@ def structured_drafts(answers: dict[str, Any], respondent: Respondent, pages: tu
 
 
 
+def skipped(pages: tuple[Page, ...]) -> frozenset[str]:
+    """Question numbers ("Q9") a questionnaire Document shows as not answered."""
+    return frozenset(q.ref for q in DEFINITION.questions()
+                     if q.use in ("fact", "free_text") and q.id not in answers_from_pages(pages))
+
+
 def answers_from_pages(pages: tuple[Page, ...]) -> dict[str, Any]:
     """The inverse of render for the answers it keeps: each "Answer:" line under its question number.
     Free text comes back with whitespace collapsed, as the Document shows it."""
