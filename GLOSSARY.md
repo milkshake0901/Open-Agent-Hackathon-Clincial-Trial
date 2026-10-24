@@ -4,9 +4,21 @@ Matches one patient's scattered clinical documents against ClinicalTrials.gov el
 
 ## Patient record
 
+**Intake questionnaire**:
+The plain-language questions a Respondent answers on first contact (age, sex, diagnosis in their own words, treatments, medicines); a completed one is itself a Document.
+_Avoid_: Intake (unqualified, which means the agent that drafts Facts from a Document), form, onboarding
+
+**Respondent**:
+The person who answers the Intake questionnaire: the patient, or a family member or carer on their behalf.
+_Avoid_: User, patient (when someone else is answering)
+
 **Document**:
-One source file the patient supplies (referral letter, blood report, genomic report), identified by the hash of its content.
+One source the patient supplies (referral letter, blood report, genomic report, or a completed Intake questionnaire), identified by the hash of its content.
 _Avoid_: File, upload, record, PDF
+
+**Patient-reported**:
+Describes a Fact whose Document is a completed Intake questionnaire rather than a clinical document.
+_Avoid_: Self-reported, unverified, user-entered
 
 **Fact**:
 One dated clinical statement taken from a Document, such as a diagnosis, a lab value or a medication, always pointing back to its Document and page.
@@ -57,8 +69,12 @@ The link from a claim in a Criterion result back to a Fact, and through it to a 
 _Avoid_: Reference, source, evidence link
 
 **Doctor question**:
-A question for the patient's clinician, generated from a Criterion result that is unknown because no Fact covers it.
+A question for the patient's clinician, generated from a Criterion result that is unknown because no Fact covers it and answering needs clinical records or judgement (performance status, labs, stage).
 _Avoid_: Follow-up, gap, missing info
+
+**Respondent question**:
+A question sent back to the Respondent when a Criterion result turns on something they could plausibly know (a date, a medicine name) but answered too vaguely or not at all.
+_Avoid_: Follow-up, clarification, Doctor question
 
 **Re-scan**:
 Re-running matching for every cached Trial against a new Profile version.
