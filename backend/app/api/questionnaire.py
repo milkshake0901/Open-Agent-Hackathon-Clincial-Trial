@@ -44,7 +44,7 @@ async def submit(pid: str, body: QuestionnaireSubmission, ctx: Ctx = Depends(get
         raise HTTPException(422, str(e))
     except record.NotFound as e:
         raise HTTPException(404, str(e))
-    accepted = _accepted(outcome)
+    accepted = submission_accepted(outcome)
     if isinstance(outcome, record.Committed):
         report = await matching.rescan(ctx, outcome.version.id, correlation_id=outcome.run_id)
         accepted.rescan = RescanSummary(judged=len(report.judged), failed=len(report.failed))
@@ -52,7 +52,7 @@ async def submit(pid: str, body: QuestionnaireSubmission, ctx: Ctx = Depends(get
     return accepted
 
 
-def _accepted(outcome: record.IngestOutcome) -> SubmissionAccepted:
+def submission_accepted(outcome: record.IngestOutcome) -> SubmissionAccepted:
     match outcome:
         case record.Committed(run_id=run_id, version=v):
             return SubmissionAccepted(run_id=run_id, outcome="committed", document_hash=v.document_hash,

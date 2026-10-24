@@ -35,9 +35,11 @@ def patient_entity_id(patient_id: str) -> str:
 
 
 async def commit_profile_version(wm: "WorldModel", patient_id: "PatientId", doc: "Document",
-                                 drafts: tuple["DraftFact", ...], run_id: "RunId") -> "ProfileVersion":
+                                 drafts: tuple["DraftFact", ...], run_id: "RunId", *,
+                                 withdrawn: frozenset[str] = frozenset()) -> "ProfileVersion":
     """assert_fact per draft, then snapshot. Idempotent: an existing snapshot for this document hash is returned.
-    The new version's Fact set is the previous version's set plus this Document's Facts (ADR 0002)."""
+    The new version's Fact set is the previous version's set, less `withdrawn` (accepted Facts the patient overruled
+    in a Conflict; they stay in earlier versions), plus this Document's Facts (ADR 0002)."""
     from app.record import ProfileVersion
     from app.worldmodel.engine import Provenance
 
@@ -68,7 +70,7 @@ async def commit_profile_version(wm: "WorldModel", patient_id: "PatientId", doc:
     previous = set(profiles[-1].attrs["fact_ids"]) if profiles else set()
     snap = await wm.snapshot(entities=[about], source=doc_source, attrs={
         "kind": "profile", "patient_id": patient_id, "number": len(profiles) + 1, "document_hash": doc.hash,
-        "fact_ids": sorted(previous | set(new_ids))})
+        "fact_ids": sorted((previous - withdrawn) | set(new_ids))})
     return as_version(snap)
 
 
