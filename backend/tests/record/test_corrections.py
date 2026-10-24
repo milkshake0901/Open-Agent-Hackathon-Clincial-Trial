@@ -115,3 +115,16 @@ async def test_a_free_text_fact_the_model_finds_again_in_a_correction_is_dropped
 
     d = await record.diff(ctx, v1.id, v2.id)
     assert [f.subject for f in d.facts_added] == ["sex assigned at birth"]
+
+
+async def test_an_edit_never_reads_back_the_postcode_or_contact_and_leaving_them_blank_keeps_them(ctx):
+    patient = await record.create_patient(ctx, "Demo patient H")
+    await _submit(ctx, patient, {**ANSWERS, "postcode": "2031", "max_travel_km": "50", "contact": "a@example.org"})
+
+    latest = await record.latest_answers(ctx, patient)
+    assert not {"postcode", "max_travel_km", "contact"} & set(latest.answers)
+    assert "2031" not in repr(latest) and "example.org" not in repr(latest)
+
+    await _submit(ctx, patient, {**latest.answers, "daily_activity": "self_care"})
+    prefs = await record.search_preferences(ctx, patient)
+    assert (prefs.postcode, prefs.contact) == ("2031", "a@example.org")

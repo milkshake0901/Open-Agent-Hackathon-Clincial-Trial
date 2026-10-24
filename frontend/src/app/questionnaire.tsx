@@ -4,6 +4,7 @@
 // hard-coded here except the one that says who is answering, whose answer switches "your" / "their".
 
 import { useEffect, useState } from "react";
+import { ReturnLink } from "./return-link";
 import {
   api, type Answers, type Question, type Questionnaire, type Respondent, type VersionDiff, type VersionOut,
 } from "@/lib/api";
@@ -26,6 +27,7 @@ export function QuestionnaireForm() {
   const [savedVersionId, setSavedVersionId] = useState<string | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [returnToken, setReturnToken] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -65,6 +67,7 @@ export function QuestionnaireForm() {
         respondent,
         answers,
       });
+      setReturnToken((t) => result.return_token ?? t); // issued on the first submission only
       if (result.outcome !== "committed" || !result.profile_version_id) {
         throw new Error(result.reason ?? "Your answers could not be recorded yet.");
       }
@@ -102,6 +105,7 @@ export function QuestionnaireForm() {
     return (
       <div className="flex flex-col gap-4">
         <ProfileSummary version={version} changes={changes} />
+        {returnToken && <ReturnLink token={returnToken} />}
         {editError && <p role="alert" className="text-red-700 dark:text-red-400">{editError}</p>}
         <button type="button" onClick={onEdit} disabled={loadingEdit}
                 className="min-h-12 self-start rounded-lg border border-border px-5 text-base font-semibold disabled:opacity-60">
@@ -117,6 +121,7 @@ export function QuestionnaireForm() {
       {patientId && (
         <p className="text-muted">
           You are editing your saved answers. Saving sends the whole questionnaire again and keeps the earlier version.
+          Your postcode and contact details are not shown again; leave them blank to keep what you gave before.
         </p>
       )}
       {status.definition.sections.map((section) => (

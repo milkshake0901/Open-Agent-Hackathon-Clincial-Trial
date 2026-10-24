@@ -44,6 +44,12 @@ async def submit(pid: str, body: QuestionnaireSubmission, ctx: Ctx = Depends(get
         raise HTTPException(422, str(e))
     except record.NotFound as e:
         raise HTTPException(404, str(e))
+    accepted = _accepted(outcome)
+    accepted.return_token = await record.issue_return_token(ctx, record.PatientId(pid))
+    return accepted
+
+
+def _accepted(outcome: record.IngestOutcome) -> SubmissionAccepted:
     match outcome:
         case record.Committed(run_id=run_id, version=v):
             return SubmissionAccepted(run_id=run_id, outcome="committed", document_hash=v.document_hash,

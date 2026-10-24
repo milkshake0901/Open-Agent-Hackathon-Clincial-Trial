@@ -26,6 +26,13 @@ export type SubmissionAccepted = {
   profile_version_id: string | null;
   version_number: number | null;
   reason: string | null;
+  return_token: string | null; // first submission only
+};
+
+export type ReturnOpened = {
+  patient_id: string;
+  profile_version_id: string | null;
+  version_number: number | null;
 };
 
 export type FactOut = {
@@ -50,7 +57,7 @@ export type LatestAnswers = {
   definition_version: string;
   document_hash: string;
   respondent: Respondent;
-  answers: Answers; // postcode and travel are never included
+  answers: Answers; // search preferences (postcode, travel, contact) are never included
 };
 
 export type VersionDiff = {
@@ -88,6 +95,7 @@ export const api = {
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/diff` +
         `?from=${encodeURIComponent(fromVersionId)}`,
     ),
+  openReturnLink: (token: string) => call<ReturnOpened>(`/return/${encodeURIComponent(token)}`),
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
 };
