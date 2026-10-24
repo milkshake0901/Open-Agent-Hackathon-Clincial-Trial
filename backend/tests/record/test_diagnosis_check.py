@@ -77,7 +77,6 @@ async def test_not_sure_says_check_with_the_gp_and_holds_no_condition(clean_db):
     unsure = await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
 
     assert unsure.status == "not_sure" and unsure.needs_gp and unsure.condition_term is None
-    assert "GP" in unsure.message
     held = await record.diagnosis(ctx, patient)
     assert held.needs_gp and held.condition_term is None
 
@@ -87,7 +86,7 @@ async def test_a_low_confidence_proposal_is_not_offered_and_goes_straight_to_the
 
     check = await record.check_diagnosis(ctx, patient)
 
-    assert check.status == "unclear" and check.needs_gp and check.suggested_term is None and "GP" in check.message
+    assert check.status == "unclear" and check.needs_gp and check.suggested_term is None
     assert (await record.diagnosis(ctx, patient)).needs_gp
     with pytest.raises(record.InvalidAnswers):
         await record.answer_diagnosis_check(ctx, patient, check.id, "yes")

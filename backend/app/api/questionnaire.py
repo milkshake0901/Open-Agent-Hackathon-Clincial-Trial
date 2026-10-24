@@ -55,10 +55,25 @@ async def submit(pid: str, body: QuestionnaireSubmission, background: Background
                                  return_token=await record.issue_return_link(ctx, record.PatientId(pid)))
 
 
+GP_MESSAGE = ("We couldn't be sure how to describe the diagnosis. Please check the exact name with the GP; "
+              "we've added it to the questions for the doctor.")
+
+
+def _message(c: record.DiagnosisCheck) -> str:
+    """What the Respondent is told about a Diagnosis check, by its status."""
+    if c.needs_gp:
+        return GP_MESSAGE
+    if c.status == "proposed":
+        return f"We understood this as {c.suggested_term}. Is that right?"
+    if c.status == "rejected":
+        return "Sorry about that. Could you describe the diagnosis in other words?"
+    return f"Thanks. We'll look for trials for {c.suggested_term}."
+
+
 def _check_out(c: record.DiagnosisCheck, rescan: RescanSummary | None = None) -> DiagnosisCheckOut:
     return DiagnosisCheckOut(id=c.id, text=c.text, suggested_term=c.suggested_term, confidence=c.confidence,
                              status=c.status, condition=c.condition_term, needs_gp=c.needs_gp, ask_again=c.ask_again,
-                             message=c.message, rescan=rescan)
+                             message=_message(c), rescan=rescan)
 
 
 @router.post("/patients/{pid}/questionnaire/diagnosis-check", status_code=201, response_model=DiagnosisCheckOut)

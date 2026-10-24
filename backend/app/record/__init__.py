@@ -24,6 +24,7 @@ from app.record.questionnaire import (
     DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section, SubmittedAnswers,
 )
 from app.record.types import (
+    ANSWER_STATUS,
     AwaitingPatient,
     Committed,
     Conflict,
@@ -177,7 +178,8 @@ async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = No
     """A model proposes a condition term for the diagnosis in the Respondent's words: `text` (a re-wording after
     "no"), else the latest accepted questionnaire's diagnosis answer. The model sees only those words. A confident
     term comes back `proposed`, for the Respondent to answer ("We understood this as ..., is that right?");
-    otherwise nothing is offered and the check is `unclear`, which settles the diagnosis as needing the GP.
+    otherwise nothing is offered and the check is `unclear`, which settles the diagnosis as needing the GP. What to
+    say to the Respondent for each status is the HTTP shell's.
     Raises NotFound (unknown patient, or no diagnosis to check) and llm.LlmUnavailable (nothing stored)."""
     if not await repo.patient_exists(ctx.ui_reader, patient_id):
         raise NotFound(f"patient {patient_id}")
@@ -195,25 +197,23 @@ async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = No
     return check
 
 
-_ANSWER_STATUS = {"yes": "confirmed", "no": "rejected", "not_sure": "not_sure"}
-
-
 async def answer_diagnosis_check(ctx: Ctx, patient_id: PatientId, check_id: str,
                                  answer: DiagnosisAnswer) -> DiagnosisCheck:
     """The Respondent's yes / no / not sure to a proposed term. "yes" makes it the patient's condition (it selects
     which Trials are judged); "no" asks again (check_diagnosis with their re-wording); "not sure" tells them to
     check with their GP and raises a Doctor question for the diagnosis. Answered once. Raises NotFound (not this
     patient's check) and InvalidAnswers (an unknown answer, or the check is not awaiting one)."""
-    if answer not in _ANSWER_STATUS:
+    if answer not in ANSWER_STATUS:
         raise InvalidAnswers(f"answer must be yes, no or not_sure, got {answer!r}")
     check = await repo.diagnosis_check(ctx.ui_reader, check_id)
     if check is None or check.patient_id != patient_id:
         raise NotFound(f"diagnosis check {check_id}")
+    answered = replace(check, status=ANSWER_STATUS[answer])
     async with ctx.writer.transaction() as tx:
-        answered = await repo.answer_diagnosis_check(tx, check_id, _ANSWER_STATUS[answer], ctx.now())
-    if not answered:
+        stored = await repo.answer_diagnosis_check(tx, answered, ctx.now())
+    if not stored:
         raise InvalidAnswers(f"diagnosis check {check_id} is {check.status}, not awaiting an answer")
-    return replace(check, status=_ANSWER_STATUS[answer])
+    return answered
 
 
 async def diagnosis(ctx: Ctx, patient_id: PatientId) -> DiagnosisCheck | None:

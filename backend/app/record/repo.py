@@ -44,8 +44,7 @@ async def diagnosis_check(reader: SqlReader, check_id: str) -> DiagnosisCheck | 
 
 
 async def settled_diagnosis_check(reader: SqlReader, patient_id: PatientId) -> DiagnosisCheck | None:
-    """The latest check that settled the diagnosis (confirmed, not sure, or unclear). Proposed and rejected ones
-    settle nothing: the Respondent has still to answer, or is being asked again."""
+    """The latest check that settled the diagnosis (types.SETTLED)."""
     rows = await reader.fetch(
         f"SELECT {_CHECK_COLS} FROM {reader.table('diagnosis_check')} WHERE patient_id = $1 "
         "AND settled_seq IS NOT NULL ORDER BY settled_seq DESC LIMIT 1", (patient_id,))
@@ -158,20 +157,22 @@ async def insert_return_token(tx: Tx, token_hash: str, patient_id: PatientId) ->
 
 
 async def insert_diagnosis_check(tx: Tx, check: DiagnosisCheck, at: datetime) -> None:
+    """A settled check (DiagnosisCheck.settled) takes the next settled_seq."""
     await tx.execute(
         "INSERT INTO diagnosis_check (id, patient_id, text, suggested_term, confidence, status, created_at, "
         "answered_at, settled_seq) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, "
-        "CASE WHEN $6 = 'unclear' THEN nextval('diagnosis_check_settled') END)",
+        "CASE WHEN $9 THEN nextval('diagnosis_check_settled') END)",
         (check.id, check.patient_id, check.text, check.suggested_term, check.confidence, check.status, at,
-         at if check.status != "proposed" else None))
+         at if check.status != "proposed" else None, check.settled))
 
 
-async def answer_diagnosis_check(tx: Tx, check_id: str, status: str, at: datetime) -> bool:
-    """Sets the answer once: False if the check was not awaiting one."""
+async def answer_diagnosis_check(tx: Tx, answered: DiagnosisCheck, at: datetime) -> bool:
+    """Sets the answer (`answered.status`) once: False if the check was not awaiting one. A settled answer takes the
+    next settled_seq."""
     rows = await tx.fetch(
-        "UPDATE diagnosis_check SET status = $2, answered_at = $3, settled_seq = CASE WHEN $2 = 'rejected' THEN NULL "
-        "ELSE nextval('diagnosis_check_settled') END WHERE id = $1 AND status = 'proposed' RETURNING id",
-        (check_id, status, at))
+        "UPDATE diagnosis_check SET status = $2, answered_at = $3, settled_seq = CASE WHEN $4 THEN "
+        "nextval('diagnosis_check_settled') END WHERE id = $1 AND status = 'proposed' RETURNING id",
+        (answered.id, answered.status, at, answered.settled))
     return bool(rows)
 
 

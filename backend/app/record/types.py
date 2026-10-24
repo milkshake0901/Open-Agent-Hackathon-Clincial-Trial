@@ -50,8 +50,12 @@ class Document:
 DiagnosisAnswer = Literal["yes", "no", "not_sure"]
 DiagnosisStatus = Literal["proposed", "confirmed", "rejected", "not_sure", "unclear"]
 
-GP_MESSAGE = ("We couldn't be sure how to describe the diagnosis. Please check the exact name with the GP; "
-              "we've added it to the questions for the doctor.")
+# The settling rule, in one place: the status each answer gives a proposed check, and which statuses settle the
+# diagnosis (the latest settled check holds) and which of those leave it to the GP. "proposed" awaits an answer;
+# "rejected" ("no") settles nothing: the Respondent is asked again.
+ANSWER_STATUS: dict[DiagnosisAnswer, DiagnosisStatus] = {"yes": "confirmed", "no": "rejected", "not_sure": "not_sure"}
+SETTLED: frozenset[DiagnosisStatus] = frozenset({"confirmed", "not_sure", "unclear"})
+NEEDS_GP: frozenset[DiagnosisStatus] = frozenset({"not_sure", "unclear"})
 
 
 @dataclass(frozen=True)
@@ -73,23 +77,18 @@ class DiagnosisCheck:
         return self.suggested_term if self.status == "confirmed" else None
 
     @property
+    def settled(self) -> bool:
+        """Settles the diagnosis (SETTLED): the latest settled check is the one that holds."""
+        return self.status in SETTLED
+
+    @property
     def needs_gp(self) -> bool:
         """Tell the Respondent to check with their GP; a Doctor question is raised for the diagnosis."""
-        return self.status in ("not_sure", "unclear")
+        return self.status in NEEDS_GP
 
     @property
     def ask_again(self) -> bool:
         return self.status == "rejected"
-
-    @property
-    def message(self) -> str:
-        if self.needs_gp:
-            return GP_MESSAGE
-        if self.status == "proposed":
-            return f"We understood this as {self.suggested_term}. Is that right?"
-        if self.status == "rejected":
-            return "Sorry about that. Could you describe the diagnosis in other words?"
-        return f"Thanks. We'll look for trials for {self.suggested_term}."
 
 
 @dataclass(frozen=True)
