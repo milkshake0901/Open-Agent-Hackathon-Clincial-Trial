@@ -27,6 +27,7 @@ from app.record.types import (
     AwaitingPatient,
     Committed,
     Conflict,
+    ConflictId,
     Document,
     DocumentHash,
     DraftFact,
@@ -46,14 +47,14 @@ from app.trace import RunId
 from app.trace.events import ProfileCommitted
 
 __all__ = [
-    "register_document", "ingest", "confirm", "versions", "profile_version", "diff",
+    "register_document", "ingest", "confirm", "conflicts", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
     "document", "Registered", "UnreadableDocument", "issue_return_token", "patient_for_return_token",
     "latest_answers", "SubmittedAnswers", "search_preferences", "SearchPreferences",
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
-    "PatientId", "DocumentHash", "ProfileVersionId", "FactId",
+    "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId",
 ]
 
 
@@ -266,6 +267,16 @@ async def confirm(ctx: Ctx, run_id: RunId, resolutions: list[Resolution]) -> Ing
     doc = await repo.document(ctx.ui_reader, DocumentHash(started.document_hash))
     async with _patient_lock(doc.patient_id):
         return await loop.resume_after_confirm(ctx, doc, run_id, resolutions)
+
+
+async def conflicts(ctx: Ctx, run_id: RunId) -> tuple[Conflict, ...]:
+    """The Conflicts a parked ingest run is still waiting on (empty once it has moved on). Raises NotFound."""
+    try:
+        state = await trace.project_ingest(ctx.ui_reader, run_id)
+    except trace.UnknownRun:
+        raise NotFound(f"run {run_id}")
+    waiting = loop.parked(state, run_id)
+    return waiting.conflicts if waiting else ()
 
 
 async def versions(ctx: Ctx, patient_id: PatientId) -> list[ProfileVersion]:

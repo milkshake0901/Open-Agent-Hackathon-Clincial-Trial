@@ -13,7 +13,8 @@ Base: `http://localhost:8000/api`. JSON unless noted. Wire schemas live in `app/
 | GET | `/patients/{pid}/versions/{vid}/diff?from={vid0}` | | `{facts_added: [...], subjects_changed: [{subject, before?, after}], verdicts_changed: [VerdictChange]}` | `record.diff` + `matching.change_between` per trial |
 | GET | `/runs/{run_id}` | | `{run_id, kind, head, state: IngestRunState \| null, events: [{seq, at, kind, actor, causation_id, payload}]}`; an ingest's `state.phase` is `started\|drafting\|awaiting_patient\|committed\|rejected`, with `version_number` and `reason` | `trace.read` + `reduce_ingest` |
 | GET | `/runs/{run_id}/events?since={seq}` | | `{head, events: [{seq, at, kind, actor, summary, payload}]}` (poll every ~1 s; SSE optional) | `runs.read(since_seq)` |
-| POST | `/runs/{run_id}/confirm` | `{resolutions: [{conflict_id, choice}]}` | `202 {run_id, outcome: "committed"\|"awaiting_patient"}` + bg rescan on committed | `record.confirm` |
+| GET | `/runs/{run_id}/conflicts` | | `{run_id, conflicts: [{id, message, draft, accepted}]}`; each side `{document_hash, filename, page, page_text, quote, value, unit, observed_on, label}`; empty once the run moved on | `record.conflicts` |
+| POST | `/runs/{run_id}/confirm` | `{resolutions: [{conflict_id, choice: keep_accepted\|accept_draft\|discard_both}]}` | `202` same body as a questionnaire submission (`outcome`, `version_number`, `rescan`); Re-scan runs inline on committed; `422` unknown Conflict | `record.confirm` |
 | POST | `/trials/sync` | `{condition, location, max_trials?}` | `200 SyncReport {fetched, new[], changed[], unchanged[], source}`; if `changed` and a current version exists → `202 {run_id}` for the narrowed rescan | `trials.sync` → `matching.rescan(only=changed)` |
 | GET | `/trials` | | `[{nct_id, title, status, criterion_count, eligibility_hash, fetched_at, source}]` | `trials.active_trials` |
 | GET | `/trials/{nct}` | | `{..., criteria: [{id, kind, ordinal, text}]}` | `trials.trial` + `trials.criteria` |
@@ -28,4 +29,4 @@ Base: `http://localhost:8000/api`. JSON unless noted. Wire schemas live in `app/
 
 Errors: `404` unknown ids; `409` when `/confirm` is called on a run not in `awaiting_patient`; `422` validation; `503 {reason}` when Nightshift is unavailable (runs then end `run.rejected` / `rescan.finished` with `failed`).
 
-Frontend pages → endpoints: Upload+timeline (`documents`, `versions`, `runs/{id}/events`), Ranked trials (`verdicts`, `verdicts/{nct}`, `change`), Trace page (`runs/{id}`), Doctor questions (`questions`), Conflict dialog (`runs/{id}` state + `confirm`).
+Frontend pages → endpoints: Upload+timeline (`documents`, `versions`, `runs/{id}/events`), Ranked trials (`verdicts`, `verdicts/{nct}`, `change`), Trace page (`runs/{id}`), Doctor questions (`questions`), Conflict dialog (`runs/{id}/conflicts` + `confirm`).
