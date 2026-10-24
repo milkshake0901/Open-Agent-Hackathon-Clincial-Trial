@@ -117,6 +117,18 @@ CREATE TABLE criterion (                   -- immutable per (nct, eligibility_ha
 );
 CREATE INDEX criterion_by_hash ON criterion (nct_id, eligibility_hash);
 
+CREATE TABLE trial_site (                  -- the Trial's locations as last fetched; replaced with the trial row
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  ordinal          int  NOT NULL,
+  facility         text NOT NULL,
+  city             text NOT NULL,
+  country          text NOT NULL,
+  status           text NOT NULL,         -- RECRUITING, NOT_YET_RECRUITING, ... ('' when the registry gives none)
+  lat              double precision,      -- ClinicalTrials.gov geoPoint; NULL when the registry has none
+  lon              double precision,
+  PRIMARY KEY (nct_id, ordinal)
+);
+
 -- ---------- matching ----------
 CREATE TABLE verdict (                     -- keyed by (Trial, eligibility hash, Profile version) per ADR 0002
   nct_id                 text NOT NULL REFERENCES trial(nct_id),

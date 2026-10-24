@@ -1,11 +1,12 @@
 "use client";
 
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
-// first, excluded). Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
+// first, excluded; then nearest recruiting site). Trials with no recruiting site within the travel limit sit in a
+// collapsed "Further away" group under their outcome, never hidden. Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
 // questionnaire links back to that question.
 
 import { useEffect, useState } from "react";
-import { api, type CriterionResultOut, type DoctorQuestion, type VerdictOut } from "@/lib/api";
+import { api, type CriterionResultOut, type DoctorQuestion, type SiteOut, type VerdictOut } from "@/lib/api";
 
 type State =
   | { kind: "loading" }
@@ -44,11 +45,24 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
       {GROUPS.map((g) => {
         const verdicts = state.verdicts.filter((v) => v.outcome === g.outcome);
         if (verdicts.length === 0) return null;
+        const near = verdicts.filter((v) => !v.further_away);
+        const far = verdicts.filter((v) => v.further_away);
         return (
           <section key={g.outcome} aria-labelledby={`group-${g.outcome}`} className="flex flex-col gap-3">
             <h2 id={`group-${g.outcome}`} className="text-lg font-semibold">{g.title}</h2>
             <p className="text-muted">{g.blurb}</p>
-            {verdicts.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
+            {near.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
+            {far.length > 0 && (
+              <details className="flex flex-col gap-3">
+                <summary className="cursor-pointer min-h-11 flex items-center text-accent">
+                  Further away ({far.length})
+                </summary>
+                <p className="text-muted">No site is recruiting within the distance you said you would travel.</p>
+                <div className="flex flex-col gap-3 mt-2">
+                  {far.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
+                </div>
+              </details>
+            )}
           </section>
         );
       })}
@@ -87,6 +101,7 @@ function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
           {" · "}{v.status.toLowerCase().replaceAll("_", " ")}
           {unknown > 0 && ` · ${unknown} thing${unknown === 1 ? "" : "s"} to check`}
         </p>
+        <SiteLines verdict={v} />
         {v.degraded && (
           <p className="text-sm text-muted">Some answers could not be confirmed, so they are marked as needing checking.</p>
         )}
@@ -98,6 +113,24 @@ function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
         </ul>
       </details>
     </article>
+  );
+}
+
+const siteLine = (s: SiteOut) => `${s.name} · ${s.status} · ${s.km === null ? "distance unknown" : `${s.km} km`}`;
+
+function SiteLines({ verdict: v }: { verdict: VerdictOut }) {
+  // The nearest recruiting site, plus any closer site that is not recruiting yet (so a nearby site that has not
+  // opened is shown honestly, not as an option today).
+  const closer = v.sites.filter(
+    (s) => s.status !== "recruiting" && s.km !== null && (v.nearest_site?.km == null || s.km < v.nearest_site.km),
+  );
+  return (
+    <ul className="text-sm flex flex-col gap-0.5">
+      {v.nearest_site ? <li>{siteLine(v.nearest_site)}</li> : <li className="text-muted">No site is recruiting yet</li>}
+      {closer.slice(0, 2).map((s) => (
+        <li key={s.name} className="text-muted">{siteLine(s)}</li>
+      ))}
+    </ul>
   );
 }
 

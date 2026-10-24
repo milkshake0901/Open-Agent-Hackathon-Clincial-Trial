@@ -169,6 +169,7 @@ class Finding:
     draft_index: int
     message: str
     severity: Literal["retryable", "conflict"]   # derived from kind; the loop branches on this only
+    accepted_fact_id: FactId | None = None       # CONTRADICTS_ACCEPTED: the accepted Fact on the other side
 
 
 @dataclass(frozen=True)
@@ -178,6 +179,7 @@ class Conflict:
     draft: DraftFact
     accepted: Fact | None          # None for IMPOSSIBLE_SEQUENCE within the same document
     message: str
+    document_hash: DocumentHash | None = None   # the Document the draft was read from (the run's Document)
 
 
 @dataclass(frozen=True)

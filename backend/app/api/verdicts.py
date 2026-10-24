@@ -60,7 +60,16 @@ async def _verdict_out(ctx: Ctx, v: matching.Verdict) -> VerdictOut:
                   "text": criteria[r.criterion_id].text, "outcome": r.outcome, "rationale": r.rationale,
                   "citation": citation_out(r.citation)}
                  for r in v.results],
-        questions=[question_out(q) for q in v.questions])
+        questions=[question_out(q) for q in v.questions],
+        nearest_site=_site_out(v.nearest_site) if v.nearest_site else None,
+        sites=[_site_out(sd) for sd in v.sites[:SITES_LISTED]], further_away=v.further_away)
+
+
+SITES_LISTED = 3
+
+
+def _site_out(sd: matching.SiteDistance) -> dict:
+    return {"name": sd.name, "status": sd.status, "km": sd.km}
 
 
 @router.post("/patients/{pid}/versions/{vid}/rescan", status_code=202, response_model=RescanOut)
