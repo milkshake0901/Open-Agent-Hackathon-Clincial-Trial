@@ -25,7 +25,25 @@ class EventStore(Protocol):
 
 class InMemoryEventStore:
     def __init__(self) -> None:
-        raise NotImplementedError
+        self._events: dict[str, list["WorldEvent"]] = {}
+        self._audit: dict[str, list["AuditEntry"]] = {}
+        self._ids: set[tuple[str, str]] = set()
+
+    async def append(self, event: "WorldEvent", audit: "AuditEntry") -> bool:
+        key = (event.namespace, event.id)
+        if key in self._ids:
+            return False
+        self._ids.add(key)
+        self._events.setdefault(event.namespace, []).append(event)
+        self._audit.setdefault(event.namespace, []).append(audit)
+        return True
+
+    async def load(self, namespace: str, *, since_seq: int = 0) -> list["WorldEvent"]:
+        return [e for e in self._events.get(namespace, []) if e.seq > since_seq]
+
+    async def head(self, namespace: str) -> int:
+        events = self._events.get(namespace, [])
+        return events[-1].seq if events else 0
 
 
 class PgEventStore:
