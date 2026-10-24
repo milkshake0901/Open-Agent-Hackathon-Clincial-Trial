@@ -111,7 +111,10 @@ async def record_verdict(wm: "WorldModel", patient_id: "PatientId", verdict: "Ve
             "attempts": verdict.attempts, "unsupported_downgraded": verdict.unsupported_downgraded,
             "degraded": verdict.degraded,
             "results": [{"criterion_id": r.criterion_id, "outcome": str(r.outcome),
-                         "fact_id": r.citation.fact_id if r.citation else None, "rationale": r.rationale}
-                        for r in verdict.results],
+                         "fact_id": r.citation.fact_id if r.citation else None, "rationale": r.rationale,
+                         "ask": r.ask} for r in verdict.results],
             "questions": [{"criterion_id": q.criterion_id, "subject": q.subject, "text": q.text}
-                          for q in verdict.questions]})
+                          for q in verdict.questions],
+            "respondent_questions": [{"criterion_id": q.criterion_id, "question_id": q.question_id,
+                                      "question": q.question, "subject": q.subject, "text": q.text}
+                                     for q in verdict.respondent_questions]})

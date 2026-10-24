@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from app.ctx import Ctx
 from app.llm import Lane, complete
 from app.matching.types import Citation, CriterionResult, Outcome, Rejection
-from app.record import Fact, ProfileVersion
+from app import record
+from app.record import Fact, ProfileVersion, Question
 from app.trials import Criterion, CriterionId, Trial
 from app import trace
 from app.trace.events import MatcherProposed
@@ -19,6 +20,7 @@ class _ResultOut(BaseModel):
     outcome: str                 # met | not_met | unknown
     fact_id: str | None = None   # must be one of the ids listed in the prompt
     rationale: str
+    ask: str | None = None       # unknown only: a questionnaire question number for the Respondent
 
 
 class _MatchOut(BaseModel):
@@ -37,6 +39,9 @@ Criterion against the patient's current Facts. Answer with JSON only:
 - If the Facts do not settle a Criterion, answer "unknown" with fact_id null. Unknown is a good answer: it becomes
   a question for the patient's doctor.
 - Patient-reported Facts quote the Respondent's own words. If the words are too vague to decide, answer "unknown".
+- On an "unknown" that turns on something the Respondent could know (a date, a medicine name) but answered too
+  vaguely or not at all, set "ask" to the number of the questionnaire question they should answer again ("Q8").
+  Leave "ask" null when it needs clinical records or judgement (labs, stage, scans): the doctor is asked instead.
 """
 
 BIRTH_MONTH = "birth month"   # the record's Patient Fact; age is derived here, at matching time, never stored
@@ -54,6 +59,16 @@ def _source(f: Fact) -> str:
     return f"Patient-reported, intake questionnaire, {f.question}" if f.question else f"document page {f.page}"
 
 
+def askable() -> dict[str, Question]:
+    """Questionnaire questions a Respondent question may point back at, by number: the ones that become Facts."""
+    return {q.ref: q for q in record.questionnaire_definition().questions() if q.use in ("fact", "free_text")}
+
+
+def _askable_lines() -> list[str]:
+    return ["", "Questionnaire questions the Respondent can answer again:"] + [
+        f"- {ref} {q.label}" for ref, q in askable().items()]
+
+
 def _prompt(trial: Trial, criteria: tuple[Criterion, ...], profile: ProfileVersion, feedback: tuple[Rejection, ...],
             today: date) -> str:
     lines = [f"Trial {trial.nct_id}: {trial.title}", "", "Criteria:"]
@@ -68,6 +83,7 @@ def _prompt(trial: Trial, criteria: tuple[Criterion, ...], profile: ProfileVersi
             lines.append(f"  (so the patient is {age} years old today; cite {f.id} for age)")
     if not current:
         lines.append("- (no Facts yet)")
+    lines += _askable_lines()
     if feedback:
         lines += ["", "Your previous answer was rejected for these Criteria. Fix them and answer for every Criterion again:"]
         lines += [f"- criterion {r.criterion_id}: previous answer rejected because {r.reason}" for r in feedback]
@@ -103,11 +119,15 @@ async def propose(ctx: Ctx, trial: Trial, criteria: tuple[Criterion, ...], profi
             citation = (Citation(fact_id=f.id, document_hash=f.document_hash, page=f.page, quote=f.quote,
                                  question=f.question) if f else
                         Citation(fact_id=r.fact_id, document_hash="", page=0, quote=""))
-        results.append(CriterionResult(criterion_id=CriterionId(r.criterion_id), outcome=_outcome(r.outcome),
-                                       citation=citation, rationale=r.rationale.strip()))
+        outcome = _outcome(r.outcome)
+        ask = (r.ask or "").strip().upper()
+        results.append(CriterionResult(criterion_id=CriterionId(r.criterion_id), outcome=outcome,
+                                       citation=citation, rationale=r.rationale.strip(),
+                                       ask=ask if outcome == Outcome.UNKNOWN and ask in askable() else None))
     await trace.append(ctx.writer, run_id, MatcherProposed(
         actor="matcher", nct_id=trial.nct_id, attempt=attempt, model_answered=completion.model_answered,
         results=[{"criterion_id": r.criterion_id, "outcome": str(r.outcome),
-                  "fact_id": r.citation.fact_id if r.citation else None, "rationale": r.rationale} for r in results]))
+                  "fact_id": r.citation.fact_id if r.citation else None, "rationale": r.rationale, "ask": r.ask}
+                 for r in results]))
     return tuple(results)
 

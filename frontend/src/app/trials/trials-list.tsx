@@ -2,19 +2,21 @@
 
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
 // first, excluded). Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
-// questionnaire links back to that question.
+// questionnaire links back to that question. Questions for you (Respondent questions, answered inline) and
+// Questions for your doctor are kept as two separate lists.
 
 import { useEffect, useState } from "react";
-import { api, type CriterionResultOut, type DoctorQuestion, type VerdictOut } from "@/lib/api";
+import { api, type CriterionResultOut, type DoctorQuestion, type RespondentQuestion, type VerdictOut } from "@/lib/api";
+import { QuestionsForYou } from "./questions-for-you";
 
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; verdicts: VerdictOut[]; questions: DoctorQuestion[] };
+  | { kind: "ready"; verdicts: VerdictOut[]; questions: DoctorQuestion[]; asked: RespondentQuestion[] };
 
 const GROUPS: { outcome: VerdictOut["outcome"]; title: string; blurb: string }[] = [
   { outcome: "eligible", title: "Likely a fit", blurb: "Everything we could check matches. The trial team will still confirm." },
-  { outcome: "possible", title: "May be a fit", blurb: "Some things need checking with your doctor." },
+  { outcome: "possible", title: "May be a fit", blurb: "Some things need checking with you or your doctor." },
   { outcome: "excluded", title: "Probably not a fit", blurb: "Something you told us rules this trial out." },
 ];
 
@@ -28,8 +30,9 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {
-    Promise.all([api.verdicts(patientId, versionId), api.doctorQuestions(patientId, versionId)])
-      .then(([v, questions]) => setState({ kind: "ready", verdicts: v.verdicts, questions }))
+    Promise.all([api.verdicts(patientId, versionId), api.doctorQuestions(patientId, versionId),
+                 api.respondentQuestions(patientId, versionId)])
+      .then(([v, questions, asked]) => setState({ kind: "ready", verdicts: v.verdicts, questions, asked }))
       .catch((e: Error) => setState({ kind: "error", message: e.message }));
   }, [patientId, versionId]);
 
@@ -52,6 +55,7 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
           </section>
         );
       })}
+      {state.asked.length > 0 && <QuestionsForYou patientId={patientId} questions={state.asked} />}
       {state.questions.length > 0 && (
         <section aria-labelledby="doctor-questions" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
           <h2 id="doctor-questions" className="text-lg font-semibold">Questions for your doctor</h2>

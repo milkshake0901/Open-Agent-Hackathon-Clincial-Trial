@@ -101,7 +101,8 @@ class TrialJudged(_Base):
     attempts: int
     unsupported_downgraded: int
     degraded: bool               # True when the loop hit its bound and claims were downgraded to unknown
-    questions: int
+    questions: int               # Doctor questions
+    respondent_questions: int = 0
 
 class RescanFinished(_Base):
     kind: Literal["rescan.finished"] = "rescan.finished"

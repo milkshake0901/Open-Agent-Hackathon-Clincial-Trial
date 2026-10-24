@@ -128,3 +128,21 @@ async def test_an_edit_never_reads_back_the_postcode_or_contact_and_leaving_them
     await _submit(ctx, patient, {**latest.answers, "daily_activity": "self_care"})
     prefs = await record.search_preferences(ctx, patient)
     assert (prefs.postcode, prefs.contact) == ("2031", "a@example.org")
+
+
+async def test_a_free_text_answer_reworded_more_exactly_is_kept_though_its_value_is_unchanged(clean_db):
+    from tests.conftest import make_ctx
+    vague, exact = "Chemo finished sometime this year", "Chemo finished on 30 September 2026"
+    drafts = {vague: "2026", exact: "2026-09-30"}
+
+    def intake(lane, system, user):
+        words = next(w for w in drafts if w in user)
+        return {"facts": [{"resource": "Procedure", "subject": "chemotherapy", "value": "ended",
+                           "observed_on": drafts[words], "page": 3, "quote": words, "question": "Q8"}]}
+    ctx = make_ctx(clean_db, FakeLLM(intake))
+    patient = await record.create_patient(ctx, "Demo patient K")
+    v1 = await _submit(ctx, patient, {**ANSWERS, "treatments": vague})
+    v2 = await _submit(ctx, patient, {**ANSWERS, "treatments": exact})
+
+    d = await record.diff(ctx, v1.id, v2.id)
+    assert [(f.subject, f.quote) for f in d.facts_added] == [("chemotherapy", exact)]

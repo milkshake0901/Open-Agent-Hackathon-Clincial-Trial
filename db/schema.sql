@@ -4,7 +4,7 @@
 --   search_preference, return_token                     app.record.repo
 --   wm_event, wm_audit                                   app.worldmodel.store.PgEventStore (engine log)
 --   fact, profile_version*, trial, criterion,
---   verdict, criterion_result, doctor_question           app.worldmodel.projector, inside the wm_event append
+--   verdict, criterion_result, doctor_question, respondent_question          app.worldmodel.projector, inside the wm_event append
 --                                                        transaction (projections of the World Model, ADR 0001)
 --   trace_run, trace_event, llm_call                     app.trace
 -- Facts are append-only. Everything is read through Zetaris by agents.
@@ -123,6 +123,7 @@ CREATE TABLE criterion_result (
   outcome            text NOT NULL CHECK (outcome IN ('met','not_met','unknown')),
   fact_id            text REFERENCES fact(id),
   rationale          text NOT NULL,
+  ask                text,                 -- unknown only: questionnaire question ("Q8") for a Respondent question
   PRIMARY KEY (nct_id, eligibility_hash, profile_version_id, criterion_id),
   FOREIGN KEY (nct_id, eligibility_hash, profile_version_id) REFERENCES verdict ON DELETE CASCADE,
   CHECK ((outcome = 'unknown') = (fact_id IS NULL))     -- the evaluator invariant, also in the DB
@@ -134,6 +135,19 @@ CREATE TABLE doctor_question (
   profile_version_id text NOT NULL,
   criterion_id       text NOT NULL REFERENCES criterion(id),
   subject            text NOT NULL,
+  text               text NOT NULL,
+  PRIMARY KEY (nct_id, eligibility_hash, profile_version_id, criterion_id),
+  FOREIGN KEY (nct_id, eligibility_hash, profile_version_id) REFERENCES verdict ON DELETE CASCADE
+);
+
+CREATE TABLE respondent_question (       -- an unknown raises this OR a doctor_question, never both
+  nct_id             text NOT NULL,
+  eligibility_hash   text NOT NULL,
+  profile_version_id text NOT NULL,
+  criterion_id       text NOT NULL REFERENCES criterion(id),
+  question_id        text NOT NULL,        -- questionnaire question id, "treatments"
+  question           text NOT NULL,        -- its number, "Q8"
+  subject            text NOT NULL,        -- its wording
   text               text NOT NULL,
   PRIMARY KEY (nct_id, eligibility_hash, profile_version_id, criterion_id),
   FOREIGN KEY (nct_id, eligibility_hash, profile_version_id) REFERENCES verdict ON DELETE CASCADE

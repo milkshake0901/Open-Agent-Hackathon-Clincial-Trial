@@ -1,6 +1,6 @@
 """app/matching — MATCHING module. Public surface.
 
-Owns: Criterion results, Verdicts, Doctor questions, the Matcher⇄Evaluator loop, Re-scan.
+Owns: Criterion results, Verdicts, Doctor questions, Respondent questions, the Matcher⇄Evaluator loop, Re-scan.
 Hides: parallelism, idempotent planning, citation validation, verdict derivation, question generation.
 """
 from __future__ import annotations
@@ -9,14 +9,14 @@ from app import record, trace
 from app.ctx import Ctx
 from app.matching import loop, repo
 from app.matching.types import (
-    Citation, CriterionResult, DoctorQuestion, Outcome, RescanReport, Verdict, VerdictChange, VerdictOutcome,
+    Citation, CriterionResult, DoctorQuestion, Outcome, RescanReport, RespondentQuestion, Verdict, VerdictChange, VerdictOutcome,
 )
 from app.record import ProfileVersionId
 from app.trials import NctId
 from app.trace import RunId
 
 __all__ = ["rescan", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
-           "Verdict", "DoctorQuestion", "RescanReport", "VerdictChange", "VerdictOutcome", "Outcome",
+           "respondent_questions_for_version", "Verdict", "DoctorQuestion", "RespondentQuestion", "RescanReport", "VerdictChange", "VerdictOutcome", "Outcome",
            "CriterionResult", "Citation"]
 
 _RANK = {VerdictOutcome.ELIGIBLE: 0, VerdictOutcome.POSSIBLE: 1, VerdictOutcome.EXCLUDED: 2}
@@ -89,4 +89,19 @@ async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[
         first.setdefault(key, q)
         if q.nct_id not in trials_by_subject.setdefault(key, []):
             trials_by_subject[key].append(q.nct_id)
+    return [replace(q, unblocks=tuple(trials_by_subject[k])) for k, q in first.items()]
+
+
+async def respondent_questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[RespondentQuestion]:
+    """Deduplicated across Trials by subject (the questionnaire question); each carries the Trials it would unblock.
+    The first occurrence (Trial, then Criterion order) supplies criterion_id, nct_id and text. Answering one is a
+    questionnaire resubmission: the new Profile version is re-scanned and gets its own Verdicts and questions."""
+    from dataclasses import replace
+
+    first: dict[str, RespondentQuestion] = {}
+    trials_by_subject: dict[str, list[NctId]] = {}
+    for q in await repo.respondent_questions_for_version(ctx.ui_reader, version_id):
+        first.setdefault(q.question_id, q)
+        if q.nct_id not in trials_by_subject.setdefault(q.question_id, []):
+            trials_by_subject[q.question_id].append(q.nct_id)
     return [replace(q, unblocks=tuple(trials_by_subject[k])) for k, q in first.items()]

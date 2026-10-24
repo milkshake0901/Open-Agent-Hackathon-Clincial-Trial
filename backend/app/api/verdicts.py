@@ -1,9 +1,9 @@
-"""Verdicts, why they changed, and Doctor questions."""
+"""Verdicts, why they changed, Doctor questions and Respondent questions."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import matching, record, trials
 from app.api.deps import get_ctx
-from app.api.schemas import DoctorQuestionOut, RescanOut, VerdictChangeOut, VerdictListOut, VerdictOut
+from app.api.schemas import DoctorQuestionOut, RescanOut, RespondentQuestionOut, VerdictChangeOut, VerdictListOut, VerdictOut
 from app.ctx import Ctx
 
 router = APIRouter(tags=["verdicts"])
@@ -26,6 +26,11 @@ def citation_label(question: str | None, page: int) -> str:
 def question_out(q: matching.DoctorQuestion) -> DoctorQuestionOut:
     return DoctorQuestionOut(criterion_id=q.criterion_id, nct_id=q.nct_id, subject=q.subject, text=q.text,
                              unblocks=list(q.unblocks))
+
+
+def respondent_question_out(q: matching.RespondentQuestion) -> RespondentQuestionOut:
+    return RespondentQuestionOut(criterion_id=q.criterion_id, nct_id=q.nct_id, question_id=q.question_id,
+                                 question=q.question, subject=q.subject, text=q.text, unblocks=list(q.unblocks))
 
 
 def citation_out(c: matching.Citation | None) -> dict | None:
@@ -60,7 +65,8 @@ async def _verdict_out(ctx: Ctx, v: matching.Verdict) -> VerdictOut:
                   "text": criteria[r.criterion_id].text, "outcome": r.outcome, "rationale": r.rationale,
                   "citation": citation_out(r.citation)}
                  for r in v.results],
-        questions=[question_out(q) for q in v.questions])
+        questions=[question_out(q) for q in v.questions],
+        respondent_questions=[respondent_question_out(q) for q in v.respondent_questions])
 
 
 @router.post("/patients/{pid}/versions/{vid}/rescan", status_code=202, response_model=RescanOut)
@@ -106,3 +112,12 @@ async def doctor_questions(pid: str, version: str, ctx: Ctx = Depends(get_ctx)):
     """Deduplicated across Trials; each names the Trials it would help decide."""
     await _version(ctx, pid, version)
     return [question_out(q) for q in await matching.questions_for_version(ctx, record.ProfileVersionId(version))]
+
+
+@router.get("/patients/{pid}/respondent-questions", response_model=list[RespondentQuestionOut])
+async def respondent_questions(pid: str, version: str, ctx: Ctx = Depends(get_ctx)):
+    """Deduplicated by questionnaire question; each names the Trials it would help decide. Answering is a
+    questionnaire resubmission (POST /patients/{pid}/questionnaire)."""
+    await _version(ctx, pid, version)
+    return [respondent_question_out(q)
+            for q in await matching.respondent_questions_for_version(ctx, record.ProfileVersionId(version))]

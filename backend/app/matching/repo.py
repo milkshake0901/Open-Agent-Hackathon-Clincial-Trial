@@ -1,8 +1,8 @@
-"""app/matching/repo.py — SQL for verdict, criterion_result, doctor_question. Reads only."""
+"""app/matching/repo.py — SQL for verdict, criterion_result, doctor_question, respondent_question. Reads only."""
 from __future__ import annotations
 
 from app.matching.types import (
-    Citation, CriterionResult, DoctorQuestion, Outcome, ValidatedResults, Verdict, VerdictOutcome,
+    Citation, CriterionResult, DoctorQuestion, Outcome, RespondentQuestion, ValidatedResults, Verdict, VerdictOutcome,
 )
 from app.record import DocumentHash, FactId, ProfileVersionId
 from app.sql.reader import SqlReader
@@ -33,13 +33,13 @@ async def trials_needing_verdict(reader: SqlReader, version_id: ProfileVersionId
 
 async def _results(reader: SqlReader, key: tuple) -> ValidatedResults:
     rows = await reader.fetch(
-        f"SELECT cr.criterion_id, cr.outcome, cr.rationale, f.id AS fact_id, f.document_hash, f.page, f.quote, "
+        f"SELECT cr.criterion_id, cr.outcome, cr.rationale, cr.ask, f.id AS fact_id, f.document_hash, f.page, f.quote, "
         f"f.question FROM {reader.table('criterion_result')} cr "
         f"JOIN {reader.table('criterion')} c ON c.id = cr.criterion_id "
         f"LEFT JOIN {reader.table('fact')} f ON f.id = cr.fact_id "
         "WHERE cr.nct_id = $1 AND cr.eligibility_hash = $2 AND cr.profile_version_id = $3 ORDER BY c.ordinal", key)
     return ValidatedResults(CriterionResult(
-        criterion_id=CriterionId(r["criterion_id"]), outcome=Outcome(r["outcome"]), rationale=r["rationale"],
+        criterion_id=CriterionId(r["criterion_id"]), outcome=Outcome(r["outcome"]), rationale=r["rationale"], ask=r["ask"],
         citation=Citation(fact_id=FactId(r["fact_id"]), document_hash=DocumentHash(r["document_hash"]), page=r["page"],
                           quote=r["quote"], question=r["question"]) if r["fact_id"] else None) for r in rows)
 
@@ -53,12 +53,30 @@ async def _questions(reader: SqlReader, key: tuple) -> tuple[DoctorQuestion, ...
                                 subject=r["subject"], text=r["text"]) for r in rows)
 
 
+_RQ_COLS = "q.criterion_id, q.nct_id, q.question_id, q.question, q.subject, q.text"
+
+
+def _respondent_question(r: dict) -> RespondentQuestion:
+    return RespondentQuestion(criterion_id=CriterionId(r["criterion_id"]), nct_id=NctId(r["nct_id"]),
+                              question_id=r["question_id"], question=r["question"], subject=r["subject"],
+                              text=r["text"])
+
+
+async def _respondent_questions(reader: SqlReader, key: tuple) -> tuple[RespondentQuestion, ...]:
+    rows = await reader.fetch(
+        f"SELECT {_RQ_COLS} FROM {reader.table('respondent_question')} q "
+        f"JOIN {reader.table('criterion')} c ON c.id = q.criterion_id "
+        "WHERE q.nct_id = $1 AND q.eligibility_hash = $2 AND q.profile_version_id = $3 ORDER BY c.ordinal", key)
+    return tuple(_respondent_question(r) for r in rows)
+
+
 async def _verdict(reader: SqlReader, r: dict, with_results: bool) -> Verdict:
     key = (r["nct_id"], r["eligibility_hash"], r["profile_version_id"])
     return Verdict(nct_id=NctId(r["nct_id"]), profile_version_id=ProfileVersionId(r["profile_version_id"]),
                    eligibility_hash=r["eligibility_hash"], outcome=VerdictOutcome(r["outcome"]),
                    results=await _results(reader, key) if with_results else ValidatedResults(),
                    questions=await _questions(reader, key) if with_results else (),
+                   respondent_questions=await _respondent_questions(reader, key) if with_results else (),
                    run_id=RunId(r["run_id"]), attempts=r["attempts"],
                    unsupported_downgraded=r["unsupported_downgraded"], degraded=r["degraded"])
 
@@ -98,5 +116,15 @@ async def questions_for_version(reader: SqlReader, version_id: ProfileVersionId)
         "WHERE q.profile_version_id = $1 ORDER BY q.nct_id, c.ordinal", (version_id,))
     return [DoctorQuestion(criterion_id=CriterionId(r["criterion_id"]), nct_id=NctId(r["nct_id"]),
                            subject=r["subject"], text=r["text"]) for r in rows]
+
+
+async def respondent_questions_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[RespondentQuestion]:
+    """Every Respondent question of the version's current Verdicts, in Trial then Criterion order (not deduplicated)."""
+    rows = await reader.fetch(
+        f"SELECT {_RQ_COLS} FROM {reader.table('respondent_question')} q "
+        f"JOIN {reader.table('trial')} t ON t.nct_id = q.nct_id AND t.eligibility_hash = q.eligibility_hash "
+        f"JOIN {reader.table('criterion')} c ON c.id = q.criterion_id "
+        "WHERE q.profile_version_id = $1 ORDER BY q.nct_id, c.ordinal", (version_id,))
+    return [_respondent_question(r) for r in rows]
 
 # Verdicts are NOT written here: app.worldmodel.timeline.record_verdict (World Model relate → projector).

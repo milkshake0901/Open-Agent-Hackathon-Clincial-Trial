@@ -149,7 +149,7 @@ export function QuestionnaireForm() {
   );
 }
 
-function QuestionField({ question: q, respondent, value, onChange, onClear }: {
+export function QuestionField({ question: q, respondent, value, onChange, onClear }: {
   question: Question;
   respondent: Respondent;
   value: string | undefined;

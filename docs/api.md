@@ -19,13 +19,14 @@ Base: `http://localhost:8000/api`. JSON unless noted. Wire schemas live in `app/
 | GET | `/trials/{nct}` | | `{..., criteria: [{id, kind, ordinal, text}]}` | `trials.trial` + `trials.criteria` |
 | POST | `/patients/{pid}/versions/{vid}/rescan` | | `202 {run_id}` (manual; idempotent — a no-op rescan finishes immediately with `rescan.planned` showing all skipped) | `matching.rescan` |
 | GET | `/patients/{pid}/versions/{vid}/verdicts` | | ranked `[{nct_id, title, outcome, unknown_count, question_count, attempts, run_id}]` | `matching.verdicts_for_version` |
-| GET | `/patients/{pid}/versions/{vid}/verdicts/{nct}` | | `{nct_id, outcome, eligibility_hash, stale: bool, attempts, unsupported_downgraded, run_id, results: [{criterion:{id,kind,text}, outcome, rationale, citation?: {fact_id, document_hash, page, quote}}], questions: [{criterion_id, subject, text}]}` | `matching.verdict` |
+| GET | `/patients/{pid}/versions/{vid}/verdicts/{nct}` | | `{nct_id, outcome, eligibility_hash, stale: bool, attempts, unsupported_downgraded, run_id, results: [{criterion:{id,kind,text}, outcome, rationale, citation?: {fact_id, document_hash, page, quote}}], questions: [{criterion_id, subject, text}], respondent_questions: [{criterion_id, question_id, question, subject, text}]}` | `matching.verdict` |
 | GET | `/patients/{pid}/versions/{vid}/verdicts/{nct}/change?from={vid0}` | | `VerdictChange {outcome_from, outcome_to, criteria_changed: [{criterion_id, text, outcome_from, outcome_to, citation?}]}` | `matching.change_between` |
 | GET | `/patients/{pid}/questions?version={vid}` | | `[{subject, text, criterion_ids[], nct_ids[]}]` deduped by subject | `matching.questions_for_version` |
+| GET | `/patients/{pid}/respondent-questions?version={vid}` | | `[{criterion_id, nct_id, question_id, question, subject, text, unblocks[]}]` deduped by questionnaire question; answer by resubmitting the questionnaire | `matching.respondent_questions_for_version` |
 | GET | `/traces/{correlation_id}` | | causal tree of every event across an ingest and its Re-scan, with `llm_call` rows (requested vs answered model) | `trace.causal_tree` |
 | GET | `/health` | | `{postgres, zetaris, nightshift: {ok, lanes: {fast, deep, judge}}, world_model}` | startup checks |
 | GET | `/return/{token}` | | `{patient_id, profile_version_id?, version_number?}`; unknown token → bare `404`. The token comes once, as `return_token` on the first `POST /patients/{pid}/questionnaire` response | `record.patient_for_return_token` + `record.current_version` |
 
 Errors: `404` unknown ids; `409` when `/confirm` is called on a run not in `awaiting_patient`; `422` validation; `503 {reason}` when Nightshift is unavailable (runs then end `run.rejected` / `rescan.finished` with `failed`).
 
-Frontend pages → endpoints: Upload+timeline (`documents`, `versions`, `runs/{id}/events`), Ranked trials (`verdicts`, `verdicts/{nct}`, `change`), Trace page (`runs/{id}`), Doctor questions (`questions`), Conflict dialog (`runs/{id}` state + `confirm`).
+Frontend pages → endpoints: Upload+timeline (`documents`, `versions`, `runs/{id}/events`), Ranked trials (`verdicts`, `verdicts/{nct}`, `change`), Trace page (`runs/{id}`), Doctor questions (`questions`), Respondent questions (`respondent-questions`), Conflict dialog (`runs/{id}` state + `confirm`).

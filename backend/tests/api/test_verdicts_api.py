@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 
-from app import trials
+from app import record, trials
 from app.main import app
 from app.llm.nightshift import FakeLLM
 
@@ -114,3 +114,34 @@ async def test_the_version_diff_lists_the_verdicts_that_changed_and_the_criteria
         [moved] = changed["criteria_changed"]
         assert "ECOG" in moved["text"] and (moved["outcome_from"], moved["outcome_to"]) == ("unknown", "met")
         assert moved["citation"]["label"] == "Patient-reported, intake questionnaire, Q13"
+
+
+async def test_respondent_questions_are_served_apart_from_doctor_questions(clean_db):
+    from tests.conftest import make_ctx
+    doctor_model = matcher_citing({})
+
+    def respond(lane, system, user):
+        out = doctor_model(lane, system, user)
+        if lane == "deep":    # the ECOG Criterion turns on the daily-activity answer, which was skipped
+            for r, line in zip(out["results"], (l for l in user.splitlines() if l.startswith("- NCT"))):
+                r["ask"] = "Q13" if "ECOG" in line else None
+        return out
+    ctx = make_ctx(clean_db, FakeLLM(respond))
+    await trials.load_snapshot(ctx, SNAPSHOT)
+    app.state.ctx = ctx
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        patient = (await http.post("/api/patients", json={"label": "Demo patient Q"})).json()["patient_id"]
+        vid = (await http.post(f"/api/patients/{patient}/questionnaire", json={
+            "definition_version": record.questionnaire_definition().version, "respondent": "patient",
+            "answers": {"birth_month": "1958-03"}})).json()["profile_version_id"]
+
+        asked = (await http.get(f"/api/patients/{patient}/respondent-questions", params={"version": vid})).json()
+        doctor = (await http.get(f"/api/patients/{patient}/questions", params={"version": vid})).json()
+        verdict = (await http.get(f"/api/patients/{patient}/versions/{vid}/verdicts/NCT07680790")).json()
+
+        assert [(q["question"], q["question_id"], q["unblocks"]) for q in asked] == [
+            ("Q13", "daily_activity", ["NCT07680790"])]
+        assert len(doctor) == 6 and not any("ECOG" in q["subject"] for q in doctor)
+        assert [q["question"] for q in verdict["respondent_questions"]] == ["Q13"]
+        assert (await http.get(f"/api/patients/{patient}/respondent-questions",
+                               params={"version": "snap:nope"})).status_code == 404

@@ -8,7 +8,7 @@ Mapping (see timeline.py for how domain operations become these events):
   assertFact  about=patient:*         → fact                     (append-only)
   snapshot    attrs.kind=profile      → profile_version + profile_version_fact
   upsertEntity type=trial             → trial (upsert) + criterion rows from attrs.criteria (immutable per hash)
-  relate      type=verdict, open edge → verdict + criterion_result + doctor_question
+  relate      type=verdict, open edge → verdict + criterion_result + doctor_question + respondent_question
               (the closing re-emit of a superseded edge changes no row: old Verdicts are history, ADR 0002)
 """
 from __future__ import annotations
@@ -86,12 +86,17 @@ async def _verdict(tx: "Tx", r) -> None:
     for res in a["results"]:
         await tx.execute(
             "INSERT INTO criterion_result (nct_id, eligibility_hash, profile_version_id, criterion_id, outcome, "
-            "fact_id, rationale) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-            (*key, res["criterion_id"], res["outcome"], res["fact_id"], res["rationale"]))
+            "fact_id, rationale, ask) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            (*key, res["criterion_id"], res["outcome"], res["fact_id"], res["rationale"], res.get("ask")))
     for q in a["questions"]:
         await tx.execute(
             "INSERT INTO doctor_question (nct_id, eligibility_hash, profile_version_id, criterion_id, subject, text) "
             "VALUES ($1, $2, $3, $4, $5, $6)", (*key, q["criterion_id"], q["subject"], q["text"]))
+    for q in a.get("respondent_questions", ()):
+        await tx.execute(
+            "INSERT INTO respondent_question (nct_id, eligibility_hash, profile_version_id, criterion_id, question_id, "
+            "question, subject, text) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            (*key, q["criterion_id"], q["question_id"], q["question"], q["subject"], q["text"]))
 
 
 def _timestamp(iso: str):

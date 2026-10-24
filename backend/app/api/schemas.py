@@ -140,6 +140,16 @@ class DoctorQuestionOut(BaseModel):
     unblocks: list[str]
 
 
+class RespondentQuestionOut(BaseModel):
+    criterion_id: str
+    nct_id: str
+    question_id: str            # questionnaire question id: the web page asks it again inline
+    question: str               # "Q8"
+    subject: str                # the questionnaire question's wording
+    text: str
+    unblocks: list[str]
+
+
 class VerdictOut(BaseModel):
     nct_id: str
     title: str
@@ -150,6 +160,7 @@ class VerdictOut(BaseModel):
     attempts: int
     results: list[CriterionResultOut]
     questions: list[DoctorQuestionOut]
+    respondent_questions: list[RespondentQuestionOut] = []
 
 
 class VerdictListOut(BaseModel):

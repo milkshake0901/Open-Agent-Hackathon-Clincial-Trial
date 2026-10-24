@@ -50,6 +50,17 @@ export type CriterionResultOut = {
 
 export type DoctorQuestion = { criterion_id: string; nct_id: string; subject: string; text: string; unblocks: string[] };
 
+// Asks the Respondent to answer a questionnaire question again, more exactly; answering resubmits the questionnaire.
+export type RespondentQuestion = {
+  criterion_id: string;
+  nct_id: string;
+  question_id: string;
+  question: string; // "Q8"
+  subject: string;
+  text: string;
+  unblocks: string[];
+};
+
 export type VerdictOut = {
   nct_id: string;
   title: string;
@@ -60,6 +71,7 @@ export type VerdictOut = {
   attempts: number;
   results: CriterionResultOut[];
   questions: DoctorQuestion[];
+  respondent_questions: RespondentQuestion[];
 };
 
 export type ReturnOpened = {
@@ -156,6 +168,10 @@ export const api = {
   doctorQuestions: (patientId: string, versionId: string) =>
     call<DoctorQuestion[]>(
       `/patients/${encodeURIComponent(patientId)}/questions?version=${encodeURIComponent(versionId)}`,
+    ),
+  respondentQuestions: (patientId: string, versionId: string) =>
+    call<RespondentQuestion[]>(
+      `/patients/${encodeURIComponent(patientId)}/respondent-questions?version=${encodeURIComponent(versionId)}`,
     ),
 };
 

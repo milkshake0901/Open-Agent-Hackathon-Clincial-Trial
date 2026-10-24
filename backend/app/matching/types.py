@@ -38,6 +38,8 @@ class CriterionResult:
     outcome: Outcome
     citation: Citation | None       # invariant (enforced by evaluator): None  <=>  outcome == UNKNOWN
     rationale: str                  # one sentence from the Matcher; shown in UI
+    ask: str | None = None          # unknown only: the questionnaire question ("Q8") the Respondent could answer
+                                    # more exactly; set → a Respondent question, None → a Doctor question
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,19 @@ class DoctorQuestion:
 
 
 @dataclass(frozen=True)
+class RespondentQuestion:
+    """Sent back to the Respondent: answer a questionnaire question again, more exactly. Answering is a
+    questionnaire resubmission. Deduplicated by subject (the questionnaire question) across Trials."""
+    criterion_id: CriterionId
+    nct_id: NctId
+    question_id: str  # questionnaire question id, "treatments"
+    question: str     # its number, "Q8"
+    subject: str      # its wording, "What treatments have you had, and roughly when?"
+    text: str
+    unblocks: tuple[NctId, ...] = ()   # respondent_questions_for_version: every Trial this answer would help decide
+
+
+@dataclass(frozen=True)
 class Verdict:
     nct_id: NctId
     profile_version_id: ProfileVersionId
@@ -74,6 +89,7 @@ class Verdict:
     attempts: int                    # how many Matcher attempts it took; shown in trace summary
     unsupported_downgraded: int      # claims downgraded to unknown on exhaustion
     degraded: bool                   # True when the loop hit its bound; the UI flags these Verdicts
+    respondent_questions: tuple[RespondentQuestion, ...] = ()   # each unknown raises one of these or a DoctorQuestion
 
 
 @dataclass(frozen=True)

@@ -80,14 +80,15 @@ async def judge_trial(ctx: Ctx, trial: Trial, criteria: tuple[Criterion, ...], p
     order = {c.id: c.ordinal for c in criteria}
     validated = type(validated)(sorted(validated, key=lambda r: order[r.criterion_id]))
     outcome = verdict_rules.derive_outcome(validated, criteria)
-    questions = verdict_rules.questions_from_unknowns(validated, criteria, trial)
+    questions, asked = verdict_rules.questions_from_unknowns(validated, criteria, trial, matcher.askable())
     v = Verdict(nct_id=trial.nct_id, profile_version_id=profile.id, eligibility_hash=trial.eligibility_hash,
                 outcome=outcome, results=validated, questions=questions, run_id=run_id, attempts=attempt,
-                unsupported_downgraded=downgraded, degraded=downgraded > 0)
+                unsupported_downgraded=downgraded, degraded=downgraded > 0, respondent_questions=asked)
     await timeline.record_verdict(ctx.wm, profile.patient_id, v)
     await trace.append(ctx.writer, run_id, TrialJudged(
         actor="matching", nct_id=trial.nct_id, outcome=outcome, attempts=attempt, unsupported_downgraded=downgraded,
-        degraded=v.degraded, questions=len(questions)))
+        degraded=v.degraded, questions=len(questions),
+        respondent_questions=len(asked)))
     return v
 
 

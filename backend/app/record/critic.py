@@ -57,13 +57,14 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
 def duplicate_of_accepted(draft: DraftFact, doc: Document, current: ProfileVersion) -> bool:
     """The draft says nothing the accepted record does not already say: same subject, value and unit, and
     - from a clinical Document: the same observed-on date as any accepted Fact (re-reading an old report);
-    - from an Intake questionnaire: the subject's current value. A resubmission repeats unchanged answers on a
-      new date, which is no new observation; but an answer changed back to an earlier value is a correction."""
+    - from an Intake questionnaire: the subject's current value, in the same words (quote). A resubmission repeats
+      unchanged answers on a new date, which is no new observation; but an answer changed back to an earlier value
+      is a correction, and an answer reworded more exactly (a Respondent question answered) is new evidence."""
     def same(f: Fact) -> bool:
         return same_subject(f, draft) and f.value == draft.value and (f.unit or None) == (draft.unit or None)
     if doc.is_questionnaire:
         now = next((f for s, f in current.current().items() if _norm_subject(s) == _norm_subject(draft.subject)), None)
-        return now is not None and same(now)
+        return now is not None and same(now) and now.quote == draft.quote
     return any(same(f) and f.observed_on == draft.observed_on for f in current.facts)
 
 
