@@ -8,6 +8,7 @@ Mapping (see timeline.py for how domain operations become these events):
   assertFact  about=patient:*         → fact                     (append-only)
   snapshot    attrs.kind=profile      → profile_version + profile_version_fact
   upsertEntity type=trial             → trial (upsert) + criterion rows from attrs.criteria (immutable per hash)
+                                        + trial_site rows from attrs.sites (replaced)
   relate      type=verdict, open edge → verdict + criterion_result + doctor_question + respondent_question
               (the closing re-emit of a superseded edge changes no row: old Verdicts are history, ADR 0002)
 """
@@ -72,6 +73,14 @@ async def _trial(tx: "Tx", e) -> None:
             "INSERT INTO criterion (id, nct_id, eligibility_hash, kind, ordinal, text) VALUES ($1, $2, $3, $4, $5, $6) "
             "ON CONFLICT (id) DO NOTHING",
             (c["id"], a["external_id"], a["eligibility_hash"], c["kind"], c["ordinal"], c["text"]))
+    if "sites" in a:
+        await tx.execute("DELETE FROM trial_site WHERE nct_id = $1", (a["external_id"],))
+        for i, site in enumerate(a["sites"], 1):
+            await tx.execute(
+                "INSERT INTO trial_site (nct_id, ordinal, facility, city, country, status, lat, lon) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                (a["external_id"], i, site["facility"], site["city"], site["country"], site["status"],
+                 site["lat"], site["lon"]))
 
 
 async def _verdict(tx: "Tx", r) -> None:

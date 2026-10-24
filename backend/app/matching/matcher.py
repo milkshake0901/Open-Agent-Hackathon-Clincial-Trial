@@ -7,8 +7,9 @@ from pydantic import BaseModel
 
 from app.ctx import Ctx
 from app.llm import Lane, complete
-from app.matching.types import Citation, CriterionResult, Outcome, Rejection
 from app import record
+from app.matching import distance
+from app.matching.types import Citation, CriterionResult, Outcome, Rejection, SiteDistance
 from app.record import Fact, ProfileVersion, Question
 from app.trials import Criterion, CriterionId, Trial
 from app import trace
@@ -69,10 +70,25 @@ def _askable_lines() -> list[str]:
         f"- {ref} {q.label}" for ref, q in askable().items()]
 
 
+SITES_SHOWN = 5
+
+
+def _site_lines(sites: tuple[SiteDistance, ...]) -> list[str]:
+    """Sites as "name · status · km" only, nearest first (ADR 0003: the postcode never reaches a model)."""
+    if not sites:
+        return []
+    lines = ["", "Sites (distance from the patient's area; context only, distance never decides a Criterion):"]
+    lines += [f"- {distance.line(sd)}" for sd in sites[:SITES_SHOWN]]
+    if len(sites) > SITES_SHOWN:
+        lines.append(f"- and {len(sites) - SITES_SHOWN} more sites further away")
+    return lines
+
+
 def _prompt(trial: Trial, criteria: tuple[Criterion, ...], profile: ProfileVersion, feedback: tuple[Rejection, ...],
-            today: date) -> str:
+            today: date, sites: tuple[SiteDistance, ...] = ()) -> str:
     lines = [f"Trial {trial.nct_id}: {trial.title}", "", "Criteria:"]
     lines += [f"- {c.id} [{c.kind}] {c.text}" for c in criteria]
+    lines += _site_lines(sites)
     lines += ["", f"Facts (Profile version {profile.number}, today is {today.isoformat()}):"]
     current = profile.current()
     for f in current.values():
@@ -104,8 +120,9 @@ async def propose(ctx: Ctx, trial: Trial, criteria: tuple[Criterion, ...], profi
     Citation provenance (document_hash, page, quote) is filled from the Fact here, never by the model; a cited id
     that is not a Fact of this version gets an empty provenance, which the Evaluator rejects.
     Results for ids that are not Criteria of this Trial are dropped. Emits MatcherProposed with model_answered."""
+    sites = (await distance.reach_of(ctx, trial.nct_id, await distance.origin(ctx, profile.patient_id))).sites
     completion = await complete(ctx, Lane.DEEP, system=SYSTEM, user=_prompt(trial, criteria, profile, feedback,
-                                                                            ctx.now().date()),
+                                                                            ctx.now().date(), sites),
                                 out=_MatchOut, run_id=run_id)
     ids = {c.id for c in criteria}
     facts = {f.id: f for f in profile.facts}

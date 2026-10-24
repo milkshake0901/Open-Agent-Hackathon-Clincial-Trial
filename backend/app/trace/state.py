@@ -17,6 +17,7 @@ class IngestRunState:
     findings: list[dict] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
     accepted_drafts: list[dict] = field(default_factory=list)
+    resolved: list[dict] = field(default_factory=list)     # {"conflict": <Conflict dict>, "choice": ...}, in order
     profile_version_id: str | None = None
     version_number: int | None = None
     reason: str | None = None              # why the run was rejected
@@ -41,9 +42,9 @@ class RescanRunState:
 
 def reduce_ingest(state: IngestRunState, ev: RunEvent) -> IngestRunState:
     """IntakeDrafted → drafts/attempt (a questionnaire drafts twice per attempt: code, then the Intake agent);
-    CriticReviewed → findings; RunAwaitingPatient → phase+conflicts; PatientResolved → remove resolved;
+    CriticReviewed → findings; RunAwaitingPatient → phase+conflicts; PatientResolved → move resolved conflicts (with the choice) to `resolved`;
     ProfileCommitted → committed; RunRejected → rejected; LlmCalled → models_answered. Returns a new state."""
-    s = replace(state, drafts=list(state.drafts), conflicts=list(state.conflicts),
+    s = replace(state, drafts=list(state.drafts), conflicts=list(state.conflicts), resolved=list(state.resolved),
                 models_answered=list(state.models_answered))
     match ev:
         case IntakeDrafted(attempt=attempt, drafts=drafts):
@@ -54,8 +55,9 @@ def reduce_ingest(state: IngestRunState, ev: RunEvent) -> IngestRunState:
         case RunAwaitingPatient(conflicts=conflicts, accepted_drafts=accepted):
             s.phase, s.conflicts, s.accepted_drafts = "awaiting_patient", list(conflicts), list(accepted)
         case PatientResolved(resolutions=resolutions):
-            resolved = {r.get("conflict_id") for r in resolutions}
-            s.conflicts = [c for c in s.conflicts if c.get("id") not in resolved]
+            choices = {r.get("conflict_id"): r.get("choice") for r in resolutions}
+            s.resolved += [{"conflict": c, "choice": choices[c.get("id")]} for c in s.conflicts if c.get("id") in choices]
+            s.conflicts = [c for c in s.conflicts if c.get("id") not in choices]
         case ProfileCommitted(profile_version_id=vid, version_number=number):
             s.phase, s.profile_version_id, s.version_number = "committed", vid, number
         case RunRejected(reason=reason):

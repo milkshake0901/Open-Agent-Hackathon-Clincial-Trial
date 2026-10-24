@@ -72,7 +72,12 @@ export type VerdictOut = {
   results: CriterionResultOut[];
   questions: DoctorQuestion[];
   respondent_questions: RespondentQuestion[];
+  nearest_site: SiteOut | null; // nearest recruiting site
+  sites: SiteOut[]; // up to 3 nearest open sites, any status
+  further_away: boolean; // no recruiting site within the travel limit
 };
+
+export type SiteOut = { name: string; status: string; km: number | null };
 
 export type ReturnOpened = {
   patient_id: string;
@@ -123,6 +128,22 @@ export type VersionDiff = {
   subjects_changed: { subject: string; before: FactOut | null; after: FactOut }[];
 };
 
+export type ConflictSide = {
+  document_hash: string;
+  filename: string;
+  page: number;
+  page_text: string; // de-identified
+  quote: string;
+  value: string;
+  unit: string | null;
+  observed_on: string | null;
+  label: string; // "Patient-reported, intake questionnaire, Q13" or "referral.pdf, page 2"
+};
+
+export type ConflictOut = { id: string; message: string; draft: ConflictSide; accepted: ConflictSide | null };
+
+export type Resolution = { conflict_id: string; choice: "keep_accepted" | "accept_draft" | "discard_both" };
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const json = !(init?.body instanceof FormData); // the browser sets the multipart boundary itself
   const res = await fetch(`/api${path}`, {
@@ -151,6 +172,13 @@ export const api = {
     return call<UploadAccepted>(`/patients/${encodeURIComponent(patientId)}/documents`, { method: "POST", body });
   },
   run: (runId: string) => call<RunOut>(`/runs/${encodeURIComponent(runId)}`),
+  conflicts: (runId: string) =>
+    call<{ run_id: string; conflicts: ConflictOut[] }>(`/runs/${encodeURIComponent(runId)}/conflicts`),
+  confirm: (runId: string, resolutions: Resolution[]) =>
+    call<SubmissionAccepted>(`/runs/${encodeURIComponent(runId)}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ resolutions }),
+    }),
   latestAnswers: (patientId: string) =>
     call<LatestAnswers>(`/patients/${encodeURIComponent(patientId)}/questionnaire`),
   diff: (patientId: string, versionId: string, fromVersionId: string) =>

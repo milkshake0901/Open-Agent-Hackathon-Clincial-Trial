@@ -145,3 +145,25 @@ async def test_respondent_questions_are_served_apart_from_doctor_questions(clean
         assert [q["question"] for q in verdict["respondent_questions"]] == ["Q13"]
         assert (await http.get(f"/api/patients/{patient}/respondent-questions",
                                params={"version": "snap:nope"})).status_code == 404
+
+
+async def test_listed_verdicts_carry_site_lines_and_the_further_away_flag_but_never_the_postcode(clean_db):
+    from tests.conftest import make_ctx
+    ctx = make_ctx(clean_db, FakeLLM(matcher_citing({"ECOG": "daily activity"})))
+    await trials.load_snapshot(ctx, SNAPSHOT)
+    app.state.ctx = ctx
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        definition = (await http.get("/api/questionnaire/definition")).json()
+        patient = (await http.post("/api/patients", json={"label": "Demo patient W"})).json()["patient_id"]
+        body = (await http.post(f"/api/patients/{patient}/questionnaire", json={
+            "definition_version": definition["version"], "respondent": "patient",
+            "answers": {"birth_month": "1958-03", "postcode": "2145", "max_travel_km": "25"}})).json()
+
+        listed = await http.get(f"/api/patients/{patient}/versions/{body['profile_version_id']}/verdicts")
+
+    [v] = listed.json()["verdicts"]
+    assert v["sites"][0] == {"name": "Local Institution - 0439, Westmead, Australia", "status": "not yet recruiting",
+                             "km": 1}
+    assert v["nearest_site"]["status"] == "recruiting" and v["nearest_site"]["km"] > 5000
+    assert v["further_away"] is True
+    assert "2145" not in listed.text

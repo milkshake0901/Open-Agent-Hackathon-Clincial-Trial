@@ -56,6 +56,40 @@ class RescanSummary(BaseModel):
     failed: int                 # Trials left without one (model unavailable); the next Re-scan retries them
 
 
+class ConflictSideOut(BaseModel):
+    """One side of a Conflict, with enough of its Document to show the page beside the other side."""
+    document_hash: str
+    filename: str
+    page: int
+    page_text: str              # de-identified
+    quote: str
+    value: str
+    unit: str | None
+    observed_on: date | None
+    label: str                  # "Patient-reported, intake questionnaire, Q13" or "referral.pdf, page 2"
+
+
+class ConflictOut(BaseModel):
+    id: str
+    message: str
+    draft: ConflictSideOut               # what the new Document says
+    accepted: ConflictSideOut | None     # what the record already says
+
+
+class ConflictsOut(BaseModel):
+    run_id: str
+    conflicts: list[ConflictOut]         # empty once the run is no longer waiting on the patient
+
+
+class ResolutionIn(BaseModel):
+    conflict_id: str
+    choice: Literal["keep_accepted", "accept_draft", "discard_both"]
+
+
+class ConfirmIn(BaseModel):
+    resolutions: list[ResolutionIn]
+
+
 class LatestAnswersOut(BaseModel):
     """The latest accepted submission, to prefill "edit answers". Postcode and travel are never included."""
     definition_version: str
@@ -150,6 +184,12 @@ class RespondentQuestionOut(BaseModel):
     unblocks: list[str]
 
 
+class SiteOut(BaseModel):
+    name: str
+    status: str                 # "recruiting", "not yet recruiting", ...
+    km: int | None              # None: distance unknown (no or unknown postcode, or the site has no location)
+
+
 class VerdictOut(BaseModel):
     nct_id: str
     title: str
@@ -161,11 +201,14 @@ class VerdictOut(BaseModel):
     results: list[CriterionResultOut]
     questions: list[DoctorQuestionOut]
     respondent_questions: list[RespondentQuestionOut] = []
+    nearest_site: SiteOut | None = None   # nearest RECRUITING site
+    sites: list[SiteOut] = []             # up to 3 nearest open sites, any status
+    further_away: bool = False            # no recruiting site within the travel limit: show under "Further away"
 
 
 class VerdictListOut(BaseModel):
     profile_version_id: str
-    verdicts: list[VerdictOut]  # ranked: eligible, possible (fewest unknowns first), excluded
+    verdicts: list[VerdictOut]  # ranked: outcome (possible: fewest unknowns first), then nearest recruiting site
 
 
 class RescanOut(BaseModel):

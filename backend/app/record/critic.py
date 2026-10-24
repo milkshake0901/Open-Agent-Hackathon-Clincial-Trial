@@ -51,7 +51,68 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
             add(FindingKind.UNIT_OUT_OF_RANGE, i, f"fact {i + 1} ({d.subject}): {d.value} {d.unit} is implausible")
         if current is not None and duplicate_of_accepted(d, doc, current):
             add(FindingKind.DUPLICATE_OF_ACCEPTED, i, f"fact {i + 1} ({d.subject}): already in the record")
+        elif current is not None and d.observed_on is not None and (other := contradicts_accepted(d, doc, current)):
+            source = (f"the intake questionnaire ({other.question})" if other.question
+                      else f"an earlier document (page {other.page})")
+            findings.append(Finding(
+                kind=FindingKind.CONTRADICTS_ACCEPTED, draft_index=i, accepted_fact_id=other.id,
+                severity=severity_of(FindingKind.CONTRADICTS_ACCEPTED),
+                message=f"{d.subject}: page {d.page} says \"{d.quote}\", but {source} says \"{other.quote}\""))
     return tuple(findings)
+
+
+# A Patient-reported answer about the present and a clinical observation this close to it describe the same time.
+PATIENT_REPORTED_WINDOW_DAYS = 90
+
+
+def contradicts_accepted(draft: DraftFact, doc: Document, current: ProfileVersion) -> Fact | None:
+    """The accepted Fact this draft cannot be true alongside (GLOSSARY "Conflict"), or None. Same subject (synonyms
+    included: the questionnaire's "daily activity" is the ECOG performance status) with a different value, and
+    - between two clinical Documents: the same observed-on date;
+    - between a clinical Document and the Patient-reported record: the subject's current Patient-reported Fact,
+      observed within PATIENT_REPORTED_WINDOW_DAYS of the draft.
+    Two questionnaire answers never conflict: a resubmission is a correction (#9)."""
+    key, value = _canonical(draft)
+    candidates = [f for f in current.facts if f.question is None]
+    if not doc.is_questionnaire:
+        latest = None   # the current Patient-reported Fact; ties go to the later-accepted one, as in current()
+        for f in current.facts:
+            if f.question is not None and _canonical(f)[0] == key and (latest is None or f.observed_on >= latest.observed_on):
+                latest = f
+        candidates += [latest] if latest else []
+    for f in candidates:
+        if _canonical(f)[0] != key or _canonical(f)[1] == value:
+            continue
+        clinical_pair = f.question is None and not doc.is_questionnaire
+        days = abs((f.observed_on - draft.observed_on).days)
+        if days == 0 or (not clinical_pair and days <= PATIENT_REPORTED_WINDOW_DAYS):
+            return f
+    return None
+
+
+# Subjects that name the same thing. Values are compared after _VALUE_SYNONYMS for the canonical subject.
+_SUBJECT_SYNONYMS = {
+    "daily activity": "ecog performance status",
+    "ecog": "ecog performance status",
+    "ecog ps": "ecog performance status",
+    "performance status": "ecog performance status",
+}
+# The questionnaire's Q13 options are the ECOG grades in plain words.
+_VALUE_SYNONYMS = {
+    "ecog performance status": {"fully_active": "0", "light_activity": "1", "self_care": "2",
+                                "limited_self_care": "3", "bed_bound": "4"},
+}
+
+
+def _canonical(f: Fact | DraftFact) -> tuple[str, str]:
+    """(subject, value) with synonyms resolved; unit folded into the value except for unitless scores."""
+    subject = _norm_subject(f.subject)
+    subject = _SUBJECT_SYNONYMS.get(subject, subject)
+    value = _squash(f.value)
+    if subject == "ecog performance status":
+        value = _VALUE_SYNONYMS[subject].get(f.value.strip(), re.sub(r"^(ecog|ps)\s*", "", value))
+        return subject, value
+    return subject, f"{value} {_squash(f.unit or '')}".strip()
 
 
 def duplicate_of_accepted(draft: DraftFact, doc: Document, current: ProfileVersion) -> bool:

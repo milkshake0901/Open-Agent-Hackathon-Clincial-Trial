@@ -7,6 +7,7 @@ from those trace events on confirm(). Accepted Facts are committed through the W
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
+from datetime import date
 from typing import Awaitable, Callable
 
 from app.ctx import Ctx
@@ -14,14 +15,15 @@ from app.llm import LlmUnavailable
 from app.record import critic, intake, repo
 from app.worldmodel import timeline
 from app.record.types import (
-    AwaitingPatient, Committed, Conflict, Document, DraftFact, Finding, FindingKind, IngestOutcome,
-    ProfileVersion, Rejected, Resolution,
+    AwaitingPatient, Committed, Conflict, ConflictId, Document, DocumentHash, DraftFact, Fact, FactId, FactResource,
+    Finding, FindingKind, IngestOutcome, ProfileVersion, Rejected, Resolution,
 )
 from app import trace
 from app.trace.events import (
-    CriticReviewed, IngestRetried, IngestStarted, IntakeDrafted, ProfileCommitted, RunAwaitingPatient, RunRejected,
+    CriticReviewed, IngestRetried, IngestStarted, IntakeDrafted, PatientResolved, ProfileCommitted, RunAwaitingPatient,
+    RunRejected,
 )
-from app.trace.state import IngestRunState
+from app.trace.state import IngestRunState, reduce_ingest
 
 
 # ---- step results (closed set) ---------------------------------------------
@@ -98,9 +100,11 @@ def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt
     retryable = tuple(f for f in findings if f.severity == "retryable")
     if conflicts:
         flagged = {f.draft_index for f in findings}
+        accepted = {f.id: f for f in current.facts} if current is not None else {}
         return Escalate(
-            conflicts=tuple(Conflict(id=f"conflict:{n}:{f.draft_index}", draft=drafts[f.draft_index], accepted=None,
-                                     message=f.message) for n, f in enumerate(conflicts)),
+            conflicts=tuple(Conflict(id=f"conflict:{n}:{f.draft_index}", draft=drafts[f.draft_index],
+                                     accepted=accepted.get(f.accepted_fact_id), message=f.message)
+                            for n, f in enumerate(conflicts)),
             accepted_drafts=tuple(d for i, d in enumerate(drafts) if i not in flagged | duplicates))
     if retryable:
         return Retry(retryable) if attempt < max_attempts else Exhausted(retryable)
@@ -147,6 +151,7 @@ async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts:
             case Accept(drafts=ds):
                 return await commit(ctx, doc, ds, run_id)
             case Escalate(conflicts=cs, accepted_drafts=ok):
+                cs = tuple(replace(c, document_hash=doc.hash) for c in cs)
                 await trace.append(ctx.writer, run_id, RunAwaitingPatient(
                     actor="critic", conflicts=[asdict(c) for c in cs], accepted_drafts=[asdict(d) for d in ok]))
                 return AwaitingPatient(run_id, cs)
@@ -161,21 +166,75 @@ async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts:
     raise AssertionError("decide() returns a terminal step on the last attempt")
 
 
-async def resume_after_confirm(ctx: Ctx, run_id: trace.RunId, resolutions: list[Resolution], ) -> IngestOutcome:
-    """Rehydrate IngestRunState from the run log, apply resolutions, commit or stay parked.
-
-    # TODO pseudocode
-    #   state: IngestRunState = await trace.project_ingest(ctx.ui_reader, run_id)
-    #   assert state.phase == "awaiting_patient"
-    #   remaining = state.conflicts minus resolved ids
-    #   chosen drafts = state.accepted_drafts + [c.draft for c in resolved if choice == "accept_draft"]
-    #   if remaining: append RunAwaitingPatient(remaining, chosen); return AwaitingPatient
-    #   return await commit(ctx, doc, chosen, run_id)
-    """
-    raise NotImplementedError
+class NotAwaitingPatient(Exception):
+    """confirm() on a run that is not parked on the patient (already committed, rejected, or still drafting)."""
 
 
-async def commit(ctx: Ctx, doc: Document, drafts: tuple[DraftFact, ...], run_id: trace.RunId) -> Committed:
+class InvalidResolution(ValueError):
+    """A resolution names a Conflict the run is not waiting on, or an unknown choice."""
+
+
+def _draft_from(d: dict) -> DraftFact:
+    return DraftFact(resource=FactResource(d["resource"]), subject=d["subject"], value=d["value"], unit=d["unit"],
+                     observed_on=date.fromisoformat(d["observed_on"]) if d["observed_on"] else None, page=d["page"],
+                     quote=d["quote"], question=d.get("question"))
+
+
+def _fact_from(d: dict) -> Fact:
+    return Fact(id=FactId(d["id"]), document_hash=DocumentHash(d["document_hash"]), page=d["page"],
+                resource=FactResource(d["resource"]), subject=d["subject"], value=d["value"], unit=d["unit"],
+                observed_on=date.fromisoformat(d["observed_on"]), quote=d["quote"], question=d.get("question"))
+
+
+def conflict_from(d: dict) -> Conflict:
+    """A Conflict as the run log keeps it (RunAwaitingPatient), so a parked run survives a restart."""
+    return Conflict(id=ConflictId(d["id"]), draft=_draft_from(d["draft"]),
+                    accepted=_fact_from(d["accepted"]) if d.get("accepted") else None, message=d["message"],
+                    document_hash=d.get("document_hash"))
+
+
+def parked(state: IngestRunState, run_id: trace.RunId) -> AwaitingPatient | None:
+    """The AwaitingPatient a run's folded state describes, or None if the run is not parked."""
+    if state.phase != "awaiting_patient":
+        return None
+    return AwaitingPatient(run_id, tuple(conflict_from(c) for c in state.conflicts))
+
+
+_CHOICES = ("keep_accepted", "accept_draft", "discard_both")
+
+
+async def resume_after_confirm(ctx: Ctx, doc: Document, run_id: trace.RunId,
+                               resolutions: list[Resolution]) -> IngestOutcome:
+    """Rehydrate the parked run from its log, record the Respondent's choices, then commit once every Conflict is
+    resolved (partial resolutions stay AwaitingPatient with the rest). The next version holds the loop's accepted
+    drafts, plus each draft the Respondent accepted; an accepted Fact the Respondent overruled ("accept_draft") or
+    discarded ("discard_both") is left out of it. Facts are never deleted: earlier versions keep citing it."""
+    state = await trace.project_ingest(ctx.ui_reader, run_id)
+    if state.phase != "awaiting_patient":
+        raise NotAwaitingPatient(f"run {run_id} is {state.phase}, not awaiting the patient")
+    waiting = {c["id"] for c in state.conflicts}
+    for r in resolutions:
+        if r.conflict_id not in waiting or r.choice not in _CHOICES:
+            raise InvalidResolution(f"{r.conflict_id}: not a Conflict this run is waiting on, or not one of {_CHOICES}")
+    if resolutions:
+        event = PatientResolved(actor="patient", resolutions=[asdict(r) for r in resolutions])
+        await trace.append(ctx.writer, run_id, event)
+        state = reduce_ingest(state, event)
+    if state.conflicts:
+        return parked(state, run_id)
+    drafts = [_draft_from(d) for d in state.accepted_drafts]
+    withdrawn: set[FactId] = set()
+    for r in state.resolved:
+        conflict = conflict_from(r["conflict"])
+        if r["choice"] == "accept_draft":
+            drafts.append(conflict.draft)
+        if r["choice"] in ("accept_draft", "discard_both") and conflict.accepted is not None:
+            withdrawn.add(conflict.accepted.id)
+    return await commit(ctx, doc, tuple(drafts), run_id, withdrawn=frozenset(withdrawn))
+
+
+async def commit(ctx: Ctx, doc: Document, drafts: tuple[DraftFact, ...], run_id: trace.RunId, *,
+                 withdrawn: frozenset[FactId] = frozenset()) -> Committed:
     """timeline.commit_profile_version(ctx.wm, ...): assert_fact per draft + snapshot, each appended
     with its projection rows in one transaction (World Model is the only writer, ADR 0001), then
     append ProfileCommitted to the trace.
@@ -183,7 +242,7 @@ async def commit(ctx: Ctx, doc: Document, drafts: tuple[DraftFact, ...], run_id:
     Idempotent: fact ids are content-derived and the snapshot is keyed by document hash, so a
     retry after a crash returns the existing version and only the missing trace event is appended.
     """
-    version = await timeline.commit_profile_version(ctx.wm, doc.patient_id, doc, drafts, run_id)
+    version = await timeline.commit_profile_version(ctx.wm, doc.patient_id, doc, drafts, run_id, withdrawn=withdrawn)
     await trace.append(ctx.writer, run_id, ProfileCommitted(actor="record", profile_version_id=version.id,
                                                             version_number=version.number, facts_added=len(drafts)))
     return Committed(run_id, version)

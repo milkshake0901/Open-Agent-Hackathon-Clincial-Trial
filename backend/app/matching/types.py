@@ -78,6 +78,14 @@ class RespondentQuestion:
 
 
 @dataclass(frozen=True)
+class SiteDistance:
+    """A Trial site as models and the Trials page see it: never the patient's postcode, only km from it."""
+    name: str          # "Local Institution - 0439, Westmead, Australia"
+    status: str        # "recruiting", "not yet recruiting", ... ("status unknown" when the registry gives none)
+    km: int | None     # whole km from the patient's postcode area; None: no postcode, unknown postcode or no geoPoint
+
+
+@dataclass(frozen=True)
 class Verdict:
     nct_id: NctId
     profile_version_id: ProfileVersionId
@@ -90,6 +98,11 @@ class Verdict:
     unsupported_downgraded: int      # claims downgraded to unknown on exhaustion
     degraded: bool                   # True when the loop hit its bound; the UI flags these Verdicts
     respondent_questions: tuple[RespondentQuestion, ...] = ()   # each unknown raises one of these or a DoctorQuestion
+    # Distance (#16): filled by verdict()/verdicts_for_version() from the CURRENT search preferences, never stored,
+    # never part of the outcome.
+    nearest_site: SiteDistance | None = None     # nearest RECRUITING site (None: the Trial lists none)
+    sites: tuple[SiteDistance, ...] = ()         # open sites, nearest first
+    further_away: bool = False                   # beyond the travel limit: shown under "Further away", not dropped
 
 
 @dataclass(frozen=True)
