@@ -7,10 +7,10 @@ from app.matching.types import (
 from app.record import DocumentHash, FactId, ProfileVersionId
 from app.sql.reader import SqlReader
 from app.trace import RunId
-from app.trials import CriterionId, NctId, Trial
+from app.trials import ACTIVE_STATUSES, CriterionId, NctId, Trial
 
 _TRIAL_COLS = "t.nct_id, t.title, t.conditions, t.status, t.eligibility_text, t.eligibility_hash, t.fetched_at, t.source"
-_ACTIVE = "t.status IN ('RECRUITING', 'NOT_YET_RECRUITING', 'ENROLLING_BY_INVITATION')"   # trials.ACTIVE_STATUSES
+_ACTIVE = f"t.status IN ({', '.join(repr(s) for s in ACTIVE_STATUSES)})"
 
 
 def _trial(r: dict) -> Trial:

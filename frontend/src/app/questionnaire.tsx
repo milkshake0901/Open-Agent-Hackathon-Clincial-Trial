@@ -4,7 +4,11 @@
 // hard-coded here except the one that says who is answering, whose answer switches "your" / "their".
 
 import { useEffect, useState } from "react";
-import { api, type Answers, type Question, type Questionnaire, type Respondent, type VersionOut } from "@/lib/api";
+import Link from "next/link";
+import {
+  api, trialsHref, type Answers, type Question, type Questionnaire, type Respondent, type SubmissionAccepted,
+  type VersionOut,
+} from "@/lib/api";
 
 const RESPONDENT_QUESTION = "respondent";
 
@@ -19,6 +23,7 @@ export function QuestionnaireForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [version, setVersion] = useState<VersionOut | null>(null);
+  const [saved, setSaved] = useState<{ patientId: string; result: SubmissionAccepted } | null>(null);
 
   useEffect(() => {
     api
@@ -60,6 +65,7 @@ export function QuestionnaireForm() {
         throw new Error(result.reason ?? "Your answers could not be recorded yet.");
       }
       setVersion(await api.version(patient_id, result.profile_version_id));
+      setSaved({ patientId: patient_id, result });
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -67,7 +73,7 @@ export function QuestionnaireForm() {
     }
   }
 
-  if (version) return <ProfileSummary version={version} />;
+  if (version) return <ProfileSummary version={version} saved={saved} />;
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
@@ -106,7 +112,7 @@ function QuestionField({ question: q, respondent, value, onChange, onClear }: {
 
   if (q.kind === "single") {
     return (
-      <fieldset className="flex flex-col gap-2" aria-describedby={describedBy}>
+      <fieldset id={`Q${q.number}`} className="flex flex-col gap-2 scroll-mt-4" aria-describedby={describedBy}>
         <legend className="font-medium mb-1">
           <span className="text-muted mr-2">Q{q.number}</span>{label}
         </legend>
@@ -128,7 +134,7 @@ function QuestionField({ question: q, respondent, value, onChange, onClear }: {
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div id={`Q${q.number}`} className="flex flex-col gap-2 scroll-mt-4">
       <label htmlFor={id} className="font-medium">
         <span className="text-muted mr-2">Q{q.number}</span>{label}
       </label>
@@ -147,10 +153,28 @@ function QuestionField({ question: q, respondent, value, onChange, onClear }: {
   );
 }
 
-function ProfileSummary({ version }: { version: VersionOut }) {
+function ProfileSummary({ version, saved }: {
+  version: VersionOut;
+  saved: { patientId: string; result: SubmissionAccepted } | null;
+}) {
+  const rescan = saved?.result.rescan;
   return (
     <section aria-labelledby="profile-heading" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
       <h2 id="profile-heading" className="text-lg font-semibold">Thank you. Your answers are saved as version {version.number}.</h2>
+      {saved && (
+        <div className="flex flex-col gap-2">
+          <p>
+            {rescan && rescan.judged > 0
+              ? `We checked your answers against ${rescan.judged} trial${rescan.judged === 1 ? "" : "s"}.`
+              : "We could not check any trials yet."}
+            {rescan && rescan.failed > 0 && ` ${rescan.failed} could not be checked right now; we will try again.`}
+          </p>
+          <Link href={trialsHref(saved.patientId, version.id)}
+                className="self-start min-h-12 inline-flex items-center rounded-lg bg-accent px-5 font-semibold text-white dark:text-black">
+            See trials that might fit
+          </Link>
+        </div>
+      )}
       <p className="text-muted">This is what we recorded, and where each item came from.</p>
       <ul className="flex flex-col gap-3">
         {version.facts.map((f) => (
