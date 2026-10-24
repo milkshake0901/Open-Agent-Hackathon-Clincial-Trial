@@ -90,7 +90,7 @@ async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerI
     selects get a Verdict. 404: not this patient's check; 409: already answered (or unclear)."""
     patient_id = record.PatientId(pid)
     try:
-        check = await record.answer_diagnosis_check(ctx, patient_id, check_id, body.answer)
+        check = await record.answer_diagnosis_check(ctx, patient_id, record.DiagnosisCheckId(check_id), body.answer)
     except record.InvalidAnswers as e:
         raise HTTPException(409, str(e))
     summary = None

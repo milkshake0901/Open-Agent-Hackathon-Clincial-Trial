@@ -9,11 +9,11 @@ import json
 from datetime import datetime, time, timezone
 
 from app.record.types import (
-    DiagnosisCheck, Document, DocumentHash, Fact, FactId, FactResource, Page, PatientId, ProfileVersion, ProfileVersionId,
-    SearchPreferences,
+    DiagnosisCheck, DiagnosisCheckId, Document, DocumentHash, Fact, FactId, FactResource, Page, PatientId, ProfileVersion,
+    ProfileVersionId, ReturnTokenHash, SearchPreferences,
 )
 from app.sql.reader import SqlReader
-from app.sql.writer import PgWriter, Tx
+from app.sql.writer import Tx
 
 
 async def patient_exists(reader: SqlReader, patient_id: PatientId) -> bool:
@@ -33,11 +33,11 @@ _CHECK_COLS = "id, patient_id, text, suggested_term, confidence, status"
 
 
 def _check(r: dict) -> DiagnosisCheck:
-    return DiagnosisCheck(id=r["id"], patient_id=PatientId(r["patient_id"]), text=r["text"],
+    return DiagnosisCheck(id=DiagnosisCheckId(r["id"]), patient_id=PatientId(r["patient_id"]), text=r["text"],
                           suggested_term=r["suggested_term"], confidence=float(r["confidence"]), status=r["status"])
 
 
-async def diagnosis_check(reader: SqlReader, check_id: str) -> DiagnosisCheck | None:
+async def diagnosis_check(reader: SqlReader, check_id: DiagnosisCheckId) -> DiagnosisCheck | None:
     rows = await reader.fetch(f"SELECT {_CHECK_COLS} FROM {reader.table('diagnosis_check')} WHERE id = $1",
                               (check_id,))
     return _check(rows[0]) if rows else None
@@ -51,7 +51,7 @@ async def settled_diagnosis_check(reader: SqlReader, patient_id: PatientId) -> D
     return _check(rows[0]) if rows else None
 
 
-async def patient_for_token_hash(reader: SqlReader, token_hash: str) -> PatientId | None:
+async def patient_for_token_hash(reader: SqlReader, token_hash: ReturnTokenHash) -> PatientId | None:
     rows = await reader.fetch(f"SELECT patient_id FROM {reader.table('return_token')} WHERE token_hash = $1",
                               (token_hash,))
     return PatientId(rows[0]["patient_id"]) if rows else None
@@ -149,7 +149,7 @@ async def upsert_search_preferences(tx: Tx, patient_id: PatientId, changes: dict
                      f"ON CONFLICT (patient_id) DO UPDATE SET {updates}, updated_at = now()", params)
 
 
-async def insert_return_token(tx: Tx, token_hash: str, patient_id: PatientId) -> bool:
+async def insert_return_token(tx: Tx, token_hash: ReturnTokenHash, patient_id: PatientId) -> bool:
     """False if the patient already has a return token (one per patient)."""
     rows = await tx.fetch("INSERT INTO return_token (token_hash, patient_id) VALUES ($1, $2) "
                           "ON CONFLICT (patient_id) DO NOTHING RETURNING patient_id", (token_hash, patient_id))

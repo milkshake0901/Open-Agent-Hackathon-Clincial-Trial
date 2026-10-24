@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-import uuid
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -29,6 +28,7 @@ from app.record.types import (
     ConflictId,
     DiagnosisAnswer,
     DiagnosisCheck,
+    DiagnosisCheckId,
     Document,
     DocumentHash,
     DraftFact,
@@ -39,10 +39,13 @@ from app.record.types import (
     ProfileVersion,
     ProfileVersionId,
     Rejected,
+    ReturnTokenHash,
     Resolution,
     Respondent,
     SearchPreferences,
     VersionDiff,
+    new_diagnosis_check_id,
+    new_patient_id,
 )
 from app.trace import RunId
 from app.trace.events import ProfileCommitted
@@ -56,7 +59,7 @@ __all__ = [
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
-    "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId",
+    "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId", "DiagnosisCheckId",
 ]
 
 
@@ -71,14 +74,14 @@ async def _require_patient(ctx: Ctx, patient_id: PatientId) -> None:
 
 async def create_patient(ctx: Ctx, label: str) -> PatientId:
     """A new patient with a de-identified display label (never a real name)."""
-    patient_id = PatientId(f"pt_{uuid.uuid4().hex[:16]}")
+    patient_id = new_patient_id()
     async with ctx.writer.transaction() as tx:
         await repo.insert_patient(tx, patient_id, label)
     return patient_id
 
 
-def _token_hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
+def _token_hash(token: str) -> ReturnTokenHash:
+    return ReturnTokenHash(hashlib.sha256(token.encode()).hexdigest())
 
 
 async def issue_return_link(ctx: Ctx, patient_id: PatientId) -> str | None:
@@ -189,14 +192,14 @@ async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = No
     if not text:
         raise NotFound(f"no diagnosis answer for patient {patient_id}")
     term, confidence = await condition_terms.propose_condition_term(ctx, text)
-    check = DiagnosisCheck(id=f"dx_{uuid.uuid4().hex[:16]}", patient_id=patient_id, text=text, suggested_term=term,
+    check = DiagnosisCheck(id=new_diagnosis_check_id(), patient_id=patient_id, text=text, suggested_term=term,
                            confidence=confidence, status="proposed" if term else "unclear")
     async with ctx.writer.transaction() as tx:
         await repo.insert_diagnosis_check(tx, check, ctx.now())
     return check
 
 
-async def answer_diagnosis_check(ctx: Ctx, patient_id: PatientId, check_id: str,
+async def answer_diagnosis_check(ctx: Ctx, patient_id: PatientId, check_id: DiagnosisCheckId,
                                  answer: DiagnosisAnswer) -> DiagnosisCheck:
     """The Respondent's yes / no / not sure to a proposed term. "yes" makes it the patient's condition (it selects
     which Trials are judged); "no" asks again (check_diagnosis with their re-wording); "not sure" tells them to

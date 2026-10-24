@@ -1,7 +1,8 @@
 """app/record/types.py — domain types for the patient record. No wire or row types here."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from typing import Literal, NewType
@@ -13,7 +14,17 @@ DocumentHash = NewType("DocumentHash", str)      # sha256 hex identifying the Do
 FactId = NewType("FactId", str)
 ProfileVersionId = NewType("ProfileVersionId", str)
 ConflictId = NewType("ConflictId", str)
+DiagnosisCheckId = NewType("DiagnosisCheckId", str)   # "dx_" + 16 hex
+ReturnTokenHash = NewType("ReturnTokenHash", str)     # sha256 hex of a Return link's token; the token is never stored
 Respondent = Literal["patient", "other"]   # who answered an Intake questionnaire (GLOSSARY)
+
+
+def new_patient_id() -> PatientId:
+    return PatientId(f"pt_{uuid.uuid4().hex[:16]}")
+
+
+def new_diagnosis_check_id() -> DiagnosisCheckId:
+    return DiagnosisCheckId(f"dx_{uuid.uuid4().hex[:16]}")
 
 
 class FactResource(StrEnum):
@@ -64,7 +75,7 @@ class DiagnosisCheck:
     diagnosis Fact keeps the Respondent's words as its quote; a confirmed term only selects which Trials are judged.
     status: proposed (awaiting yes / no / not sure), confirmed, rejected ("no": ask again), not_sure, or unclear
     (the model could not propose a term with confidence, so none was offered)."""
-    id: str
+    id: DiagnosisCheckId
     patient_id: PatientId
     text: str
     suggested_term: str | None
