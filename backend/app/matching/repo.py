@@ -35,13 +35,20 @@ async def _results(reader: SqlReader, key: tuple) -> ValidatedResults:
                           quote=r["quote"], question=r["question"]) if r["fact_id"] else None) for r in rows)
 
 
+_DQ_COLS = "q.criterion_id, q.nct_id, q.subject, q.text"
+
+
+def _doctor_question(r: dict) -> DoctorQuestion:
+    return DoctorQuestion(criterion_id=CriterionId(r["criterion_id"]), nct_id=NctId(r["nct_id"]), subject=r["subject"],
+                          text=r["text"])
+
+
 async def _questions(reader: SqlReader, key: tuple) -> tuple[DoctorQuestion, ...]:
     rows = await reader.fetch(
-        f"SELECT q.criterion_id, q.nct_id, q.subject, q.text FROM {reader.table('doctor_question')} q "
+        f"SELECT {_DQ_COLS} FROM {reader.table('doctor_question')} q "
         f"JOIN {reader.table('criterion')} c ON c.id = q.criterion_id "
         "WHERE q.nct_id = $1 AND q.eligibility_hash = $2 AND q.profile_version_id = $3 ORDER BY c.ordinal", key)
-    return tuple(DoctorQuestion(criterion_id=CriterionId(r["criterion_id"]), nct_id=NctId(r["nct_id"]),
-                                subject=r["subject"], text=r["text"]) for r in rows)
+    return tuple(_doctor_question(r) for r in rows)
 
 
 _RQ_COLS = "q.criterion_id, q.nct_id, q.question_id, q.question, q.subject, q.text"
@@ -101,12 +108,11 @@ async def verdicts_for_version(reader: SqlReader, version_id: ProfileVersionId) 
 async def questions_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[DoctorQuestion]:
     """Every Doctor question of the version's current Verdicts, in Trial then Criterion order (not deduplicated)."""
     rows = await reader.fetch(
-        f"SELECT q.criterion_id, q.nct_id, q.subject, q.text FROM {reader.table('doctor_question')} q "
+        f"SELECT {_DQ_COLS} FROM {reader.table('doctor_question')} q "
         f"JOIN {reader.table('trial')} t ON t.nct_id = q.nct_id AND t.eligibility_hash = q.eligibility_hash "
         f"JOIN {reader.table('criterion')} c ON c.id = q.criterion_id "
         "WHERE q.profile_version_id = $1 ORDER BY q.nct_id, c.ordinal", (version_id,))
-    return [DoctorQuestion(criterion_id=CriterionId(r["criterion_id"]), nct_id=NctId(r["nct_id"]),
-                           subject=r["subject"], text=r["text"]) for r in rows]
+    return [_doctor_question(r) for r in rows]
 
 
 async def respondent_questions_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[RespondentQuestion]:
