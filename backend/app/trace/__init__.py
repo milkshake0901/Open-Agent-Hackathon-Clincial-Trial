@@ -105,8 +105,36 @@ async def record_llm_call(writer: "PgWriter", run_id: RunId | None, call: LlmCal
     return call.id
 
 
+class UnknownRun(LookupError):
+    """No run with this id."""
+
+
 async def read(reader: "SqlReader", run_id: RunId, *, since_seq: int = 0) -> RunLog:
-    raise NotImplementedError
+    """The run's events after `since_seq` (in append order) and its model calls. `head` is the run's last seq, so a
+    poller passes it back as `since_seq`. Raises UnknownRun."""
+    from pydantic import TypeAdapter
+
+    from app.trace.events import RunEvent
+
+    runs = await reader.fetch(f"SELECT kind FROM {reader.table('trace_run')} WHERE id = $1", (run_id,))
+    if not runs:
+        raise UnknownRun(run_id)
+    rows = await reader.fetch(
+        f"SELECT event_id, seq, at, actor, causation_id, payload FROM {reader.table('trace_event')} "
+        "WHERE run_id = $1 AND seq > $2 ORDER BY seq", (run_id, since_seq))
+    head = await reader.fetch(f"SELECT coalesce(max(seq), 0) AS head FROM {reader.table('trace_event')} "
+                              "WHERE run_id = $1", (run_id,))
+    calls = await reader.fetch(
+        f"SELECT id, lane, model_requested, model_answered, latency_ms, prompt_tokens, completion_tokens, ok "
+        f"FROM {reader.table('llm_call')} WHERE run_id = $1 ORDER BY at, id", (run_id,))
+    adapter = TypeAdapter(RunEvent)
+    events = tuple(TracedEvent(
+        event_id=EventId(r["event_id"]), seq=r["seq"], at=r["at"].isoformat(), actor=r["actor"],
+        causation_id=r["causation_id"],
+        event=adapter.validate_python(json.loads(r["payload"]) if isinstance(r["payload"], str) else r["payload"]))
+        for r in rows)
+    return RunLog(run_id=run_id, kind=runs[0]["kind"], head=head[0]["head"], events=events,
+                  llm_calls=tuple(LlmCall(**c) for c in calls))
 
 
 async def causal_tree(reader: "SqlReader", correlation_id: RunId) -> list[TracedEvent]:
@@ -114,7 +142,16 @@ async def causal_tree(reader: "SqlReader", correlation_id: RunId) -> list[Traced
     raise NotImplementedError
 
 
-async def project_ingest(reader: "SqlReader", run_id: RunId) -> "IngestRunState": raise NotImplementedError
+async def project_ingest(reader: "SqlReader", run_id: RunId) -> "IngestRunState":
+    """The ingest run's state, folded from its whole log. Raises UnknownRun."""
+    from app.trace.state import IngestRunState, reduce_ingest
+
+    state = IngestRunState()
+    for traced in (await read(reader, run_id)).events:
+        state = reduce_ingest(state, traced.event)
+    return state
+
+
 async def project_rescan(reader: "SqlReader", run_id: RunId) -> "RescanRunState": raise NotImplementedError
 
 
