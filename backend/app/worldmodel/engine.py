@@ -16,6 +16,8 @@ The engine is the ONLY writer of the domain tables it projects (see projector.py
 """
 from __future__ import annotations
 
+import asyncio
+
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
@@ -175,6 +177,7 @@ class WorldModel:
         self._edges: dict[str, Relationship] = {}
         self._facts: dict[str, Fact] = {}
         self._snapshots: dict[str, Snapshot] = {}
+        self._append_lock = asyncio.Lock()   # parallel Re-scan tasks append concurrently; seq must not race
 
     async def replay(self) -> int:
         """Fold the store's existing log into memory (app start-up over PgEventStore). Returns the head seq.
@@ -188,6 +191,10 @@ class WorldModel:
     # ---- the single append path: store first, then fold ----
 
     async def _append(self, kind: EventKind, payload: Any, source: Provenance, summary: str) -> bool:
+        async with self._append_lock:
+            return await self._append_locked(kind, payload, source, summary)
+
+    async def _append_locked(self, kind: EventKind, payload: Any, source: Provenance, summary: str) -> bool:
         seq = self._seq + 1
         cause = f"{kind}:{payload.id}:{_content_hash(asdict(payload))}"
         event = WorldEvent(id=event_id(f"{self.namespace}/{_actor(source)}", cause, seq), seq=seq,

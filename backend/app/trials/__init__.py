@@ -51,7 +51,14 @@ class SyncReport:
     source: str
 
 
-__all__ = ["sync", "trial", "criteria", "active_trials", "Trial", "Criterion", "CriterionKind", "NctId", "CriterionId", "SyncReport"]
+__all__ = ["sync", "load_snapshot", "trial", "criteria", "active_trials", "Trial", "Criterion", "CriterionKind",
+           "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES"]
+
+# Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
+ACTIVE_STATUSES = ("RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION")
+
+# Submodules import the types above; imported here (after them) so the `criteria` function below wins the name.
+from app.trials import criteria as splitting, ctgov, repo  # noqa: E402
 
 
 async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30) -> SyncReport:
@@ -63,14 +70,36 @@ async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30)
     raise NotImplementedError
 
 
+async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
+    """Record the Trials saved under `directory` (ClinicalTrials.gov v2 study JSON, one file per Trial; the
+    repo keeps data/trials_snapshot/) in place of a live sync. Criteria are split deterministically. Idempotent:
+    loading the same files again records nothing and reports every Trial unchanged."""
+    from app.worldmodel import timeline
+
+    studies = ctgov.read_snapshot(directory)
+    before = {s.nct_id: await repo.trial(ctx.ui_reader, NctId(s.nct_id)) for s, _ in studies}
+    loaded = []
+    for raw, fetched_at in studies:
+        t = ctgov.to_trial(raw, "snapshot", fetched_at)
+        loaded.append((t, splitting.split_deterministic(t.nct_id, t.eligibility_hash, t.eligibility_text)))
+    report = await timeline.record_trials(ctx.wm, loaded, None)
+    changed = {i.split(":", 1)[1] for i in report.changed_ids}
+    return SyncReport(fetched=len(loaded),
+                      new=tuple(t.nct_id for t, _ in loaded if before[t.nct_id] is None),
+                      changed=tuple(t.nct_id for t, _ in loaded if before[t.nct_id] is not None and t.nct_id in changed),
+                      unchanged=tuple(t.nct_id for t, _ in loaded if t.nct_id not in changed), source="snapshot")
+
+
 async def trial(ctx: Ctx, nct_id: NctId) -> Trial | None:
-    raise NotImplementedError
+    return await repo.trial(ctx.ui_reader, nct_id)
 
 
 async def active_trials(ctx: Ctx) -> list[Trial]:
-    raise NotImplementedError
+    return await repo.active_trials(ctx.ui_reader)
 
 
 async def criteria(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> tuple[Criterion, ...]:
-    """Criteria for the trial's CURRENT eligibility hash. for_agent reads through Zetaris."""
-    raise NotImplementedError
+    """Criteria for the trial's CURRENT eligibility hash, in ordinal order. for_agent reads through Zetaris."""
+    reader = ctx.agent_reader if for_agent else ctx.ui_reader
+    t = await repo.trial(reader, nct_id)
+    return await repo.criteria(reader, nct_id, t.eligibility_hash) if t else ()

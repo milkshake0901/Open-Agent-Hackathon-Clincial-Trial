@@ -29,6 +29,7 @@ class Citation:
     document_hash: DocumentHash
     page: int
     quote: str
+    question: str | None = None     # "Q13" when the Fact is Patient-reported (intake questionnaire)
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class DoctorQuestion:
     nct_id: NctId
     subject: str      # the missing Fact subject, e.g. "ECOG performance status"
     text: str         # "Is the patient's ECOG performance status 0 or 1?"
+    unblocks: tuple[NctId, ...] = ()   # questions_for_version: every Trial this answer would help decide
 
 
 @dataclass(frozen=True)
@@ -84,8 +86,9 @@ class RescanReport:
     failed: tuple[tuple[NctId, str], ...]
 
     @classmethod
-    def nothing_to_do(cls, version_id: ProfileVersionId) -> "RescanReport":
-        raise NotImplementedError
+    def nothing_to_do(cls, version_id: ProfileVersionId, run_id: RunId,
+                      skipped: tuple[NctId, ...] = ()) -> "RescanReport":
+        return cls(version_id=version_id, run_id=run_id, planned=(), judged=(), skipped_existing=skipped, failed=())
 
 
 @dataclass(frozen=True)
