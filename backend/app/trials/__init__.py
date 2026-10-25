@@ -295,7 +295,12 @@ def _years_before(day, years: int):
 async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
     """Record the Trials saved under `directory` (ClinicalTrials.gov v2 study JSON, one file per Trial; the
     repo keeps data/trials_snapshot/) in place of the Australia-wide `ingest`. Like `ingest`, Criteria are split lazily.
+    Unlike it, every site is kept: the snapshot is a dev and test seed, and the distance tests use its overseas sites.
+    It seeds a Trial cache the ingest has not filled: once the ingest has recorded a Trial it records nothing, so an
+    app restart never rolls an ingested Trial back to the older saved copy with all its sites.
     Idempotent: loading the same files again records nothing and reports every Trial unchanged."""
+    if await repo.has_ingested(ctx.ui_reader):
+        return SyncReport(fetched=0, new=(), changed=(), unchanged=(), source="snapshot")
     return await _record(ctx, ctgov.read_snapshot(directory), "snapshot")
 
 

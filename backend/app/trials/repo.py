@@ -40,6 +40,11 @@ async def trial(reader: SqlReader, nct_id: NctId) -> Trial | None:
     return to_trial(rows[0]) if rows else None
 
 
+async def has_ingested(reader: SqlReader) -> bool:
+    """Has the ingest (any source but the saved snapshot) recorded a Trial?"""
+    return bool(await reader.fetch(f"SELECT 1 AS one FROM {reader.table('trial')} WHERE source <> 'snapshot' LIMIT 1"))
+
+
 async def active_trials(reader: SqlReader) -> list[Trial]:
     rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE {active_filter()} "
                               "ORDER BY nct_id")
