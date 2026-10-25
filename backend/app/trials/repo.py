@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.sql.reader import SqlReader
 from app.trials import (ACTIVE_STATUSES, CLOSED_STATUSES, Contact, Criterion, CriterionId, CriterionKind, NctId,
-                        OutcomeMeasure, Outcomes, PostedResult, Publication, ResultValue,
+                        OutcomeMeasure, Outcomes, OutcomeSummary, PostedResult, Publication, ResultValue,
                         TrialContacts, TrialSite, Trial, page_url)
 
 _TRIAL_COLS = ("nct_id", "title", "conditions", "status", "eligibility_text", "eligibility_hash", "fetched_at", "source",
@@ -115,4 +115,10 @@ async def outcomes(reader: SqlReader, nct_id: NctId) -> Outcomes:
                                        for r in publications))
 
 
-# Trials, Criteria, Sites, contacts and Outcomes are NOT written here: app.worldmodel.timeline.record_trials (World Model ingest → projector).
+async def outcome_summary(reader: SqlReader, nct_id: NctId, outcomes_hash: str) -> OutcomeSummary | None:
+    rows = await reader.fetch(f"SELECT summary FROM {reader.table('outcome_summary')} "
+                              "WHERE nct_id = $1 AND outcomes_hash = $2", (nct_id, outcomes_hash))
+    return OutcomeSummary(text=rows[0]["summary"], outcomes_hash=outcomes_hash) if rows else None
+
+
+# Trials, Criteria, Sites, contacts, Outcomes and Outcome summaries are NOT written here: app.worldmodel.timeline.record_trials (World Model ingest → projector).

@@ -143,6 +143,9 @@ export type OutcomesOut = {
   publications: { pmid: string; type: string; citation: string; url: string }[]; // url "" without a PubMed id
 };
 
+// A plain-language summary of a Trial's Outcomes (#26), written by the model on first open and cached after.
+export type OutcomeSummaryOut = { nct_id: string; summary: string };
+
 export type TrialDetail = {
   nct_id: string;
   title: string;
@@ -292,6 +295,7 @@ export const api = {
       `/patients/${encodeURIComponent(patientId)}/closed-trials`,
     ),
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
+  outcomeSummary: (nctId: string) => call<OutcomeSummaryOut>(`/trials/${encodeURIComponent(nctId)}/outcomes/summary`),
   enquiry: (patientId: string, versionId: string, nctId: string, include?: string[]) =>
     call<EnquiryOut>(
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}` +

@@ -8,7 +8,7 @@
 --   fact, profile_version, profile_version_fact         app.worldmodel.projector, inside the wm_event append
 --   trial, criterion, trial_site, trial_contact,        transaction (projections of the World Model, ADR 0001)
 --   trial_outcome, trial_outcome_value,
---   trial_publication
+--   trial_publication, outcome_summary
 --   verdict, criterion_result, doctor_question,
 --   respondent_question
 --   trace_run, trace_event, llm_call                    app.trace
@@ -189,6 +189,16 @@ CREATE TABLE trial_publication (           -- publications the registry links to
   type             text NOT NULL,         -- RESULT, BACKGROUND or DERIVED
   citation         text NOT NULL,
   PRIMARY KEY (nct_id, ordinal)
+);
+
+CREATE TABLE outcome_summary (            -- plain-language summary of a Closed trial's Outcomes (#26), written lazily
+                                           -- on first open; immutable per (nct, Outcome content hash), old rows kept
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  outcomes_hash    text NOT NULL,         -- sha256 of the Outcomes' canonical JSON it was written for
+  summary          text NOT NULL,
+  model            text NOT NULL,         -- the model that answered
+  written_at       timestamptz NOT NULL,
+  PRIMARY KEY (nct_id, outcomes_hash)
 );
 
 -- ---------- matching ----------

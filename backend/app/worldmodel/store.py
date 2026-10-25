@@ -91,7 +91,7 @@ class PgEventStore:
 # Every table projector.py writes, so all of them can be rebuilt from wm_event (ADR 0001). No other table references
 # them, so they truncate together without CASCADE.
 PROJECTED_TABLES = ("fact", "profile_version", "profile_version_fact", "trial", "criterion", "trial_site",
-                    "trial_contact", "trial_outcome", "trial_outcome_value", "trial_publication", "verdict",
+                    "trial_contact", "trial_outcome", "trial_outcome_value", "trial_publication", "outcome_summary", "verdict",
                     "criterion_result", "doctor_question", "respondent_question")
 
 

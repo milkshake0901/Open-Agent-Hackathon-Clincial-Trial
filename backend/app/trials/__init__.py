@@ -139,6 +139,13 @@ class Outcomes:
 
 
 @dataclass(frozen=True)
+class OutcomeSummary:
+    """A plain-language summary of a Closed trial's Outcomes (#26), written by the model for the Outcomes it names."""
+    text: str
+    outcomes_hash: str           # the Outcome content hash it was written for (sha256 of the Outcomes' canonical JSON)
+
+
+@dataclass(frozen=True)
 class TrialSite:
     """One of a Trial's locations as ClinicalTrials.gov lists it. lat/lon is the registry's geoPoint (None if absent)."""
     facility: str
@@ -188,9 +195,9 @@ class LivePages:
 
 
 __all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
-           "active_trials", "closed_trials",
+           "active_trials", "closed_trials", "outcome_summary",
            "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
-           "OutcomeMeasure", "Outcomes", "PostedResult", "ResultValue", "Publication",
+           "OutcomeMeasure", "Outcomes", "OutcomeSummary", "PostedResult", "ResultValue", "Publication",
            "SavedPages", "LivePages",
            "NctId", "CriterionId", "SyncReport", "IngestReport", "ACTIVE_STATUSES", "CLOSED_STATUSES",
            "trial_columns", "trial_from_row", "active_filter"]
@@ -231,7 +238,7 @@ def studies_condition(trial: Trial, condition_term: str) -> bool:
 
 
 # Submodules import the types above; imported here (after them) so the `criteria` function below wins the name.
-from app.trials import criteria as splitting, ctgov, repo  # noqa: E402
+from app.trials import criteria as splitting, ctgov, repo, summary as summaries  # noqa: E402
 
 # For other modules' SQL that joins the trial table (one SQL text per question, ctx.py): its columns, row mapping
 # and the active filter, so no module restates them.
@@ -342,6 +349,29 @@ async def outcomes(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> Outco
     if await repo.trial(reader, nct_id) is None:
         return None
     return await repo.outcomes(reader, nct_id)
+
+
+async def outcome_summary(ctx: Ctx, nct_id: NctId) -> OutcomeSummary | None:
+    """A plain-language summary of the Closed trial's Outcomes, written lazily (never at ingest): the first ask makes
+    one fast-lane model call (not traced to a run) and records the summary keyed by NCT id and Outcome content hash;
+    later asks for unchanged Outcomes read it back with no model call. None for an unknown Trial. Raises
+    llm.LlmUnavailable."""
+    from app import llm
+    from app.worldmodel import timeline
+
+    t = await repo.trial(ctx.ui_reader, nct_id)
+    if t is None:
+        return None
+    o = await repo.outcomes(ctx.ui_reader, nct_id)
+    key = summaries.outcomes_hash(o)
+    cached = await repo.outcome_summary(ctx.ui_reader, nct_id, key)
+    if cached is not None:
+        return cached
+    written = await llm.complete(ctx, llm.Lane.FAST, system=summaries.SYSTEM, user=summaries.prompt(t, o),
+                                 out=summaries.Written, run_id=None)
+    summary = OutcomeSummary(text=written.value.summary.strip(), outcomes_hash=key)
+    await timeline.record_outcome_summary(ctx.wm, t, summary, written.model_answered, ctx.now().isoformat())
+    return summary
 
 
 async def criteria(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> tuple[Criterion, ...]:

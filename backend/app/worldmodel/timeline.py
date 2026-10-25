@@ -14,6 +14,9 @@ World Model primitives. record, trials and matching call these; none of them cal
   Criteria           ingest([IngestObservation(type="criteria", external_id=<NCT>:<eligibility hash>,
                                                attrs={nct_id, eligibility_hash, criteria})]), written the first
                      time a Trial's Criteria are asked for; immutable per hash, so a re-split appends nothing
+  Outcome summary    ingest([IngestObservation(type="outcome_summary", external_id=<NCT>:<Outcome content hash>,
+                                               text=<summary>, attrs={nct_id, outcomes_hash, model})]), written the
+                     first time a Closed trial's Outcomes are opened (#26)
   Verdict            relate(patient → trial:<NCT>, type="verdict", context="verdict:<NCT>",
                             valid_from=<profile version time>,
                             attrs={outcome, profile_version_id, eligibility_hash, results, questions, degraded, ...})
@@ -29,7 +32,7 @@ if TYPE_CHECKING:
     from app.matching import Verdict
     from app.record import Document, DraftFact, PatientId, ProfileVersion
     from app.trace import RunId
-    from app.trials import Contact, Criterion, Outcomes, TrialContacts, TrialSite, Trial
+    from app.trials import Contact, Criterion, Outcomes, OutcomeSummary, TrialContacts, TrialSite, Trial
     from app.worldmodel.engine import IngestReport, WorldModel
 
 
@@ -155,6 +158,19 @@ async def record_criteria(wm: "WorldModel", trial: "Trial", criteria: "tuple[Cri
         text=trial.eligibility_text, attrs={
             "nct_id": trial.nct_id, "eligibility_hash": trial.eligibility_hash,
             "criteria": [{"id": c.id, "kind": str(c.kind), "ordinal": c.ordinal, "text": c.text} for c in criteria]})])
+
+
+async def record_outcome_summary(wm: "WorldModel", trial: "Trial", summary: "OutcomeSummary", model: str,
+                                 at: str) -> None:
+    """The plain-language summary written for the Trial's Outcomes, recorded apart from the Trial so that it never
+    changes the Trial's content. Keyed by (NCT id, Outcome content hash): changed Outcomes get a new summary and
+    the old one stays as history."""
+    from app.worldmodel.engine import IngestObservation, Provenance
+
+    await wm.ingest([IngestObservation(
+        type="outcome_summary", external_id=f"{trial.nct_id}:{summary.outcomes_hash}", title=trial.title, at=at,
+        text=summary.text, attrs={"nct_id": trial.nct_id, "outcomes_hash": summary.outcomes_hash, "model": model},
+        source=Provenance(kind="agent", at=at, by="trials", url=f"https://clinicaltrials.gov/study/{trial.nct_id}"))])
 
 
 async def record_verdict(wm: "WorldModel", patient_id: "PatientId", verdict: "Verdict") -> None:

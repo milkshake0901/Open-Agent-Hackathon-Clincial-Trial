@@ -3,10 +3,10 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app import record, trials
+from app import llm, record, trials
 from app.api.deps import get_ctx
-from app.api.schemas import (ClosedTrialListOut, ClosedTrialOut, ContactOut, OutcomesOut, PublicationOut, TrialDetailOut,
-                             TrialSiteOut)
+from app.api.schemas import (ClosedTrialListOut, ClosedTrialOut, ContactOut, OutcomeSummaryOut, OutcomesOut,
+                             PublicationOut, TrialDetailOut, TrialSiteOut)
 from app.ctx import Ctx
 
 router = APIRouter(tags=["trials"])
@@ -48,6 +48,19 @@ async def get_trial(nct: str, ctx: Ctx = Depends(get_ctx)):
                             contacts=[_contact_out(x) for x in s.contacts]) for s in await trials.sites(ctx, nct_id)],
         outcomes=OutcomesOut(**{**asdict(o), "publications": [PublicationOut(**asdict(p), url=p.url)
                                                              for p in o.publications]}))
+
+
+@router.get("/trials/{nct}/outcomes/summary", response_model=OutcomeSummaryOut)
+async def outcome_summary(nct: str, ctx: Ctx = Depends(get_ctx)):
+    """A plain-language summary of the Trial's Outcomes (#26), written by the model on the first ask and reused while
+    the Outcomes are unchanged. 404: unknown Trial; 503: model unavailable (nothing is cached, so a retry asks again)."""
+    try:
+        s = await trials.outcome_summary(ctx, trials.NctId(nct))
+    except llm.LlmUnavailable as err:
+        raise HTTPException(503, str(err))
+    if s is None:
+        raise HTTPException(404, f"no Trial {nct}")
+    return OutcomeSummaryOut(nct_id=nct, summary=s.text)
 
 
 def _contact_out(c: trials.Contact) -> ContactOut:

@@ -310,6 +310,11 @@ class OutcomesOut(BaseModel):
     publications: list[PublicationOut]
 
 
+class OutcomeSummaryOut(BaseModel):
+    nct_id: str
+    summary: str                # plain-language summary of the Trial's Outcomes (#26), written on first open
+
+
 class TrialDetailOut(BaseModel):
     nct_id: str
     title: str

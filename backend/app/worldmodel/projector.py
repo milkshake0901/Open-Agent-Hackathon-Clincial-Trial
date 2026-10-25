@@ -14,6 +14,7 @@ Mapping (see timeline.py for how domain operations become these events):
                                           trial.has_results from attrs.outcomes (replaced);
                                         attrs.dropped → trial flagged dropped, its sites, contacts and Outcomes removed
   upsertEntity type=criteria          → criterion rows split lazily for one (Trial, eligibility hash)
+  upsertEntity type=outcome_summary   → outcome_summary row written lazily for one (Trial, Outcome content hash)
   relate      type=verdict, open edge → verdict + criterion_result + doctor_question + respondent_question
               (the closing re-emit of a superseded edge changes no row: old Verdicts are history, ADR 0002)
 """
@@ -40,6 +41,8 @@ async def project(tx: "Tx", event: "WorldEvent") -> None:
         await _trial(tx, p)
     elif event.kind == "upsertEntity" and isinstance(p, Entity) and p.type == "criteria":
         await _criteria(tx, p.attrs["nct_id"], p.attrs["eligibility_hash"], p.attrs["criteria"])
+    elif event.kind == "upsertEntity" and isinstance(p, Entity) and p.type == "outcome_summary":
+        await _outcome_summary(tx, p.attrs)
     elif event.kind == "relate" and isinstance(p, Relationship) and p.type == "verdict" and p.valid_to is None:
         await _verdict(tx, p)
 
@@ -151,6 +154,14 @@ async def _criteria(tx: "Tx", nct_id: str, eligibility_hash: str, criteria: list
             "INSERT INTO criterion (id, nct_id, eligibility_hash, kind, ordinal, text) VALUES ($1, $2, $3, $4, $5, $6) "
             "ON CONFLICT (id) DO NOTHING",
             (c["id"], nct_id, eligibility_hash, c["kind"], c["ordinal"], c["text"]))
+
+
+async def _outcome_summary(tx: "Tx", a: dict) -> None:
+    # Immutable per (Trial, Outcome content hash): if two first opens race, the first summary recorded stays.
+    await tx.execute(
+        "INSERT INTO outcome_summary (nct_id, outcomes_hash, summary, model, written_at) VALUES ($1, $2, $3, $4, $5) "
+        "ON CONFLICT (nct_id, outcomes_hash) DO NOTHING",
+        (a["nct_id"], a["outcomes_hash"], a["text"], a["model"], _timestamp(a["observed_at"])))
 
 
 async def _verdict(tx: "Tx", r) -> None:

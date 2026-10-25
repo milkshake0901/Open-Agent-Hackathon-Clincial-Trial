@@ -1,9 +1,10 @@
 "use client";
 
 // A Trial's Outcomes (#25): its planned outcome measures, its posted results if it has any, and the publications
-// linked to it. Loaded from the Trial detail when first opened.
+// linked to it. Loaded from the Trial detail when first opened, with a plain-language summary (#26) that the model
+// writes on the first open and the server reuses after.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type OutcomeMeasureOut, type OutcomesOut, type PostedResultOut } from "@/lib/api";
 
 type State = { kind: "closed" } | { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; outcomes: OutcomesOut };
@@ -28,8 +29,41 @@ export function TrialOutcomes({ nctId }: { nctId: string }) {
       {state.kind === "error" && (
         <p role="alert" className="text-red-700 dark:text-red-400">Outcomes could not be loaded: {state.message}</p>
       )}
-      {state.kind === "ready" && <OutcomeList outcomes={state.outcomes} />}
+      {state.kind === "ready" && (
+        <>
+          <PlainSummary nctId={nctId} />
+          <OutcomeList outcomes={state.outcomes} />
+        </>
+      )}
     </details>
+  );
+}
+
+type Summary = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; text: string };
+
+function PlainSummary({ nctId }: { nctId: string }) {
+  const [summary, setSummary] = useState<Summary>({ kind: "loading" });
+
+  useEffect(() => {
+    let live = true;
+    api.outcomeSummary(nctId)
+      .then((s) => live && setSummary({ kind: "ready", text: s.summary }))
+      .catch((e: Error) => live && setSummary({ kind: "error", message: e.message }));
+    return () => { live = false; };
+  }, [nctId]);
+
+  return (
+    <section className="flex flex-col gap-1 mt-2 text-sm rounded-lg border border-border p-3">
+      <h4 className="font-medium">In plain words</h4>
+      {summary.kind === "loading" && <p className="text-muted">Writing a plain-language summary…</p>}
+      {summary.kind === "error" && <p className="text-muted">A plain-language summary is not available right now.</p>}
+      {summary.kind === "ready" && (
+        <>
+          {summary.text.split(/\n\s*\n/).map((para, i) => <p key={i}>{para}</p>)}
+          <p className="text-muted">Written automatically from what the trial published; check the details below or ask your doctor.</p>
+        </>
+      )}
+    </section>
   );
 }
 
