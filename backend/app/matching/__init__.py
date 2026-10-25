@@ -16,8 +16,11 @@ from app.record import ProfileVersionId
 from app.trials import NctId
 from app.trace import RunId
 
+from app.matching.letter import CriterionScreen, TrialScreen, screen_letter
+
 __all__ = ["rescan", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
-           "respondent_questions_for_version", "Verdict", "DoctorQuestion", "RespondentQuestion", "RescanReport",
+           "respondent_questions_for_version", "screen_letter", "TrialScreen", "CriterionScreen",
+           "Verdict", "DoctorQuestion", "RespondentQuestion", "RescanReport",
            "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation", "TrialSiteDistance"]
 
 DIAGNOSIS_QUESTION = "diagnosis"   # the questionnaire question (Q6) a Diagnosis check reads

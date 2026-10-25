@@ -63,7 +63,7 @@ class SyncReport:
 
 
 __all__ = ["sync", "load_snapshot", "trial", "criteria", "sites", "active_trials", "studies_condition", "Trial",
-           "Criterion", "Site", "CriterionKind",
+           "Criterion", "Site", "CriterionKind", "TrialsUnavailable",
            "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES", "trial_columns", "trial_from_row", "active_filter"]
 
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
@@ -89,6 +89,8 @@ def studies_condition(trial: Trial, condition_term: str) -> bool:
 # Submodules import the types above; imported here (after them) so the `criteria` function below wins the name.
 from app.trials import criteria as splitting, ctgov, repo  # noqa: E402
 
+TrialsUnavailable = ctgov.TrialsUnavailable
+
 # For other modules' SQL that joins the trial table (one SQL text per question, ctx.py): its columns, row mapping
 # and the active filter, so no module restates them.
 trial_columns = repo.trial_columns
@@ -96,33 +98,36 @@ trial_from_row = repo.to_trial
 active_filter = repo.active_filter
 
 
-async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30) -> SyncReport:
-    """Fetch from ClinicalTrials.gov (Zetaris REST table first, HTTP fallback), upsert trials, split Criteria
-    only for new/changed hashes. Idempotent: same upstream text → unchanged, no model calls.
-    # TODO: ctgov.fetch(...) → for each: hash; compare with repo.trial(); if new/changed: criteria.split (deterministic,
-    #       LLM fast lane only if <2 items) → timeline.record_trials(ctx.wm, ...) (World Model ingest keyed by NCT; changed_ids = new or edited Trials)
-    """
-    raise NotImplementedError
-
-
-async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
-    """Record the Trials saved under `directory` (ClinicalTrials.gov v2 study JSON, one file per Trial; the
-    repo keeps data/trials_snapshot/) in place of a live sync. Criteria are split deterministically. Idempotent:
-    loading the same files again records nothing and reports every Trial unchanged."""
+async def _record(ctx: Ctx, studies: list[tuple[ctgov.RawStudy, str]], source: str) -> SyncReport:
+    """Split Criteria and record the studies. Same text again reports unchanged and writes nothing."""
     from app.worldmodel import timeline
 
-    studies = ctgov.read_snapshot(directory)
-    before = {s.nct_id: await repo.trial(ctx.ui_reader, NctId(s.nct_id)) for s, _ in studies}
+    before = {raw.nct_id: await repo.trial(ctx.ui_reader, NctId(raw.nct_id)) for raw, _ in studies}
     loaded = []
     for raw, fetched_at in studies:
-        t = ctgov.to_trial(raw, "snapshot", fetched_at)
+        t = ctgov.to_trial(raw, source, fetched_at)
         loaded.append((t, splitting.split_deterministic(t.nct_id, t.eligibility_hash, t.eligibility_text), raw.sites))
     report = await timeline.record_trials(ctx.wm, loaded, None)
     changed = {i.split(":", 1)[1] for i in report.changed_ids}
     return SyncReport(fetched=len(loaded),
                       new=tuple(t.nct_id for t, *_ in loaded if before[t.nct_id] is None),
                       changed=tuple(t.nct_id for t, *_ in loaded if before[t.nct_id] is not None and t.nct_id in changed),
-                      unchanged=tuple(t.nct_id for t, *_ in loaded if t.nct_id not in changed), source="snapshot")
+                      unchanged=tuple(t.nct_id for t, *_ in loaded if t.nct_id not in changed), source=source)
+
+
+async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 20) -> SyncReport:
+    """Recruiting studies for this condition and place. Criteria are split from the eligibility text.
+    Idempotent: the same upstream text records nothing the second time."""
+    studies, source = await ctgov.fetch(ctx, condition, location, max_trials)
+    fetched_at = ctx.now().date().isoformat()
+    return await _record(ctx, [(study, fetched_at) for study in studies], source)
+
+
+async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
+    """Record the Trials saved under `directory` (ClinicalTrials.gov v2 study JSON, one file per Trial; the
+    repo keeps data/trials_snapshot/) in place of a live sync. Criteria are split deterministically. Idempotent:
+    loading the same files again records nothing and reports every Trial unchanged."""
+    return await _record(ctx, ctgov.read_snapshot(directory), "snapshot")
 
 
 async def trial(ctx: Ctx, nct_id: NctId) -> Trial | None:

@@ -1,6 +1,6 @@
 -- db/schema.sql — Postgres for the app (our own container, separate from Zetaris's internal postgres).
 -- One writer per table:
---   patient, document, document_page                    app.record.repo
+--   patient, document, document_page, document_span     app.record.repo
 --   search_preference                                   app.record.repo (postcode and its coarse point, travel, contact)
 --   return_token                                        app.record.repo (sha256 of the return link's token)
 --   diagnosis_check                                     app.record.repo (Diagnosis checks and their answers)
@@ -68,6 +68,21 @@ CREATE TABLE document_page (               -- de-identified text only; raw bytes
   PRIMARY KEY (document_hash, number)
 );
 
+CREATE TABLE document_span (              -- one region Nemotron Parse read; the highlight a Citation opens
+  id            text PRIMARY KEY,          -- "{hash12}:p{page}:b{ordinal}", stable for the same parse
+  document_hash text NOT NULL,
+  page          int  NOT NULL,
+  ordinal       int  NOT NULL,             -- reading order on the page
+  kind          text NOT NULL,             -- the parse class: Text, Title, Page-header, ...
+  text          text NOT NULL,             -- the words inside the box; a Fact quotes one of these
+  x0            double precision NOT NULL, -- fraction of the page, origin top-left
+  y0            double precision NOT NULL, -- xmin/xmax are Postgres system columns, so the box is x0,y0,x1,y1
+  x1            double precision NOT NULL,
+  y1            double precision NOT NULL,
+  UNIQUE (document_hash, page, ordinal),
+  FOREIGN KEY (document_hash, page) REFERENCES document_page(document_hash, number)
+);
+
 CREATE TABLE fact (                        -- FHIR-lite, one table with resource discriminator (append-only)
   id            text PRIMARY KEY,
   document_hash text NOT NULL REFERENCES document(hash),
@@ -79,6 +94,7 @@ CREATE TABLE fact (                        -- FHIR-lite, one table with resource
   unit          text,
   observed_on   date NOT NULL,
   quote         text NOT NULL,
+  span_id       text REFERENCES document_span(id),  -- the box on the page this quote was read from; NULL for a questionnaire
   question      text,                     -- "Q3" for a Patient-reported Fact from an Intake questionnaire
   created_at    timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (document_hash, page) REFERENCES document_page(document_hash, number)

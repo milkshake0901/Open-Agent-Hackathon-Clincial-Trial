@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     meterless_runtime_token: str = ""
     meterless_app_id: str = "trialmatch"
     meterless_model: str = NEMOTRON_LIGHTNING  # plain text calls outside a lane
+    # Nemotron Parse only. A separate Doppler secret from the Nightshift NVIDIA key. Never commit it.
+    nvidia_parse_api_key: str = ""
+    nvidia_parse_model: str = "nvidia/nemotron-parse"
     # lane → Nightshift model id. Pinned to a Nemotron lane (meterless/auto may route elsewhere);
     # override with LANE_MODELS='{"deep": "..."}'. Per-lane choice is still open.
     lane_models: dict[str, str] = {"fast": NEMOTRON_LIGHTNING, "deep": NEMOTRON_LIGHTNING, "judge": NEMOTRON_LIGHTNING}

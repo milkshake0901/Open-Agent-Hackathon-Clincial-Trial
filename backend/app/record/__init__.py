@@ -16,6 +16,7 @@ from app.ctx import Ctx
 from app.record import diagnosis as condition_terms, loop, questionnaire, repo, storage
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
+from app.record.ground import GroundedAnswer, GroundedCitation, LetterSpan, ask, letter_spans, page_png
 from app.record.pdf import UnreadableDocument, to_pages
 from app.record.questionnaire import (
     DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section, SubmittedAnswers,
@@ -59,6 +60,7 @@ __all__ = [
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
+    "ask", "page_png", "letter_spans", "GroundedAnswer", "GroundedCitation", "LetterSpan",
     "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId", "DiagnosisCheckId",
 ]
 

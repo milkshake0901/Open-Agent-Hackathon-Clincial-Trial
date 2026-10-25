@@ -294,4 +294,71 @@ class VersionDiffOut(BaseModel):
     verdicts_changed: list[VerdictChangeOut] = []   # Trials whose outcome or any Criterion result moved
 
 
+class AskIn(BaseModel):
+    question: str
+
+
+class GroundedCitationOut(BaseModel):
+    span_id: str
+    document_hash: str
+    filename: str
+    page: int
+    quote: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class AskOut(BaseModel):
+    answer: Literal["yes", "no", "unknown"]
+    reasoning: str
+    as_of: date
+    patient_label: str
+    document_hash: str
+    filename: str
+    page_count: int
+    citations: list[GroundedCitationOut]
+
+
+class TrialSyncIn(BaseModel):
+    condition: str
+    location: str = "United Kingdom"
+    max_trials: int = 20
+
+
+class TrialSyncOut(BaseModel):
+    fetched: int
+    new: list[str]
+    changed: list[str]
+    unchanged: list[str]
+    source: str
+
+
+class ScreenIn(BaseModel):
+    nct_ids: list[str]
+
+
+class CriterionScreenOut(BaseModel):
+    criterion_id: str
+    kind: Literal["inclusion", "exclusion"]
+    text: str
+    outcome: Literal["met", "not_met", "unknown"]
+    rationale: str
+    span_id: str | None
+    page: int | None
+    quote: str | None
+    x0: float | None
+    y0: float | None
+    x1: float | None
+    y1: float | None
+
+
+class TrialScreenOut(BaseModel):
+    nct_id: str
+    title: str
+    outcome: Literal["eligible", "possible", "excluded"]
+    criteria: list[CriterionScreenOut]
+
+
 # TODO: SyncReportOut, RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.

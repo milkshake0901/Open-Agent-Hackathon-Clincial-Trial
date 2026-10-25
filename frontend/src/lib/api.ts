@@ -190,6 +190,29 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type GroundedCitation = {
+  span_id: string;
+  document_hash: string;
+  filename: string;
+  page: number;
+  quote: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+};
+
+export type AskAnswer = {
+  answer: "yes" | "no" | "unknown";
+  reasoning: string;
+  as_of: string;
+  patient_label: string;
+  document_hash: string;
+  filename: string;
+  page_count: number;
+  citations: GroundedCitation[];
+};
+
 export const api = {
   definition: () => call<Questionnaire>("/questionnaire/definition"),
   createPatient: (label: string) =>
@@ -240,6 +263,11 @@ export const api = {
     call<DoctorQuestion[]>(
       `/patients/${encodeURIComponent(patientId)}/questions?version=${encodeURIComponent(versionId)}`,
     ),
+  ask: (patientId: string, question: string) =>
+    call<AskAnswer>(`/patients/${encodeURIComponent(patientId)}/ask`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
   respondentQuestions: (patientId: string, versionId: string) =>
     call<RespondentQuestion[]>(
       `/patients/${encodeURIComponent(patientId)}/respondent-questions?version=${encodeURIComponent(versionId)}`,

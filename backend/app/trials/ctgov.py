@@ -1,15 +1,25 @@
 """app/trials/ctgov.py — ClinicalTrials.gov access. Private to the trials module."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from app.ctx import Ctx
 from app.trials import NctId, TrialSite, Trial
+
+API = "https://clinicaltrials.gov/api/v2/studies"
+# The site's WAF rejects some HTTP libraries. urllib uses the platform TLS stack.
+_HEADERS = {"Accept": "application/json", "User-Agent": "trialmatch/0.1 (research; https://clinicaltrials.gov/data-api)"}
+_FIELDS = "IdentificationModule,StatusModule,ConditionsModule,EligibilityModule,ContactsLocationsModule"
+_UK = frozenset({"uk", "u.k.", "u.k", "gb", "great britain", "britain", "england"})
 
 
 @dataclass(frozen=True)
@@ -23,13 +33,63 @@ class RawStudy:
     sites: tuple[TrialSite, ...] = ()
 
 
+class TrialsUnavailable(Exception):
+    """ClinicalTrials.gov did not return studies."""
+
+
+def location_for_search(location: str) -> str:
+    """UK sites are indexed as United Kingdom. Other places are sent as written."""
+    trimmed = location.strip()
+    return "United Kingdom" if trimmed.casefold() in _UK else trimmed
+
+
+def studies_url(condition: str, location: str, page_size: int, page_token: str | None = None) -> str:
+    """One recruiting search. Condition and place are separate parameters, so a prior drug is not required to match."""
+    params: list[tuple[str, str]] = [
+        ("query.cond", condition.strip()),
+        ("filter.overallStatus", "RECRUITING"),
+        ("pageSize", str(page_size)),
+        ("fields", _FIELDS),
+        ("format", "json"),
+    ]
+    place = location_for_search(location)
+    if place:
+        params.append(("query.locn", place))
+    if page_token:
+        params.append(("pageToken", page_token))
+    return f"{API}?{urllib.parse.urlencode(params)}"
+
+
+def _get_json(url: str) -> dict:
+    request = urllib.request.Request(url, headers=_HEADERS)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            body = response.read()
+    except urllib.error.URLError as e:
+        raise TrialsUnavailable(f"ClinicalTrials.gov did not answer: {e.reason}") from e
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as e:
+        raise TrialsUnavailable("ClinicalTrials.gov did not return JSON") from e
+
+
 async def fetch(ctx: Ctx, condition: str, location: str, max_trials: int) -> tuple[list[RawStudy], str]:
-    """Returns (studies, source). Try Zetaris first: SELECT from views over a registered REST table
-    (db/zetaris_register.sql). A REST table is one fixed URL, so `condition`/`location` are part of the registered
-    endpoint, not pushed down from a WHERE clause. If Zetaris errors or paging stalls, fall back to httpx
-    GET /api/v2/studies with pageToken, ≤50 req/min. The two paths produce RawStudy identically so the rest of the
-    module cannot tell."""
-    raise NotImplementedError
+    """Recruiting studies for this condition and place, capped at max_trials. Source is http: the query is
+    built per patient, and a Zetaris REST table is one fixed URL."""
+    del ctx
+    if max_trials < 1:
+        return [], "http"
+    studies: list[RawStudy] = []
+    token: str | None = None
+    while len(studies) < max_trials:
+        page_size = min(max_trials - len(studies), 1000)
+        data = await asyncio.to_thread(_get_json, studies_url(condition, location, page_size, token))
+        batch = data.get("studies") or []
+        studies.extend(parse_study(study) for study in batch)
+        token = data.get("nextPageToken")
+        if not token or not batch:
+            break
+    return studies[:max_trials], "http"
 
 
 def eligibility_hash(text: str) -> str:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, time, timezone
+from typing import Sequence
 
 from app.record.types import (
     DiagnosisCheck, DiagnosisCheckId, Document, DocumentHash, Fact, FactId, FactResource, Page, PatientId, ProfileVersion,
@@ -189,6 +190,28 @@ async def insert_document(tx: Tx, doc: Document, *, uploaded_at: "datetime | Non
         await tx.execute("INSERT INTO document_page (document_hash, number, text, tables_json) "
                          "VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT DO NOTHING",
                          (doc.hash, p.number, p.text, json.dumps(p.tables)))
+
+
+async def spans_for_patient(reader: SqlReader, patient_id: PatientId) -> list[dict]:
+    """Every region parsed from this patient's letters, in reading order. The words and the box travel together."""
+    return await reader.fetch(
+        f"SELECT s.id, s.document_hash, s.page, s.ordinal, s.kind, s.text, s.x0, s.y0, s.x1, s.y1, "
+        f"d.filename, d.page_count, p.label AS patient_label "
+        f"FROM {reader.table('document_span')} s "
+        f"JOIN {reader.table('document')} d ON d.hash = s.document_hash "
+        f"JOIN {reader.table('patient')} p ON p.id = d.patient_id "
+        f"WHERE d.patient_id = $1 ORDER BY d.uploaded_at, s.page, s.ordinal",
+        (patient_id,))
+
+
+async def insert_spans(tx: Tx, document_hash: str, spans: Sequence[tuple]) -> None:
+    """One row per region the parse model read. A Fact's span_id points at one of these so a trial reason
+    can open the box on the page. `spans` is (id, page, ordinal, kind, text, x0, y0, x1, y1)."""
+    for span in spans:
+        await tx.execute(
+            "INSERT INTO document_span (id, document_hash, page, ordinal, kind, text, x0, y0, x1, y1) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (document_hash, page, ordinal) DO NOTHING",
+            (span[0], document_hash, *span[1:]))
 
 # Facts and Profile versions are NOT inserted here: they are written only through
 # app.worldmodel.timeline.commit_profile_version (World Model → projector), per ADR 0001.

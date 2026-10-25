@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 const backend = process.env.TRIALMATCH_API_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // A grounded question waits on the model. The rewrite proxy otherwise closes at 30s.
+  experimental: { proxyTimeout: 180_000 },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
