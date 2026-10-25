@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings
 
 _REPO = Path(__file__).resolve().parents[2]
 NEMOTRON_LIGHTNING = "nvidia/nemotron-3.5-lightning-30b-a3b"   # listed by this box's GET /v1/models
+NEMOTRON_ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"
 
 
 class Settings(BaseSettings):
@@ -21,9 +22,10 @@ class Settings(BaseSettings):
     meterless_runtime_token: str = ""
     meterless_app_id: str = "trialmatch"
     meterless_model: str = NEMOTRON_LIGHTNING  # plain text calls outside a lane
-    # lane → Nightshift model id. Pinned to a Nemotron lane (meterless/auto may route elsewhere);
-    # override with LANE_MODELS='{"deep": "..."}'. Per-lane choice is still open.
-    lane_models: dict[str, str] = {"fast": NEMOTRON_LIGHTNING, "deep": NEMOTRON_LIGHTNING, "judge": NEMOTRON_LIGHTNING}
+    # lane → Nightshift model id, pinned rather than meterless/* so the model behind each agent is fixed (DEVELOPER.md).
+    # All on Ultra: Lightning stops at ~60 s on the Intake prompt and is switched off in this box's Compute sources.
+    # Once it is on, move judge to Lightning so a second model checks the Matcher. Override with LANE_MODELS='{...}'.
+    lane_models: dict[str, str] = {"fast": NEMOTRON_ULTRA, "deep": NEMOTRON_ULTRA, "judge": NEMOTRON_ULTRA}
 
     media_dir: str = "data/media"             # generated images and audio; gitignored
     media_privacy: str = "local-only"         # floor for media source jobs: local-only | edge-only | cloud-ok
