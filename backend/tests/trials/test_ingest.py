@@ -328,3 +328,22 @@ async def test_changed_contacts_replace_the_stored_ones(ctx, tmp_path):
     c = await trials.contacts(ctx, trials.NctId("NCT00000007"))
     assert c.central == (trials.Contact(name="New Desk", role="CONTACT"),)
     assert c.officials == () and c.sponsor == "" and c.responsible_party is None
+
+
+async def test_an_ingest_run_writes_its_start_and_report_to_the_log_file(ctx, tmp_path):
+    from app import logfile
+    source = save_pages(tmp_path / "pages", [study("NCT00000001", sites=[AU]),
+                                             study("NCT00000009", status="COMPLETED", completion="2025-01", sites=[AU])])
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        await trials.ingest(ctx, source)
+    finally:
+        logfile.reset()
+
+    steps = [json.loads(x) for x in path.read_text().splitlines()]
+    started = next(s for s in steps if s["step"] == "trials.ingest.started")
+    finished = next(s for s in steps if s["step"] == "trials.ingest.finished")
+    assert started["source"] == "saved_pages"
+    assert finished["fetched"] == 2 and finished["new"] == ["NCT00000001", "NCT00000009"]
+    assert finished["closed"] == ["NCT00000009"] and finished["unchanged"] == 0 and finished["dropped"] == []

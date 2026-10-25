@@ -320,3 +320,23 @@ async def test_what_the_model_is_given_is_read_through_the_agent_reader(clean_db
     agent.tables.clear()
     assert (await draft(http, patient, version, CLOSED)).status_code == 200
     assert {"trial", "trial_outcome", "trial_publication", "fact"} <= agent.tables
+
+
+async def test_a_drafted_enquiry_is_logged_without_the_respondents_or_the_contacts_details(clean_db, tmp_path, http):
+    import json
+
+    from app import logfile
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        patient, version, _ = await judged(clean_db, tmp_path / "pages", http,
+                                           with_contacts(study(NCT, sites=[sydney([SAM])])))
+        assert (await draft(http, patient, version)).status_code == 200
+    finally:
+        logfile.reset()
+
+    text = path.read_text()
+    [line] = [s for s in map(json.loads, text.splitlines()) if s["step"] == "enquiry.drafted"]
+    assert line["nct_id"] == NCT and line["profile_version_id"] == version and line["template"] == "open"
+    for private in ("respondent@example.com", "Demo patient E", "Sam Coordinator", "sam@example.org"):
+        assert private not in text

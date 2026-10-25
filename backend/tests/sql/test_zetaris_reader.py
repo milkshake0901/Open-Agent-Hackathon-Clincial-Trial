@@ -134,3 +134,18 @@ async def test_wait_visible_gives_up_with_not_yet_visible_once_the_bound_elapses
     with pytest.raises(NotYetVisible):
         await reader(answer(["nct_id"]), poll_s=0).wait_visible("SELECT nct_id FROM t", (), expect_rows=1,
                                                                 timeout_s=0.05)
+
+
+async def test_every_query_writes_a_zetaris_sql_line_to_the_log_file(tmp_path):
+    from app import logfile
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        await reader(answer(["n"], ["1"], ["2"])).fetch("SELECT n FROM t WHERE nct_id = $1", ("NCT1",))
+    finally:
+        logfile.reset()
+
+    [line] = [json.loads(x) for x in path.read_text().splitlines()]
+    assert line["step"] == "zetaris.sql" and line["logger"] == "app.zetaris"
+    assert line["sql"] == "SELECT n FROM t WHERE nct_id = 'NCT1'" and line["rows"] == 2
+    assert isinstance(line["duration_ms"], int)

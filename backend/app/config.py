@@ -36,5 +36,10 @@ class Settings(BaseSettings):
     raw_documents_dir: str = "data/raw"       # gitignored
     trials_snapshot_dir: str = str(_REPO / "data" / "trials_snapshot")   # saved Trials, loaded at start-up (#12)
 
+    # every pipeline step and model call, one JSON object per line (app/logfile.py, #35); gitignored
+    log_file: str = str(_REPO / "data" / "logs" / "trialmatch.jsonl")
+    log_max_bytes: int = 10_000_000           # rotated at this size, keeping log_backups old files (.1, .2, ...)
+    log_backups: int = 5
+
     # repo root .env, whether run from the root or backend/; keys other tools use (Zetaris admin, scripts) are ignored
     model_config = {"env_file": ("../.env", ".env"), "extra": "ignore"}
