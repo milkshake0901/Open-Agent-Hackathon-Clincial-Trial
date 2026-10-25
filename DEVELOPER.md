@@ -196,7 +196,8 @@ The app and `scripts/ingest_trials.py` write every step to one file, `data/logs/
 | `llm.complete` | every model call through `llm.complete`, each attempt, run or not | `lane`, `model_requested`, `model_answered`, `system`, `user`, `raw`, `parsed`, `error`, `duration_ms`, `run_id` (null outside a run) |
 | `zetaris.sql` | every agent query through Zetaris | `sql`, `rows`, `error`, `duration_ms` |
 | `matching.rescan.started` / `matching.trial_judged` / `matching.rescan.finished` | a Re-scan | `run_id`, `profile_version_id`, `to_judge`; `nct_id`, `outcome`; `judged`, `failed` |
-| `record.diagnosis_check.offered` / `.answered` | the Diagnosis check API | `patient_id`, `check`, `answer` |
+| `matching.rescan.no_condition_term` | a Re-scan for a patient with no Condition term: it judges nothing (ADR 0005) | `run_id`, `profile_version_id`, `patient_id` |
+| `record.diagnosis_check.offered` / `.answered` | a Diagnosis check is offered or answered (`record.check_diagnosis`, `record.answer_diagnosis_check`) | `patient_id`, `check` (its de-identified words, shortlist, ticked labels, status), `answer` (with de-identified `text`) |
 | `enquiry.drafted`, `trials.outcome_summary.drafted` | a draft is written | `nct_id`, ids and `model_answered` (never the recipient or the body) |
 | `trials.ingest.started` / `.finished` | an ingest run | `source`; the report's `fetched`, `new`, `changed`, `unchanged`, `closed`, `dropped` |
 
