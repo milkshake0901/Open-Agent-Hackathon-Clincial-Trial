@@ -210,10 +210,10 @@ class LivePages:
 
 
 __all__ = ["ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
-           "active_trials", "closed_trials", "outcome_summary",
+           "active_trials", "outcome_summary",
            "condition_labels", "search_condition_labels", "ConditionLabel",
            "open_trials_with_labels", "closed_trials_with_labels",
-           "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
+           "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
            "OutcomeMeasure", "Outcomes", "OutcomeSummary", "PostedResult", "ResultValue", "Publication",
            "SavedPages", "LivePages",
            "NctId", "CriterionId", "SyncReport", "IngestReport", "ACTIVE_STATUSES", "CLOSED_STATUSES",
@@ -237,23 +237,6 @@ CLOSED_YEARS_KEPT = 15
 # A stored study is Open (ACTIVE_STATUSES) or Closed (CLOSED_STATUSES). Any other status is never stored: WITHDRAWN
 # (withdrawn before enrolling anyone, not a Trial per the glossary) and the expanded access statuses (AVAILABLE,
 # NO_LONGER_AVAILABLE, TEMPORARILY_NOT_AVAILABLE, APPROVED_FOR_MARKETING), which are neither joinable nor research.
-
-_STOP_WORDS = frozenset({"of", "the", "and", "with", "in", "a", "an"})
-
-
-def _words(text: str) -> frozenset[str]:
-    import re
-    return frozenset(w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOP_WORDS)
-
-
-def studies_condition(trial: Trial, condition_term: str) -> bool:
-    """Does the Trial list this condition (#14: a confirmed diagnosis term selects which snapshot Trials are judged)?
-    Word-set containment either way against each listed condition, ignoring case, punctuation and filler words:
-    "lung cancer" and "non-small cell lung cancer stage iv" both match "Non-Small Cell Lung Cancer"; "breast cancer"
-    does not. No MeSH or synonym expansion yet."""
-    want = _words(condition_term)
-    return bool(want) and any(want <= have or have <= want for have in map(_words, trial.conditions) if have)
-
 
 # Submodules import the types above; imported here (after them) so the `criteria` function below wins the name.
 from app.trials import criteria as splitting, ctgov, repo, summary as summaries  # noqa: E402
@@ -342,12 +325,6 @@ async def active_trials(ctx: Ctx) -> list[Trial]:
     return await repo.active_trials(ctx.ui_reader)
 
 
-async def closed_trials(ctx: Ctx, condition_term: str) -> list[Trial]:
-    """Closed trials that study this Condition term (the same `studies_condition` matching as Open trials), newest
-    first by cutoff date (Trial.closed_on). Never judged: they have no Criterion results or Verdict (ADR 0004)."""
-    return _newest_first([t for t in await repo.closed_trials(ctx.ui_reader) if studies_condition(t, condition_term)])
-
-
 def _newest_first(closed: list[Trial]) -> list[Trial]:
     return sorted(sorted(closed, key=lambda t: t.nct_id), key=lambda t: t.closed_on or "", reverse=True)
 
@@ -401,8 +378,8 @@ async def open_trials_with_labels(ctx: Ctx, labels: list[str]) -> list[Trial]:
 
 
 async def closed_trials_with_labels(ctx: Ctx, labels: list[str]) -> list[Trial]:
-    """The Closed trials listing any of these Condition labels, newest first by cutoff date (Trial.closed_on), as
-    `closed_trials`. Never judged (ADR 0004)."""
+    """The Closed trials listing any of these Condition labels, newest first by cutoff date (Trial.closed_on). Never
+    judged: they have no Criterion results or Verdict (ADR 0004)."""
     return _newest_first([t for t in await repo.closed_trials(ctx.ui_reader) if _lists_any(t, labels)])
 
 

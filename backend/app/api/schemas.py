@@ -64,25 +64,34 @@ class RescanSummary(BaseModel):
 
 
 class DiagnosisCheckIn(BaseModel):
-    text: str | None = None     # a re-wording after "no"; omitted: the latest accepted diagnosis answer
+    text: str | None = None     # a re-wording; omitted: the latest accepted diagnosis answer
 
 
 class DiagnosisAnswerIn(BaseModel):
-    answer: Literal["yes", "no", "not_sure"]
+    answer: Literal["ticked", "none_of_these", "not_sure"]
+    labels: list[str] = []      # "ticked": one or more labels from the check's shortlist
+    text: str | None = None     # "none_of_these": new words, which start a new check (returned instead)
+
+
+class ConditionLabelOut(BaseModel):
+    """trials.ConditionLabel: a Condition label and how many stored Open and Closed trials list it."""
+    label: str
+    open: int
+    closed: int
 
 
 class DiagnosisCheckOut(BaseModel):
-    """record.DiagnosisCheck. `message` is what to show the Respondent ("We understood this as ...")."""
+    """record.DiagnosisCheck. `message` is what to show the Respondent ("Tick the conditions that match ...")."""
     id: str
     text: str
-    suggested_term: str | None          # None when the model was not confident enough to offer one
-    confidence: float
-    status: Literal["proposed", "confirmed", "rejected", "not_sure", "unclear"]
-    condition: str | None               # the confirmed term that selects Trials
+    shortlist: list[ConditionLabelOut]   # offered labels, best fit first; empty when none fit
+    ticked: list[str]
+    status: Literal["proposed", "ticked", "none_of_these", "not_sure"]
+    condition: list[str] | None         # the Condition term: the ticked labels that select Trials
     needs_gp: bool                      # show the GP message; a diagnosis Doctor question is raised
-    ask_again: bool                     # "no": ask the Respondent to re-word, then POST the check again
+    ask_again: bool                     # "none_of_these" without new words: ask the Respondent to re-word
     message: str
-    rescan: RescanSummary | None = None   # set when a "yes" re-scanned the current version
+    rescan: RescanSummary | None = None   # set when ticking labels re-scanned the current version
 
 
 class ConflictSideOut(BaseModel):
@@ -380,7 +389,7 @@ class ClosedTrialOut(BaseModel):
 
 
 class ClosedTrialListOut(BaseModel):
-    condition_term: str | None  # None until a Diagnosis check confirms one; then `trials` is empty
+    condition_term: list[str] | None  # the ticked Condition labels; None (and `trials` empty) until some are ticked
     trials: list[ClosedTrialOut]  # newest first by closed_on
 
 

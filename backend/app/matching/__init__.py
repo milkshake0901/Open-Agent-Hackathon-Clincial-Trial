@@ -71,14 +71,15 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[V
     recruiting site (unknown distance last); ties by NCT id. Results, Citations and questions are loaded (the
     Trials page shows them). Each Verdict carries its sites' km from the patient's CURRENT postcode, and Trials
     with no recruiting site within the travel limit are flagged `further_away`, never dropped. Distance only
-    orders and flags: the outcome is the stored one, with or without a postcode. Once the patient's diagnosis term
-    is confirmed (#14), only Trials that study it are listed, including Verdicts judged before it was confirmed.
+    orders and flags: the outcome is the stored one, with or without a postcode. Once the patient has a Condition
+    term (ADR 0005), only Trials listing one of its labels are listed, including Verdicts judged before it was
+    chosen; Verdicts for Trials an earlier choice selected stay stored but are not listed.
     A Trial that closed after it was judged keeps its Verdict (ADR 0002, 0004) and is listed after every Trial
     still open, ranked the same way among the others that closed."""
     patient_id = (await record.profile_version(ctx, version_id)).patient_id
     term = await loop.condition_term_for(ctx, patient_id)
     open_now = await trials.active_trials(ctx)
-    selected = _selector(term, open_now + (await trials.closed_trials(ctx, term) if term else []))
+    selected = await _selector(ctx, term, with_closed=True)
     stored = [vu for vu in await repo.verdicts_for_version(ctx.ui_reader, version_id) if selected(vu[0].nct_id)]
     if not stored:
         return []
@@ -118,13 +119,13 @@ async def change_between(ctx: Ctx, nct_id: NctId, from_version: ProfileVersionId
 async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[DoctorQuestion]:
     """Deduplicated across Trials by criterion subject; each carries the Trials it would unblock (`unblocks`).
     The first occurrence (Trial, then Criterion order) supplies criterion_id, nct_id and text. Only Trials selected
-    by a confirmed diagnosis term count (#14). When the diagnosis needs the GP ("not sure", or no confident term),
+    by the Condition term count (ADR 0005). When the diagnosis needs the GP (answered "not sure"),
     a patient-level question for the diagnosis comes first: criterion_id and nct_id None, subject "diagnosis"."""
     from dataclasses import replace
 
     profile = await record.profile_version(ctx, version_id)
     held = await record.diagnosis(ctx, profile.patient_id)
-    selected = _selector(held.condition_term if held else None, await trials.active_trials(ctx))
+    selected = await _selector(ctx, held.condition_term if held else None)
     first: dict[str, DoctorQuestion] = {}
     if held is not None and held.needs_gp:
         first["\0diagnosis"] = DoctorQuestion(
@@ -141,24 +142,30 @@ async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[
     return [replace(q, unblocks=tuple(trials_by_subject.get(k, ()))) for k, q in first.items()]
 
 
-def _selector(condition_term: str | None, active: list[trials.Trial]):
+async def _selector(ctx: Ctx, condition_term: tuple[str, ...] | None, *, with_closed: bool = False):
+    """Which Trials count: all while there is no Condition term, else the Open trials (and, with_closed, the Closed
+    trials) listing one of its labels."""
     if condition_term is None:
         return lambda nct_id: True
-    chosen = {t.nct_id for t in active if trials.studies_condition(t, condition_term)}
+    labels = list(condition_term)
+    found = await trials.open_trials_with_labels(ctx, labels)
+    if with_closed:
+        found += await trials.closed_trials_with_labels(ctx, labels)
+    chosen = {t.nct_id for t in found}
     return lambda nct_id: nct_id in chosen
 
 
 async def _selected(ctx: Ctx, version_id: ProfileVersionId):
-    """Which Trials the version's patient is matched against: all, or those studying the confirmed diagnosis."""
+    """Which Trials the version's patient is matched against: all, or those its Condition term selects."""
     profile = await record.profile_version(ctx, version_id)
-    return _selector(await loop.condition_term_for(ctx, profile.patient_id), await trials.active_trials(ctx))
+    return await _selector(ctx, await loop.condition_term_for(ctx, profile.patient_id))
 
 
 async def respondent_questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[RespondentQuestion]:
     """Deduplicated across Trials by subject (the questionnaire question); each carries the Trials it would unblock.
     The first occurrence (Trial, then Criterion order) supplies criterion_id, nct_id and text. Answering one is a
     questionnaire resubmission: the new Profile version is re-scanned and gets its own Verdicts and questions.
-    Only Trials selected by a confirmed diagnosis term count (#14), as for Doctor questions. While the diagnosis
+    Only Trials the Condition term selects count (ADR 0005), as for Doctor questions. While the diagnosis
     needs the GP, the diagnosis question is not asked again: the patient-level Doctor question covers it."""
     from dataclasses import replace
 

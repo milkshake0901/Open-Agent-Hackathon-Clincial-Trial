@@ -37,18 +37,19 @@ CREATE TABLE return_token (               -- private return link; only the sha25
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE diagnosis_check (            -- proposed condition terms for the free-text diagnosis and the Respondent's answer (#14);
-                                          -- NOT Facts: the diagnosis Fact keeps the Respondent's words as its quote
+CREATE TABLE diagnosis_check (            -- Diagnosis checks: the Condition labels offered for the free-text diagnosis and the
+                                          -- Respondent's answer (#14, #33, ADR 0005); NOT Facts: the diagnosis Fact keeps the
+                                          -- Respondent's words as its quote
   id             text PRIMARY KEY,
   patient_id     text NOT NULL REFERENCES patient(id),
-  text           text NOT NULL,           -- the words the term was proposed from (the answer, or a re-wording after "no")
-  suggested_term text,                    -- NULL when the model could not propose one with confidence
-  confidence     real NOT NULL,
-  status         text NOT NULL CHECK (status IN ('proposed','confirmed','rejected','not_sure','unclear')),
+  text           text NOT NULL,           -- the words the shortlist was made from (the answer, or a re-wording)
+  shortlist      jsonb NOT NULL DEFAULT '[]',   -- [{label, open, closed}] offered, in order of fit; empty when none fit
+  ticked         jsonb NOT NULL DEFAULT '[]',   -- the labels ticked (from shortlist): the Condition term
+  status         text NOT NULL CHECK (status IN ('proposed','ticked','none_of_these','not_sure')),
   created_at     timestamptz NOT NULL,
   answered_at    timestamptz,
-  settled_seq    bigint                   -- set from diagnosis_check_settled when confirmed / not_sure / unclear; the
-                                          -- latest settled check holds (a clock can repeat, a sequence cannot)
+  settled_seq    bigint                   -- set from diagnosis_check_settled when ticked / not_sure; the latest
+                                          -- settled check holds (a clock can repeat, a sequence cannot)
 );
 CREATE SEQUENCE diagnosis_check_settled;
 CREATE INDEX diagnosis_check_by_patient ON diagnosis_check (patient_id, settled_seq);

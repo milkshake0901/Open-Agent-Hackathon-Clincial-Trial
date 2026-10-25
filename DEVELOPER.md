@@ -50,8 +50,9 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   └── repo.py           SQL reads; writes only documents and pages
 │   │   │
 │   │   ├── trials/               TRIALS: Australian ClinicalTrials.gov studies, Open and Closed trials (ADR 0004)
-│   │   │   ├── __init__.py       public API: ingest, load_snapshot, trial, active_trials, closed_trials, criteria,
-│   │   │   │                     sites, contacts, outcomes, outcome_summary, page_url
+│   │   │   ├── __init__.py       public API: ingest, load_snapshot, trial, active_trials, condition_labels,
+│   │   │   │                     search_condition_labels, open_trials_with_labels, closed_trials_with_labels,
+│   │   │   │                     criteria, sites, contacts, outcomes, outcome_summary, page_url
 │   │   │   ├── ctgov.py          study JSON → Trials: saved pages, or the live v2 API paged by pageToken (paced, retried)
 │   │   │   ├── criteria.py       eligibility text → Criteria (deterministic split, model fallback)
 │   │   │   ├── summary.py        a Closed trial's plain-language Outcome summary: prompt and Outcome content hash

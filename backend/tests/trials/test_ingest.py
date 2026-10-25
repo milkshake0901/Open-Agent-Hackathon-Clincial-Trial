@@ -40,6 +40,7 @@ def save_pages(directory, *pages):
 
 
 AU = site("Royal Prince Alfred Hospital", "Camperdown", "Australia")
+LUNG = ["Non-Small Cell Lung Cancer"]
 
 
 async def test_an_australian_open_trial_is_ingested_from_saved_pages(ctx, tmp_path):
@@ -149,7 +150,7 @@ async def test_a_trial_judged_while_open_keeps_its_verdict_once_closed_and_is_ne
     await trials.ingest(ctx, save_pages(tmp_path / "after", [study("NCT00000001", status="COMPLETED", sites=[AU])]))
 
     assert await matching.verdict(ctx, trials.NctId("NCT00000001"), v1) == judged
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000001"]
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, LUNG)] == ["NCT00000001"]
     calls = len(fake_llm.calls)
     again = await matching.rescan(ctx, v1)
     assert again.planned == () and again.judged == () and again.skipped_existing == ()
@@ -167,7 +168,7 @@ async def test_closed_trials_finished_within_15_years_are_kept_and_older_ones_ar
     assert report.new == ("NCT00000014", "NCT00000001")
     assert report.closed == ("NCT00000014",) and report.dropped == ("NCT00000016",)
     assert await trials.trial(ctx, trials.NctId("NCT00000016")) is None
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000014"]
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, LUNG)] == ["NCT00000014"]
     assert [t.nct_id for t in await trials.active_trials(ctx)] == ["NCT00000001"]
 
 
@@ -184,7 +185,7 @@ async def test_the_cutoff_falls_back_to_completion_then_last_update(ctx, tmp_pat
     assert report.closed == ("NCT00000023", "NCT00000024")
 
 
-async def test_closed_trials_are_listed_for_a_condition_term_newest_first(ctx, tmp_path):
+async def test_closed_trials_are_listed_for_condition_labels_newest_first(ctx, tmp_path):
     source = save_pages(tmp_path, [
         study("NCT00000031", status="COMPLETED", sites=[AU], primary_completion="2015-04"),
         study("NCT00000032", status="TERMINATED", sites=[AU], primary_completion="2021-11-30"),
@@ -195,10 +196,10 @@ async def test_closed_trials_are_listed_for_a_condition_term_newest_first(ctx, t
 
     await trials.ingest(ctx, source)
 
-    closed = await trials.closed_trials(ctx, "non-small cell lung cancer")
+    closed = await trials.closed_trials_with_labels(ctx, LUNG)
     assert [(t.nct_id, t.closed_on) for t in closed] == [("NCT00000032", "2021-11-30"), ("NCT00000033", "2018-01-01"),
                                                          ("NCT00000031", "2015-04-01")]
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "breast cancer")] == ["NCT00000034"]
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, ["Breast Cancer"])] == ["NCT00000034"]
 
 
 async def test_a_closed_trial_that_ages_past_15_years_is_dropped_on_a_later_run(ctx, tmp_path):
@@ -216,7 +217,7 @@ async def test_a_closed_trial_that_ages_past_15_years_is_dropped_on_a_later_run(
     assert later.unchanged == ("NCT00000042",) and later.new == () and later.changed == ()
     assert await trials.trial(ctx, trials.NctId("NCT00000041")) is None
     assert await trials.sites(ctx, trials.NctId("NCT00000041")) == ()
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000042"]
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, LUNG)] == ["NCT00000042"]
     events = len(ctx.wm.events())
     again = await trials.ingest(a_year_on, source)
     assert again.dropped == ("NCT00000041",) and len(ctx.wm.events()) == events
@@ -263,7 +264,7 @@ async def test_a_status_neither_open_nor_closed_is_not_stored_and_closed_counts_
     assert report.new == ("NCT00000063",) and report.dropped == ("NCT00000062",)
     assert await trials.trial(ctx, trials.NctId("NCT00000061")) is None
     assert await trials.trial(ctx, trials.NctId("NCT00000062")) is None
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == list(report.closed)
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, LUNG)] == list(report.closed)
 
 
 def with_contacts(raw):

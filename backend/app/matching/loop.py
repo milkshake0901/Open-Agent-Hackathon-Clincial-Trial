@@ -93,19 +93,20 @@ async def judge_trial(ctx: Ctx, trial: Trial, criteria: tuple[Criterion, ...], p
 
 
 async def plan(ctx: Ctx, version_id: ProfileVersionId, only: set[NctId] | None,
-               condition_term: str | None = None) -> tuple[list[Trial], list[NctId]]:
+               condition_term: tuple[str, ...] | None = None) -> tuple[list[Trial], list[NctId]]:
     """(to_judge, skipped). SQL: active trials LEFT JOIN verdict ON (nct, trial.eligibility_hash, version)
     WHERE verdict is null. Reads via ctx.agent_reader (Zetaris). Old-hash Verdicts are kept (ADR 0002).
-    A confirmed Condition term (#14) leaves out Trials that do not study it (neither judged nor skipped)."""
+    A Condition term (its ticked Condition labels, ADR 0005) leaves out Open trials listing none of them (neither
+    judged nor skipped)."""
     to_judge, skipped = await repo.trials_needing_verdict(ctx.agent_reader, version_id, only)
     if condition_term is None:
         return to_judge, skipped
-    selected = {t.nct_id for t in await trials.active_trials(ctx) if trials.studies_condition(t, condition_term)}
+    selected = {t.nct_id for t in await trials.open_trials_with_labels(ctx, list(condition_term))}
     return [t for t in to_judge if t.nct_id in selected], [n for n in skipped if n in selected]
 
 
-async def condition_term_for(ctx: Ctx, patient_id: record.PatientId) -> str | None:
-    """The patient's confirmed Condition term, if any (record.diagnosis)."""
+async def condition_term_for(ctx: Ctx, patient_id: record.PatientId) -> tuple[str, ...] | None:
+    """The patient's Condition term, if any: the Condition labels ticked in the latest settled Diagnosis check."""
     held = await record.diagnosis(ctx, patient_id)
     return held.condition_term if held else None
 

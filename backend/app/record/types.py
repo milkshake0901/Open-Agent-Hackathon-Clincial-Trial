@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Literal, NewType
 
 from app.trace import RunId
+from app.trials import ConditionLabel
 
 PatientId = NewType("PatientId", str)
 DocumentHash = NewType("DocumentHash", str)      # sha256 hex identifying the Document (its bytes and patient, or a questionnaire submission)
@@ -58,34 +59,35 @@ class Document:
         return self.respondent is not None
 
 
-DiagnosisAnswer = Literal["yes", "no", "not_sure"]
-DiagnosisStatus = Literal["proposed", "confirmed", "rejected", "not_sure", "unclear"]
+DiagnosisAnswer = Literal["ticked", "none_of_these", "not_sure"]
+DiagnosisStatus = Literal["proposed", "ticked", "none_of_these", "not_sure"]
 
-# The settling rule, in one place: the status each answer gives a proposed check, and which statuses settle the
-# diagnosis (the latest settled check holds) and which of those leave it to the GP. "proposed" awaits an answer;
-# "rejected" ("no") settles nothing: the Respondent is asked again.
-ANSWER_STATUS: dict[DiagnosisAnswer, DiagnosisStatus] = {"yes": "confirmed", "no": "rejected", "not_sure": "not_sure"}
-SETTLED: frozenset[DiagnosisStatus] = frozenset({"confirmed", "not_sure", "unclear"})
-NEEDS_GP: frozenset[DiagnosisStatus] = frozenset({"not_sure", "unclear"})
+# The settling rule, in one place: which statuses settle the diagnosis (the latest settled check holds) and which of
+# those leave it to the GP. An answer gives a proposed check its own name as status. "proposed" awaits an answer;
+# "none_of_these" settles nothing: the Respondent is asked again.
+DIAGNOSIS_ANSWERS: frozenset[DiagnosisAnswer] = frozenset({"ticked", "none_of_these", "not_sure"})
+SETTLED: frozenset[DiagnosisStatus] = frozenset({"ticked", "not_sure"})
+NEEDS_GP: frozenset[DiagnosisStatus] = frozenset({"not_sure"})
 
 
 @dataclass(frozen=True)
 class DiagnosisCheck:
-    """A condition term proposed for the free-text diagnosis, and the Respondent's answer (#14). Not a Fact: the
-    diagnosis Fact keeps the Respondent's words as its quote; a confirmed term only selects which Trials are judged.
-    status: proposed (awaiting yes / no / not sure), confirmed, rejected ("no": ask again), not_sure, or unclear
-    (the model could not propose a term with confidence, so none was offered)."""
+    """A shortlist of Condition labels offered for the free-text diagnosis, and the Respondent's answer (#14, #33,
+    ADR 0005). Not a Fact: the diagnosis Fact keeps the Respondent's words as its quote; the ticked labels only select
+    which Trials are judged and shown. status: proposed (awaiting an answer; the shortlist may be empty when no label
+    fits), ticked (one or more shortlist labels), none_of_these (ask again), or not_sure."""
     id: DiagnosisCheckId
     patient_id: PatientId
     text: str
-    suggested_term: str | None
-    confidence: float
+    shortlist: tuple[ConditionLabel, ...]     # in order of fit, at most diagnosis.SHORTLIST_SIZE
     status: DiagnosisStatus
+    ticked: tuple[str, ...] = ()              # spelled as in the shortlist, in shortlist order
 
     @property
-    def condition_term(self) -> str | None:
-        """The confirmed Condition term that drives Trial selection; None unless confirmed."""
-        return self.suggested_term if self.status == "confirmed" else None
+    def condition_term(self) -> tuple[str, ...] | None:
+        """The Condition term: the ticked labels that select Trials; None unless some were ticked. (A check
+        migrated from the single-term design is ticked with no labels, so holds none.)"""
+        return self.ticked if self.status == "ticked" and self.ticked else None
 
     @property
     def settled(self) -> bool:
@@ -99,7 +101,7 @@ class DiagnosisCheck:
 
     @property
     def ask_again(self) -> bool:
-        return self.status == "rejected"
+        return self.status == "none_of_these"
 
 
 @dataclass(frozen=True)

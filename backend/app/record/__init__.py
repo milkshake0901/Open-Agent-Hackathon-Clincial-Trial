@@ -13,7 +13,7 @@ from typing import Any
 
 from app import trace
 from app.ctx import Ctx
-from app.record import diagnosis as condition_terms, loop, questionnaire, repo, storage
+from app.record import diagnosis as shortlists, loop, questionnaire, repo, storage
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
 from app.record.pdf import UnreadableDocument, to_pages
@@ -21,7 +21,7 @@ from app.record.questionnaire import (
     DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section, SubmittedAnswers,
 )
 from app.record.types import (
-    ANSWER_STATUS,
+    DIAGNOSIS_ANSWERS,
     AwaitingPatient,
     Committed,
     Conflict,
@@ -57,6 +57,7 @@ __all__ = [
     "document", "Registered", "UnreadableDocument", "issue_return_link", "patient_for_return_link",
     "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
     "deidentify_text", "check_diagnosis", "answer_diagnosis_check", "diagnosis", "DiagnosisCheck", "DiagnosisAnswer",
+    "AlreadyAnswered",
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
@@ -66,6 +67,10 @@ __all__ = [
 
 class NotFound(LookupError):
     """Unknown patient, Document or Profile version id."""
+
+
+class AlreadyAnswered(InvalidAnswers):
+    """The Diagnosis check was answered already: it is not awaiting an answer."""
 
 
 async def _require_patient(ctx: Ctx, patient_id: PatientId) -> None:
@@ -179,11 +184,10 @@ async def set_search_preferences(ctx: Ctx, patient_id: PatientId, answers: dict[
 
 
 async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = None) -> DiagnosisCheck:
-    """A model proposes a condition term for the diagnosis in the Respondent's words: `text` (a re-wording after
-    "no"), else the latest accepted questionnaire's diagnosis answer. The model sees only those words. A confident
-    term comes back `proposed`, for the Respondent to answer ("We understood this as ..., is that right?");
-    otherwise nothing is offered and the check is `unclear`, which settles the diagnosis as needing the GP. What to
-    say to the Respondent for each status is the HTTP shell's.
+    """A shortlist of Condition labels stored Trials use, for the diagnosis in the Respondent's words: `text` (a
+    re-wording), else the latest accepted questionnaire's diagnosis answer (ADR 0005). The model sees only those words
+    and the candidate labels. The check comes back `proposed` for the Respondent to answer; its shortlist is empty
+    when no label fits (they can only re-word or answer not sure). What to say for each status is the HTTP shell's.
     Raises NotFound (unknown patient, or no diagnosis to check) and llm.LlmUnavailable (nothing stored)."""
     await _require_patient(ctx, patient_id)
     if text is None:
@@ -192,36 +196,53 @@ async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = No
     text = " ".join((text or "").split())
     if not text:
         raise NotFound(f"no diagnosis answer for patient {patient_id}")
-    term, confidence = await condition_terms.propose_condition_term(ctx, text)
-    check = DiagnosisCheck(id=new_diagnosis_check_id(), patient_id=patient_id, text=text, suggested_term=term,
-                           confidence=confidence, status="proposed" if term else "unclear")
+    check = DiagnosisCheck(id=new_diagnosis_check_id(), patient_id=patient_id, text=text,
+                           shortlist=await shortlists.shortlist(ctx, text), status="proposed")
     async with ctx.writer.transaction() as tx:
         await repo.insert_diagnosis_check(tx, check, ctx.now())
     return check
 
 
 async def answer_diagnosis_check(ctx: Ctx, patient_id: PatientId, check_id: DiagnosisCheckId,
-                                 answer: DiagnosisAnswer) -> DiagnosisCheck:
-    """The Respondent's yes / no / not sure to a proposed term. "yes" makes it the patient's condition (it selects
-    which Trials are judged); "no" asks again (check_diagnosis with their re-wording); "not sure" tells them to
-    check with their GP and raises a Doctor question for the diagnosis. Answered once. Raises NotFound (not this
-    patient's check) and InvalidAnswers (an unknown answer, or the check is not awaiting one)."""
-    if answer not in ANSWER_STATUS:
-        raise InvalidAnswers(f"answer must be yes, no or not_sure, got {answer!r}")
+                                 answer: DiagnosisAnswer, *, labels: list[str] = (),
+                                 text: str | None = None) -> DiagnosisCheck:
+    """The Respondent's answer to a proposed check. "ticked" with one or more of its shortlist `labels` (equal
+    ignoring case and spacing) makes them the patient's Condition term, which selects the Trials judged and shown;
+    "none_of_these" asks again, and with new words `text` starts a new check (check_diagnosis), which is returned
+    instead; "not_sure" tells them to check with their GP and raises a Doctor question for the diagnosis. Answered
+    once. Raises NotFound (not this patient's check), InvalidAnswers (an unknown answer, labels missing or not in the
+    shortlist; AlreadyAnswered, a subclass, when the check is not awaiting an answer) and, for new words,
+    llm.LlmUnavailable."""
+    if answer not in DIAGNOSIS_ANSWERS:
+        raise InvalidAnswers(f"answer must be ticked, none_of_these or not_sure, got {answer!r}")
     check = await repo.diagnosis_check(ctx.ui_reader, check_id)
     if check is None or check.patient_id != patient_id:
         raise NotFound(f"diagnosis check {check_id}")
-    answered = replace(check, status=ANSWER_STATUS[answer])
+    if check.status != "proposed":
+        raise AlreadyAnswered(f"diagnosis check {check_id} is {check.status}, not awaiting an answer")
+    ticked: tuple[str, ...] = ()
+    if answer == "ticked":
+        wanted = {_label_key(label) for label in labels}
+        ticked = tuple(one.label for one in check.shortlist if _label_key(one.label) in wanted)
+        if not wanted or len(ticked) != len(wanted):
+            raise InvalidAnswers(f"tick one or more labels from diagnosis check {check_id}'s shortlist")
+    answered = replace(check, status=answer, ticked=ticked)
     async with ctx.writer.transaction() as tx:
         stored = await repo.answer_diagnosis_check(tx, answered, ctx.now())
     if not stored:
-        raise InvalidAnswers(f"diagnosis check {check_id} is {check.status}, not awaiting an answer")
+        raise AlreadyAnswered(f"diagnosis check {check_id} is not awaiting an answer")
+    if answer == "none_of_these" and text and text.strip():
+        return await check_diagnosis(ctx, patient_id, text)
     return answered
 
 
+def _label_key(label: str) -> str:
+    return " ".join(label.casefold().split())
+
+
 async def diagnosis(ctx: Ctx, patient_id: PatientId) -> DiagnosisCheck | None:
-    """The check that holds for the patient: the latest one settled as confirmed (its `condition` drives Trial
-    selection), not sure or unclear (`needs_gp`). None while nothing is settled, so every active Trial is judged."""
+    """The check that holds for the patient: the latest one settled as ticked (its `condition_term` selects the Trials
+    judged and shown) or not sure (`needs_gp`). None while nothing is settled."""
     return await repo.settled_diagnosis_check(ctx.ui_reader, patient_id)
 
 

@@ -1,14 +1,17 @@
-"""Seam 2 (spec #5): the matching facade, driven by the diagnosis check (#14). A confirmed condition term selects
-which snapshot Trials a Re-scan judges and lists; "not sure" or an unclear proposal raises a Doctor question for the
-diagnosis that belongs to no Criterion or Trial. Scripted fake model throughout."""
+"""Seam 2 (spec #5): the matching facade, driven by the Diagnosis check (#14, #33, ADR 0005). The Condition labels the
+Respondent ticks select which Trials a Re-scan judges and lists; "not sure" raises a Doctor question for the diagnosis
+that belongs to no Criterion or Trial. Scripted fake model throughout."""
 from __future__ import annotations
 
 from app import matching, record, trials
 from app.llm.nightshift import FakeLLM
 from tests.matching.test_rescan import NCT, study, write_snapshot
+from tests.trials.test_ingest import AU, save_pages, study as saved_study
 
 BREAST = "NCT00000009"
 DIAGNOSIS = "lung cancer, the non small cell kind"
+LUNG = ["Non-Small Cell Lung Cancer"]
+HER2 = ["HER2-positive Breast Cancer"]
 
 
 def breast_trial():
@@ -17,15 +20,17 @@ def breast_trial():
     return s
 
 
-def fake_model(term, confidence=0.9):
-    """Intake drafts the diagnosis Fact; the diagnosis check proposes `term`; the Matcher answers every Criterion
-    unknown; the Evaluator has nothing to check."""
+def fake_model(picks, subject="lung cancer", diagnosis=DIAGNOSIS):
+    """Intake drafts the diagnosis Fact; a Diagnosis check searches "cancer" and picks `picks`; the Matcher answers
+    every Criterion unknown; the Evaluator has nothing to check."""
     def respond(lane, system, user):
-        if lane == "fast" and "condition term" in system:
-            return {"term": term, "confidence": confidence}
+        if lane == "fast" and "search phrases" in system:
+            return {"phrases": ["cancer", "anterior cruciate ligament", "cruciate ligament"]}
+        if lane == "fast" and "shortlist" in system:
+            return {"labels": picks}
         if lane == "fast":
-            return {"facts": [{"resource": "Condition", "subject": "lung cancer", "value": "non-small cell",
-                               "observed_on": "2026-10-24", "page": 2, "quote": DIAGNOSIS, "question": "Q6"}]}
+            return {"facts": [{"resource": "Condition", "subject": subject, "value": "non-small cell",
+                               "observed_on": "2026-10-24", "page": 2, "quote": diagnosis, "question": "Q6"}]}
         if lane == "deep":
             return {"results": [{"criterion_id": line.split()[1], "outcome": "unknown", "fact_id": None,
                                  "rationale": "not stated"}
@@ -34,9 +39,9 @@ def fake_model(term, confidence=0.9):
     return FakeLLM(respond)
 
 
-async def _setup(clean_db, tmp_path, term, confidence=0.9):
+async def _setup(clean_db, tmp_path, picks=LUNG + HER2):
     from tests.conftest import make_ctx
-    fake = fake_model(term, confidence)
+    fake = fake_model(picks)
     ctx = make_ctx(clean_db, fake)
     await trials.load_snapshot(ctx, write_snapshot(tmp_path, [breast_trial()]))
     patient = await record.create_patient(ctx, "Demo patient S")
@@ -50,10 +55,14 @@ def judged_trials(fake):
             for line in c.user.splitlines() if line.startswith("- NCT")}
 
 
-async def test_a_confirmed_term_selects_the_trials_for_that_condition(clean_db, tmp_path):
-    ctx, fake, patient, version = await _setup(clean_db, tmp_path, "non-small cell lung cancer")
-    check = await record.check_diagnosis(ctx, patient)
-    await record.answer_diagnosis_check(ctx, patient, check.id, "yes")
+async def _tick(ctx, patient, labels, text=None):
+    check = await record.check_diagnosis(ctx, patient, text)
+    return await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=labels)
+
+
+async def test_ticked_labels_select_the_trials_listing_them(clean_db, tmp_path):
+    ctx, fake, patient, version = await _setup(clean_db, tmp_path)
+    await _tick(ctx, patient, LUNG)
 
     report = await matching.rescan(ctx, version.id)
 
@@ -62,22 +71,35 @@ async def test_a_confirmed_term_selects_the_trials_for_that_condition(clean_db, 
     assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {NCT}
 
 
-async def test_verdicts_judged_before_the_term_was_confirmed_are_listed_only_for_selected_trials(clean_db, tmp_path):
-    ctx, fake, patient, version = await _setup(clean_db, tmp_path, "HER2-positive breast cancer")
+async def test_verdicts_judged_before_the_labels_were_ticked_are_listed_only_for_selected_trials(clean_db, tmp_path):
+    ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     await matching.rescan(ctx, version.id)
     assert judged_trials(fake) == {NCT, BREAST}
 
-    check = await record.check_diagnosis(ctx, patient, "her2 breast cancer")
-    await record.answer_diagnosis_check(ctx, patient, check.id, "yes")
+    await _tick(ctx, patient, HER2, "her2 breast cancer")
 
     assert [v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)] == [BREAST]
     assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {BREAST}
 
 
+async def test_changing_the_ticked_labels_hides_the_verdicts_the_new_choice_does_not_select(clean_db, tmp_path):
+    ctx, fake, patient, version = await _setup(clean_db, tmp_path)
+    await _tick(ctx, patient, LUNG)
+    await matching.rescan(ctx, version.id)
+    assert [v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)] == [NCT]
+
+    await _tick(ctx, patient, HER2, "her2 breast cancer")
+    report = await matching.rescan(ctx, version.id)
+
+    assert report.planned == (BREAST,)
+    assert [v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)] == [BREAST]
+    assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {BREAST}
+
+
 async def test_without_a_settled_diagnosis_every_active_trial_is_judged(clean_db, tmp_path):
-    ctx, fake, patient, version = await _setup(clean_db, tmp_path, "non-small cell lung cancer")
+    ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     check = await record.check_diagnosis(ctx, patient)
-    await record.answer_diagnosis_check(ctx, patient, check.id, "no")
+    await record.answer_diagnosis_check(ctx, patient, check.id, "none_of_these")
 
     report = await matching.rescan(ctx, version.id)
 
@@ -86,7 +108,7 @@ async def test_without_a_settled_diagnosis_every_active_trial_is_judged(clean_db
 
 
 async def test_not_sure_raises_a_doctor_question_for_the_diagnosis_on_no_criterion(clean_db, tmp_path):
-    ctx, _, patient, version = await _setup(clean_db, tmp_path, "non-small cell lung cancer")
+    ctx, _, patient, version = await _setup(clean_db, tmp_path)
     check = await record.check_diagnosis(ctx, patient)
     await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
     report = await matching.rescan(ctx, version.id)
@@ -100,18 +122,48 @@ async def test_not_sure_raises_a_doctor_question_for_the_diagnosis_on_no_criteri
     assert [q for q in questions if q.criterion_id is None] == [first]
 
 
-async def test_an_unclear_proposal_raises_the_diagnosis_doctor_question_too(clean_db, tmp_path):
-    ctx, _, patient, version = await _setup(clean_db, tmp_path, "lung neoplasm", confidence=0.2)
-    await record.check_diagnosis(ctx, patient)
+async def test_when_no_label_fits_not_sure_raises_the_diagnosis_doctor_question_too(clean_db, tmp_path):
+    ctx, _, patient, version = await _setup(clean_db, tmp_path, picks=[])
+    check = await record.check_diagnosis(ctx, patient)
+    assert check.shortlist == ()
+    await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
 
     questions = await matching.questions_for_version(ctx, version.id)
 
     assert [q.subject for q in questions if q.criterion_id is None] == ["diagnosis"]
 
 
+ACL_LABELS = ["Anterior Cruciate Ligament Rupture", "Anterior Cruciate Ligament Injury"]
+
+
+async def test_torn_acl_offers_the_acl_labels_and_ticking_them_selects_only_the_acl_trials(clean_db, tmp_path):
+    """The original failure (#31): no ACL Trial says "tear", so a model-named term selected nothing."""
+    from tests.conftest import make_ctx
+    fake = fake_model(ACL_LABELS + ["Knee Osteoarthritis"], subject="anterior cruciate ligament tear",
+                      diagnosis="Torn ACL")
+    ctx = make_ctx(clean_db, fake)
+    await trials.ingest(ctx, save_pages(tmp_path, [
+        saved_study("NCT00000101", sites=[AU], conditions=("Anterior Cruciate Ligament Rupture",)),
+        saved_study("NCT00000102", sites=[AU], conditions=("Anterior Cruciate Ligament Injury",)),
+        saved_study("NCT00000103", sites=[AU], conditions=("Type 1 Diabetes",))]))
+    patient = await record.create_patient(ctx, "Demo patient K")
+    version = (await record.submit_questionnaire(ctx, patient, {"diagnosis": "Torn ACL", "birth_month": "2000-03"},
+                                                 "patient")).version
+
+    check = await record.check_diagnosis(ctx, patient)
+    assert [one.label for one in check.shortlist] == ACL_LABELS
+    assert "Torn ACL" in fake.calls[-2].user and "Type 1 Diabetes" not in fake.calls[-1].user
+    await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=ACL_LABELS)
+    report = await matching.rescan(ctx, version.id)
+
+    assert set(report.planned) == {"NCT00000101", "NCT00000102"}
+    assert judged_trials(fake) == {"NCT00000101", "NCT00000102"}
+    assert {v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)} == {"NCT00000101", "NCT00000102"}
+
+
 async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_not_also_asked_the_diagnosis_question(
         clean_db, tmp_path):
-    ctx, fake, patient, version = await _setup(clean_db, tmp_path, "non-small cell lung cancer")
+    ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     respond = fake.responder
 
     def ask_again(lane, system, user):       # the Matcher points the diagnosis Criteria back at Q6, the rest at Q8
