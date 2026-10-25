@@ -7,7 +7,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app import record
 from app.enquiry import EnquiryKind
 
 
@@ -68,23 +67,14 @@ class TickedIn(BaseModel):
     answer: Literal["ticked"]
     labels: list[str] = Field(min_length=1)   # one or more labels from the check's shortlist
 
-    def to_answer(self) -> record.DiagnosisAnswer:
-        return record.Ticked(tuple(self.labels))
-
 
 class NoneOfTheseIn(BaseModel):
     answer: Literal["none_of_these"]
     text: str                   # the diagnosis in other words, which start a new check (returned instead)
 
-    def to_answer(self) -> record.DiagnosisAnswer:
-        return record.NoneOfThese(self.text)
-
 
 class NotSureIn(BaseModel):
     answer: Literal["not_sure"]
-
-    def to_answer(self) -> record.DiagnosisAnswer:
-        return record.NotSure()
 
 
 DiagnosisAnswerIn = Annotated[TickedIn | NoneOfTheseIn | NotSureIn, Field(discriminator="answer")]

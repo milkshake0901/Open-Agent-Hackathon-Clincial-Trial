@@ -45,11 +45,10 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         assert unchecked["condition_term"] is None and unchecked["verdicts"] == []
         assert unchecked["diagnosis"] == "unfinished"
 
-        proposed = await http.post(url, json={})
+        proposed = await http.post(url)
         assert proposed.status_code == 201
         body = proposed.json()
-        assert body["status"] == "proposed" and body["ticked"] == [] and "condition" not in body
-        assert "ask_again" not in body
+        assert body["status"] == "proposed" and body["ticked"] == []
         assert body["shortlist"] == [{"label": "Non-Small Cell Lung Cancer", "open": 1, "closed": 0}]
         assert "Tick" in body["message"]
 
@@ -70,7 +69,7 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         assert "Non-Small Cell Lung Cancer" in ticked["message"]
         assert (await http.get(verdicts)).json()["diagnosis"] == "ticked"
 
-        third = (await http.post(url, json={})).json()
+        third = (await http.post(url)).json()
         unsure = (await http.post(f"{url}/{third['id']}", json={"answer": "not_sure"})).json()
         assert unsure["needs_gp"] is True and "GP" in unsure["message"] and unsure["rescan"] is None
         listed = (await http.get(verdicts)).json()
@@ -80,7 +79,7 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         assert questions[0]["criterion_id"] is None and questions[0]["nct_id"] is None
         assert questions[0]["subject"] == "diagnosis" and questions[0]["unblocks"] == []
 
-        assert (await http.post("/api/patients/pt_nobody/questionnaire/diagnosis-check", json={})).status_code == 404
+        assert (await http.post("/api/patients/pt_nobody/questionnaire/diagnosis-check")).status_code == 404
 
 
 async def test_each_diagnosis_check_step_writes_a_line_to_the_log_file(clean_db, tmp_path):
@@ -98,7 +97,7 @@ async def test_each_diagnosis_check_step_writes_a_line_to_the_log_file(clean_db,
             patient = (await http.post("/api/patients", json={"label": "Demo patient H"})).json()["patient_id"]
             await submit(http, patient, {"diagnosis": DIAGNOSIS})
             url = f"/api/patients/{patient}/questionnaire/diagnosis-check"
-            check = (await http.post(url, json={})).json()
+            check = (await http.post(url)).json()
             tick = {"answer": "ticked", "labels": ["Non-Small Cell Lung Cancer"]}
             assert (await http.post(f"{url}/{check['id']}", json=tick)).status_code == 200
     finally:

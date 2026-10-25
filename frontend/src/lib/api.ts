@@ -318,7 +318,6 @@ export const api = {
   checkDiagnosis: (patientId: string) =>
     call<DiagnosisCheck>(`/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check`, {
       method: "POST",
-      body: JSON.stringify({}),
     }),
   // none_of_these returns the new check made from its new words.
   answerDiagnosis: (patientId: string, checkId: string, answer: DiagnosisAnswer) =>

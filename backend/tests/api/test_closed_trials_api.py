@@ -48,7 +48,7 @@ async def test_closed_trials_for_the_condition_term_are_listed_newest_first_and_
         before = (await http.get(url)).json()
         assert before == {"condition_term": None, "trials": []}
 
-        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check", json={})).json()
+        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check")).json()
         await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check/{check['id']}", json=TICK_LUNG)
 
         listed = (await http.get(url)).json()
@@ -78,7 +78,7 @@ async def test_a_trial_that_closes_after_it_was_judged_keeps_its_verdict_marked_
         patient = (await http.post("/api/patients", json={"label": "Demo patient C"})).json()["patient_id"]
         _, state = await submit(http, patient, {"diagnosis": DIAGNOSIS})
         vid = state["profile_version_id"]
-        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check", json={})).json()
+        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check")).json()
         await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check/{check['id']}", json=TICK_LUNG)
         await http.post(f"/api/patients/{patient}/versions/{vid}/rescan")
         verdicts = f"/api/patients/{patient}/versions/{vid}/verdicts"

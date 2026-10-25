@@ -7,8 +7,8 @@ from app import llm, matching, record
 from app.api.deps import get_ctx
 from app.api.documents import start_ingest
 from app.api.schemas import (
-    DiagnosisAnswerIn, DiagnosisCheckOut, LatestAnswersOut, QuestionnaireAccepted, QuestionnaireOut,
-    QuestionnaireSubmission, RescanSummary,
+    DiagnosisAnswerIn, DiagnosisCheckOut, LatestAnswersOut, NoneOfTheseIn, NotSureIn, QuestionnaireAccepted,
+    QuestionnaireOut, QuestionnaireSubmission, RescanSummary, TickedIn,
 )
 from app.ctx import Ctx
 
@@ -86,6 +86,16 @@ async def diagnosis_check(pid: str, ctx: Ctx = Depends(get_ctx)):
         raise HTTPException(503, str(e))
 
 
+def _answer(body: DiagnosisAnswerIn) -> record.DiagnosisAnswer:
+    match body:
+        case TickedIn(labels=labels):
+            return record.Ticked(tuple(labels))
+        case NoneOfTheseIn(text=text):
+            return record.NoneOfThese(text)
+        case NotSureIn():
+            return record.NotSure()
+
+
 @router.post("/patients/{pid}/questionnaire/diagnosis-check/{check_id}", response_model=DiagnosisCheckOut)
 async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerIn, ctx: Ctx = Depends(get_ctx)):
     """record.answer_diagnosis_check. Ticking labels re-scans the current version inline, so the Trials the Condition
@@ -95,7 +105,7 @@ async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerI
     patient_id = record.PatientId(pid)
     try:
         check = await record.answer_diagnosis_check(ctx, patient_id, record.DiagnosisCheckId(check_id),
-                                                    body.to_answer())
+                                                    _answer(body))
     except record.AlreadyAnswered as e:
         raise HTTPException(409, str(e))
     except record.InvalidAnswers as e:
