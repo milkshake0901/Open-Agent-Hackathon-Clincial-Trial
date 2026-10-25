@@ -221,3 +221,46 @@ async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_asked_not
     doctor = await matching.questions_for_version(ctx, version.id)
     assert doctor[0].subject == "diagnosis"
     assert await matching.respondent_questions_for_version(ctx, version.id) == []
+
+
+async def test_a_reply_in_another_shape_is_retried_not_taken_as_an_empty_shortlist(clean_db, tmp_path):
+    """Seen live on 2026-10-25: Nightshift answered the phrases call with a cached reply to the old single-term
+    prompt ({"term": ..., "confidence": ...}), and the shortlist silently came back empty."""
+    from tests.conftest import make_ctx
+    fake = fake_model(ACL_LABELS, subject="anterior cruciate ligament tear", diagnosis="Torn ACL")
+    respond, stale = fake.responder, {"left": 1}
+
+    def cached_first(lane, system, user):
+        if lane == "fast" and ("search phrases" in system or "shortlist" in system) and stale["left"]:
+            stale["left"] -= 1
+            return {"term": "anterior cruciate ligament tear", "confidence": 0.95}
+        return respond(lane, system, user)
+    fake.responder = cached_first
+    ctx = make_ctx(clean_db, fake)
+    await trials.ingest(ctx, save_pages(tmp_path, [
+        saved_study("NCT00000101", sites=[AU], conditions=("Anterior Cruciate Ligament Rupture",)),
+        saved_study("NCT00000102", sites=[AU], conditions=("Anterior Cruciate Ligament Injury",))]))
+    patient = await record.create_patient(ctx, "Demo patient L")
+    await record.submit_questionnaire(ctx, patient, {"diagnosis": "Torn ACL"}, "patient")
+
+    check = await record.check_diagnosis(ctx, patient)
+
+    assert [one.label for one in check.shortlist] == ACL_LABELS
+
+
+async def test_each_shortlist_call_sends_a_user_message_no_other_prompt_sends(clean_db, tmp_path):
+    """The runtime can answer a repeated user message from its cache whatever the system prompt says, so the two
+    shortlist calls never reuse the bare diagnosis words as their whole user message."""
+    from tests.conftest import make_ctx
+    fake = fake_model(ACL_LABELS, subject="anterior cruciate ligament tear", diagnosis="Torn ACL")
+    ctx = make_ctx(clean_db, fake)
+    await trials.ingest(ctx, save_pages(tmp_path, [
+        saved_study("NCT00000101", sites=[AU], conditions=("Anterior Cruciate Ligament Rupture",))]))
+    patient = await record.create_patient(ctx, "Demo patient M")
+    await record.submit_questionnaire(ctx, patient, {"diagnosis": "Torn ACL"}, "patient")
+
+    await record.check_diagnosis(ctx, patient)
+
+    phrases, pick = fake.calls[-2].user, fake.calls[-1].user
+    assert phrases != "Diagnosis, in the Respondent's words:\nTorn ACL"
+    assert phrases.startswith("Search phrases") and pick.startswith("Shortlist")
