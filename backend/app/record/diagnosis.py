@@ -38,10 +38,6 @@ or carer's own description of a diagnosis. Answer with JSON only: {{"labels": ["
 - If no candidate fits, answer {{"labels": []}}."""
 
 
-def _key(label: str) -> str:
-    return " ".join(label.casefold().split())
-
-
 async def shortlist(ctx: Ctx, text: str) -> tuple[trials.ConditionLabel, ...]:
     """Up to SHORTLIST_SIZE stored Condition labels that fit the diagnosis words, best fit first; empty when none
     does. At most two fast-lane calls, none for judging. Raises llm.LlmUnavailable."""
@@ -55,9 +51,9 @@ async def shortlist(ctx: Ctx, text: str) -> tuple[trials.ConditionLabel, ...]:
     listed = "\n".join(f"- {one.label}" for one in candidates)
     picked = (await complete(ctx, Lane.FAST, system=PICK_SYSTEM, user=f"{words}\n\nCandidate labels:\n{listed}",
                              out=_PickOut, run_id=None)).value.labels
-    by_key = {_key(one.label): one for one in candidates}
+    by_key = {trials.label_key(one.label): one for one in candidates}
     chosen: dict[str, trials.ConditionLabel] = {}
     for label in picked:
-        if (one := by_key.get(_key(label))) is not None:
-            chosen.setdefault(_key(label), one)
+        if (one := by_key.get(trials.label_key(label))) is not None:
+            chosen.setdefault(trials.label_key(label), one)
     return tuple(chosen.values())[:SHORTLIST_SIZE]

@@ -213,7 +213,7 @@ class LivePages:
 
 __all__ = ["ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
            "active_trials", "outcome_summary",
-           "condition_labels", "search_condition_labels", "ConditionLabel",
+           "condition_labels", "search_condition_labels", "ConditionLabel", "label_key",
            "open_trials_with_labels", "closed_trials_with_labels",
            "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
            "OutcomeMeasure", "Outcomes", "OutcomeSummary", "PostedResult", "ResultValue", "Publication",
@@ -340,7 +340,7 @@ def _newest_first(closed: list[Trial]) -> list[Trial]:
     return sorted(sorted(closed, key=lambda t: t.nct_id), key=lambda t: t.closed_on or "", reverse=True)
 
 
-def _label_key(label: str) -> str:
+def label_key(label: str) -> str:
     """Condition labels are equal when they match ignoring case and repeated whitespace."""
     return " ".join(label.casefold().split())
 
@@ -354,13 +354,13 @@ async def condition_labels(ctx: Ctx) -> list[ConditionLabel]:
         if status not in ACTIVE_STATUSES + CLOSED_STATUSES:
             continue
         is_open = status in ACTIVE_STATUSES
-        for key, label in {_label_key(c): c for c in conditions if c.strip()}.items():
+        for key, label in {label_key(c): c for c in conditions if c.strip()}.items():
             counts.setdefault(key, [0, 0])[0 if is_open else 1] += 1
             spellings.setdefault(key, {}).setdefault(label, 0)
             spellings[key][label] += 1
     found = [ConditionLabel(min(spellings[k], key=lambda s: (-spellings[k][s], s)), open=o, closed=c)
              for k, (o, c) in counts.items()]
-    return sorted(found, key=lambda one: (-one.total, _label_key(one.label)))
+    return sorted(found, key=lambda one: (-one.total, label_key(one.label)))
 
 
 def _contains_phrase(label: str, phrase: str) -> bool:
@@ -378,8 +378,8 @@ async def search_condition_labels(ctx: Ctx, phrases: list[str], *, limit: int) -
 
 
 def _lists_any(trial: Trial, labels: list[str]) -> bool:
-    wanted = {_label_key(label) for label in labels}
-    return any(_label_key(c) in wanted for c in trial.conditions)
+    wanted = {label_key(label) for label in labels}
+    return any(label_key(c) in wanted for c in trial.conditions)
 
 
 async def open_trials_with_labels(ctx: Ctx, labels: list[str]) -> list[Trial]:
