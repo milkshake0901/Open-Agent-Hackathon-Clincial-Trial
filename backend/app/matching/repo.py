@@ -96,32 +96,35 @@ async def verdict(reader: SqlReader, nct_id: NctId, version_id: ProfileVersionId
 
 
 async def verdicts_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[tuple[Verdict, int]]:
-    """Each Verdict (results loaded) with its count of unknown results, unranked."""
+    """Each Verdict (results loaded) with its count of unknown results, unranked; none for a dropped Trial (its
+    Verdicts stay stored as history, ADR 0002)."""
     rows = await reader.fetch(
         f"SELECT {_VERDICT_COLS}, (SELECT count(*) FROM {reader.table('criterion_result')} cr "
         "WHERE cr.nct_id = v.nct_id AND cr.eligibility_hash = v.eligibility_hash "
         "AND cr.profile_version_id = v.profile_version_id AND cr.outcome = 'unknown') AS unknowns "
-        f"{_current(reader)} WHERE v.profile_version_id = $1 ORDER BY v.nct_id", (version_id,))
+        f"{_current(reader)} WHERE v.profile_version_id = $1 AND NOT t.dropped ORDER BY v.nct_id", (version_id,))
     return [(await _verdict(reader, r, True), int(r["unknowns"])) for r in rows]
 
 
 async def questions_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[DoctorQuestion]:
-    """Every Doctor question of the version's current Verdicts, in Trial then Criterion order (not deduplicated)."""
+    """Every Doctor question of the version's current Verdicts on Trials not dropped, in Trial then Criterion order
+    (not deduplicated)."""
     rows = await reader.fetch(
         f"SELECT {_DQ_COLS} FROM {reader.table('doctor_question')} q "
         f"JOIN {reader.table('trial')} t ON t.nct_id = q.nct_id AND t.eligibility_hash = q.eligibility_hash "
         f"JOIN {reader.table('criterion')} c ON c.id = q.criterion_id "
-        "WHERE q.profile_version_id = $1 ORDER BY q.nct_id, c.ordinal", (version_id,))
+        "WHERE q.profile_version_id = $1 AND NOT t.dropped ORDER BY q.nct_id, c.ordinal", (version_id,))
     return [_doctor_question(r) for r in rows]
 
 
 async def respondent_questions_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[RespondentQuestion]:
-    """Every Respondent question of the version's current Verdicts, in Trial then Criterion order (not deduplicated)."""
+    """Every Respondent question of the version's current Verdicts on Trials not dropped, in Trial then Criterion order
+    (not deduplicated)."""
     rows = await reader.fetch(
         f"SELECT {_RQ_COLS} FROM {reader.table('respondent_question')} q "
         f"JOIN {reader.table('trial')} t ON t.nct_id = q.nct_id AND t.eligibility_hash = q.eligibility_hash "
         f"JOIN {reader.table('criterion')} c ON c.id = q.criterion_id "
-        "WHERE q.profile_version_id = $1 ORDER BY q.nct_id, c.ordinal", (version_id,))
+        "WHERE q.profile_version_id = $1 AND NOT t.dropped ORDER BY q.nct_id, c.ordinal", (version_id,))
     return [_respondent_question(r) for r in rows]
 
 # Verdicts are NOT written here: app.worldmodel.timeline.record_verdict (World Model relate → projector).

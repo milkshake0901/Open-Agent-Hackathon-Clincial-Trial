@@ -169,7 +169,9 @@ class SyncReport:
 @dataclass(frozen=True)
 class IngestReport(SyncReport):
     closed: tuple[NctId, ...] = ()   # Closed trials recorded (new, changed or unchanged), within the 15-year cutoff
-    dropped: tuple[NctId, ...] = ()  # Closed trials past the cutoff: not stored, or removed if an earlier run kept them
+    dropped: tuple[NctId, ...] = ()  # Closed trials past the cutoff (not stored, or removed if an earlier run kept
+                                     # them), and earlier-stored Trials now withdrawn, unlisted in Australia or in a
+                                     # status neither Open nor Closed (removed)
 
 
 @dataclass(frozen=True)
@@ -217,8 +219,9 @@ CLOSED_STATUSES = ("COMPLETED", "TERMINATED", "SUSPENDED", "ACTIVE_NOT_RECRUITIN
 # A Closed trial whose cutoff date (Trial.closed_on) is more than this many years before the ingest date is dropped.
 CLOSED_YEARS_KEPT = 15
 
-# A study withdrawn before enrolling anyone is not a Trial (glossary) and is never stored.
-WITHDRAWN = "WITHDRAWN"
+# A stored study is Open (ACTIVE_STATUSES) or Closed (CLOSED_STATUSES). Any other status is never stored: WITHDRAWN
+# (withdrawn before enrolling anyone, not a Trial per the glossary) and the expanded access statuses (AVAILABLE,
+# NO_LONGER_AVAILABLE, TEMPORARILY_NOT_AVAILABLE, APPROVED_FOR_MARKETING), which are neither joinable nor research.
 
 _STOP_WORDS = frozenset({"of", "the", "and", "with", "in", "a", "an"})
 
@@ -257,12 +260,14 @@ async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30)
 
 
 async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
-    """Record every study the source holds that has an Australian Trial site (ADR 0004), keeping only its
-    Australian sites and never a withdrawn study. A Closed trial whose cutoff date is more than 15 years before
-    the ingest date (ctx.now) is not stored, and is removed if an earlier run stored it. Stores eligibility text and
-    its hash only: no model call, and Criteria are split the first time they are asked for (`criteria`).
-    Idempotent on NCT id and content: a second run over the same pages records nothing and reports every Trial
-    unchanged."""
+    """Record every Open or Closed study the source holds that has an Australian Trial site (ADR 0004), keeping only
+    its Australian sites. A withdrawn study, or one in any other status (expanded access: AVAILABLE,
+    NO_LONGER_AVAILABLE, ...), is not stored, nor is a Closed trial whose cutoff date is more than 15 years before the
+    ingest date (ctx.now). A Trial an earlier run stored that this run finds in any of those cases, or with no
+    Australian site left, is dropped: no longer listed or judged, its Verdicts kept as history (ADR 0002). Stores
+    eligibility text and its hash only: no model call, and Criteria are split the first time they are asked for
+    (`criteria`). Idempotent on NCT id and content: a second run over the same pages records nothing and reports every
+    Trial unchanged."""
     from app.worldmodel import timeline
 
     if isinstance(source, LivePages):
@@ -270,22 +275,23 @@ async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
     else:
         pages, name = ctgov.read_pages(source), "saved_pages"
     cutoff = _years_before(ctx.now().date(), CLOSED_YEARS_KEPT).isoformat()
-    kept, too_old = [], []
+    kept, dropped, to_drop = [], [], []
     for raw, fetched_at in pages:
         raw = ctgov.in_australia(raw)
-        if not raw.sites or raw.status == WITHDRAWN:
-            continue
-        closed_on = ctgov.to_trial(raw, "", fetched_at).closed_on
-        if raw.status not in ACTIVE_STATUSES and closed_on is not None and closed_on < cutoff:
-            too_old.append((raw, fetched_at))
-        else:
+        too_old = raw.status in CLOSED_STATUSES and (ctgov.to_trial(raw, "", fetched_at).closed_on or cutoff) < cutoff
+        if raw.sites and raw.status in ACTIVE_STATUSES + CLOSED_STATUSES and not too_old:
             kept.append((raw, fetched_at))
+            continue
+        stored = await repo.trial(ctx.ui_reader, NctId(raw.nct_id))
+        if stored is not None:
+            to_drop.append(stored)
+        if too_old or stored is not None:   # a study that was never a stored Trial here is not worth reporting
+            dropped.append(NctId(raw.nct_id))
     report = await _record(ctx, kept, name)
-    stored = [t for t in [await repo.trial(ctx.ui_reader, NctId(raw.nct_id)) for raw, _ in too_old] if t is not None]
-    await timeline.drop_trials(ctx.wm, stored, ctx.now().isoformat())
+    await timeline.drop_trials(ctx.wm, to_drop, ctx.now().isoformat())
     return IngestReport(**vars(report), closed=tuple(NctId(raw.nct_id) for raw, _ in kept
-                                                      if raw.status not in ACTIVE_STATUSES),
-                        dropped=tuple(NctId(raw.nct_id) for raw, _ in too_old))
+                                                      if raw.status in CLOSED_STATUSES),
+                        dropped=tuple(dropped))
 
 
 def _years_before(day, years: int):

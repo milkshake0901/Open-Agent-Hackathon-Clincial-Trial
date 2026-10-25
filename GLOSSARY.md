@@ -67,7 +67,7 @@ A Trial that is recruiting, not yet recruiting or enrolling by invitation; only 
 _Avoid_: Active trial, live trial
 
 **Closed trial**:
-A Trial that can no longer enrol (completed, terminated, suspended, active-not-recruiting or unknown) and finished within the last 15 years; shown to the patient for its outcomes and contacts, never judged. Withdrawn studies are not Trials.
+A Trial that can no longer enrol (completed, terminated, suspended, active-not-recruiting or unknown) and finished within the last 15 years; shown to the patient for its outcomes and contacts, never judged. Withdrawn studies are not Trials, nor are expanded access records (available, no longer available).
 _Avoid_: Past study, old trial, inactive trial
 
 **Outcome**:

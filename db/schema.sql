@@ -115,7 +115,7 @@ CREATE TABLE trial (
   primary_completion_date date,           -- registry dates (a month-only date is its 1st); a Closed trial's cutoff
   completion_date         date,           -- is the first of these three that is given (ADR 0004)
   last_update_date        date,
-  dropped          boolean NOT NULL DEFAULT false, -- a Closed trial that aged past 15 years at a later ingest
+  dropped          boolean NOT NULL DEFAULT false, -- a later ingest no longer keeps it (aged past 15 years, withdrawn, no Australian site)
   has_results      boolean NOT NULL DEFAULT false  -- the registry's has-results flag (#25)
 );
 

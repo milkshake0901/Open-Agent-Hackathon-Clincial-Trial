@@ -134,8 +134,9 @@ def _contact(c: "Contact") -> dict:
     return {"name": c.name, "role": c.role, "email": c.email, "phone": c.phone, "affiliation": c.affiliation,
             "title": c.title}
 async def drop_trials(wm: "WorldModel", trials: "list[Trial]", at: str) -> None:
-    """Closed trials that aged past the 15-year cutoff (ADR 0004): each Trial entity is replaced by a dropped
-    marker, so the projection no longer lists it; its Criteria and any Verdicts stay as history (ADR 0002).
+    """Stored Trials an ingest no longer keeps (ADR 0004: a Closed trial past the 15-year cutoff, or a Trial now
+    withdrawn, in a status neither Open nor Closed, or with no Australian site): each Trial entity is replaced by a
+    dropped marker, so the projection no longer lists or judges it; its Criteria and any Verdicts stay as history (ADR 0002).
     Idempotent: dropping a dropped Trial appends nothing, and a later ingest of the study records it again."""
     from app.worldmodel.engine import IngestObservation, Provenance
 

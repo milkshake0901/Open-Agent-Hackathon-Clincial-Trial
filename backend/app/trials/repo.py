@@ -28,9 +28,10 @@ def _iso(day) -> str | None:
 
 
 def active_filter(alias: str = "") -> str:
-    """ANSI `status IN (...)` over the fixed allowlist (literals, so Zetaris needs no array parameter)."""
-    col = f"{alias}.status" if alias else "status"
-    return f"{col} IN ({', '.join(repr(s) for s in ACTIVE_STATUSES)})"
+    """ANSI `status IN (...)` over the fixed allowlist (literals, so Zetaris needs no array parameter), excluding
+    dropped Trials."""
+    col = f"{alias}." if alias else ""
+    return f"{col}status IN ({', '.join(repr(s) for s in ACTIVE_STATUSES)}) AND NOT {col}dropped"
 
 
 async def trial(reader: SqlReader, nct_id: NctId) -> Trial | None:

@@ -220,6 +220,52 @@ async def test_a_closed_trial_that_ages_past_15_years_is_dropped_on_a_later_run(
     events = len(ctx.wm.events())
     again = await trials.ingest(a_year_on, source)
     assert again.dropped == ("NCT00000041",) and len(ctx.wm.events()) == events
+async def test_a_stored_trial_later_found_withdrawn_or_without_an_australian_site_is_dropped(ctx, fake_llm, tmp_path):
+    from app import matching, record
+    fake_llm.responder = lambda lane, system, user: {"results": [
+        {"criterion_id": line.split()[1], "outcome": "unknown", "fact_id": None, "rationale": "not in the record"}
+        for line in user.splitlines() if line.startswith("- NCT")]} if lane == "deep" else {"checks": []}
+    await trials.ingest(ctx, save_pages(tmp_path / "before", [study("NCT00000051", sites=[AU]),
+                                                              study("NCT00000052", sites=[AU])]))
+    patient = await record.create_patient(ctx, "Demo patient")
+    v1 = (await record.submit_questionnaire(ctx, patient, {"sex": "female"}, respondent="other")).version.id
+    await matching.rescan(ctx, v1)
+    judged = await matching.verdict(ctx, trials.NctId("NCT00000051"), v1)
+
+    later = await trials.ingest(ctx, save_pages(tmp_path / "after", [
+        study("NCT00000051", status="WITHDRAWN", sites=[AU]),
+        study("NCT00000052", sites=[site("Mayo Clinic", "Rochester", "United States")])]))
+
+    assert later.dropped == ("NCT00000051", "NCT00000052")
+    assert await trials.trial(ctx, trials.NctId("NCT00000051")) is None
+    assert await trials.sites(ctx, trials.NctId("NCT00000052")) == ()
+    assert await trials.active_trials(ctx) == []
+    assert await matching.verdicts_for_version(ctx, v1) == []
+    kept = await matching.verdict(ctx, trials.NctId("NCT00000051"), v1)
+    assert (kept.outcome, kept.results, kept.eligibility_hash) == (judged.outcome, judged.results,
+                                                                   judged.eligibility_hash)
+    calls = len(fake_llm.calls)
+    again = await matching.rescan(ctx, v1)
+    assert again.planned == () and len(fake_llm.calls) == calls
+
+
+async def test_a_status_neither_open_nor_closed_is_not_stored_and_closed_counts_only_closed_trials(ctx, tmp_path):
+    # Expanded access records (AVAILABLE, NO_LONGER_AVAILABLE, ...) are not Trials a patient can join or learn
+    # Outcomes from; like a withdrawn study they are not stored (ADR 0004).
+    await trials.ingest(ctx, save_pages(tmp_path / "before", [study("NCT00000062", sites=[AU])]))
+
+    report = await trials.ingest(ctx, save_pages(tmp_path / "after", [
+        study("NCT00000061", status="AVAILABLE", sites=[AU]),
+        study("NCT00000062", status="NO_LONGER_AVAILABLE", sites=[AU]),
+        study("NCT00000063", status="COMPLETED", sites=[AU], primary_completion="2020-01")]))
+
+    assert report.closed == ("NCT00000063",)
+    assert report.new == ("NCT00000063",) and report.dropped == ("NCT00000062",)
+    assert await trials.trial(ctx, trials.NctId("NCT00000061")) is None
+    assert await trials.trial(ctx, trials.NctId("NCT00000062")) is None
+    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == list(report.closed)
+
+
 def with_contacts(raw):
     """The study with the contact fields ClinicalTrials.gov lists (#27): central contacts, overall officials, lead
     sponsor and responsible party."""
