@@ -1,7 +1,7 @@
 """ZetarisReader against a fake Zetaris REST API (httpx.MockTransport): the SQL it sends, the rows it gives back.
 
 Zetaris answers {headers, data, total, timeUsed} with every non-null value as a string, so the reader restores types
-from the Postgres catalog by column name. The shapes and escaping rules here were checked against the local Zetaris
+from the Postgres catalog by the tables the query reads and their column names. The shapes and escaping rules here were checked against the local Zetaris
 on 2026-10-25 (see the live comparison in test_zetaris_live.py).
 """
 from __future__ import annotations
@@ -14,8 +14,11 @@ import pytest
 
 from app.sql.reader import NotYetVisible, ZetarisError, ZetarisReader
 
-TYPES = {"nct_id": "text", "conditions": "_text", "ordinal": "int4", "has_results": "bool", "lat": "float8",
-         "completion_date": "date", "fetched_at": "timestamptz", "tables_json": "jsonb", "number": "int8"}
+TYPES = {"trial": {"nct_id": "text", "conditions": "_text", "has_results": "bool", "completion_date": "date",
+                   "fetched_at": "timestamptz"},
+         "trial_site": {"nct_id": "text", "ordinal": "int4", "lat": "float8"},
+         "trace_event": {"tables_json": "jsonb", "at": "timestamptz"},
+         "wm_event": {"number": "int8", "at": "text"}}
 
 
 def reader(handler, **kw) -> ZetarisReader:
@@ -59,7 +62,8 @@ async def test_rows_come_back_keyed_by_column_with_their_postgres_types_restored
          "2017-05-12", "2026-10-25 01:54:18.262505", '[{"rows": [[1]]}]', "7"],
         ["NCT07220642", "{}", None, "true", None, None, "2026-10-25 01:54:18", None, None]))
 
-    first, second = await r.fetch("SELECT ...")
+    first, second = await r.fetch("SELECT ... FROM trialmatch.trial t JOIN trialmatch.trial_site s ON ... "
+                                  "JOIN trialmatch.trace_event e ON ...")
 
     assert first == {"nct_id": "NCT01056354", "conditions": ["Influenza and Other Novel Respiratory Viruses", "Obesity"],
                      "ordinal": 3, "has_results": False, "lat": -33.86, "completion_date": date(2017, 5, 12),
@@ -69,13 +73,24 @@ async def test_rows_come_back_keyed_by_column_with_their_postgres_types_restored
     assert second["fetched_at"] == datetime(2026, 10, 25, 1, 54, 18, tzinfo=timezone.utc)
 
 
+async def test_a_column_name_two_tables_type_differently_is_typed_by_the_table_the_query_reads():
+    sent = answer(["at"], ["2026-10-25 01:54:18"])
+
+    [from_trace] = await reader(sent).fetch("SELECT at FROM trialmatch.trace_event WHERE run_id = $1", ("r",))
+    [from_log] = await reader(sent).fetch("SELECT at FROM trialmatch.wm_event")
+    [unread] = await reader(sent).fetch("SELECT 1 AS at")
+
+    assert from_trace["at"] == datetime(2026, 10, 25, 1, 54, 18, tzinfo=timezone.utc)
+    assert from_log["at"] == unread["at"] == "2026-10-25 01:54:18"
+
+
 @pytest.mark.parametrize("literal, items", [
     ('{plain,"with space","a \\"quote\\"","back\\\\slash",NULL,"NULL"}',
      ["plain", "with space", 'a "quote"', "back\\slash", None, "NULL"]),
     ('{"comma, inside",x}', ["comma, inside", "x"]),
 ])
 async def test_postgres_text_arrays_are_parsed_including_quotes_escapes_and_nulls(literal, items):
-    rows = await reader(answer(["conditions"], [literal])).fetch("SELECT conditions FROM t")
+    rows = await reader(answer(["conditions"], [literal])).fetch("SELECT conditions FROM trialmatch.trial")
     assert rows[0]["conditions"] == items
 
 

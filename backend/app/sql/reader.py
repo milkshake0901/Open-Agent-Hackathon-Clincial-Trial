@@ -53,13 +53,16 @@ class ZetarisReader:
     sponsor-tech story.
 
     Zetaris answers {headers, data, total, timeUsed} with every non-null value as a string, so `column_types`
-    (pg_column_types: column name → Postgres udt_name) restores them; a column the catalog doesn't know, such as an
-    alias, stays a string. The REST API has no bind parameters, so $n are inlined as literals (_literal)."""
+    (pg_column_types: table → column name → Postgres udt_name) restores them, by the columns of the tables the query
+    reads; a column none of them has, such as an alias, or one they type differently, stays a string. The REST API has
+    no bind parameters, so $n are inlined as literals (_literal)."""
     def __init__(self, rest_url: str, api_key: str, org_id: str, datasource: str, http: httpx.AsyncClient,
-                 column_types: Mapping[str, str], *, row_limit: int = 1_000_000, poll_s: float = 0.25) -> None:
+                 column_types: Mapping[str, Mapping[str, str]], *, row_limit: int = 1_000_000,
+                 poll_s: float = 0.25) -> None:
         self._url = rest_url.rstrip("/") + "/sql-editor/sqls/run"
         self._headers = {"Authorization": f"Bearer {api_key}", "X-Org-ID": org_id}
         self._datasource, self._http, self._types = datasource, http, column_types
+        self._tables = re.compile(rf"\b{re.escape(datasource)}\.(\w+)")
         self._row_limit, self._poll_s = row_limit, poll_s
 
     def table(self, name: str) -> str:
@@ -89,7 +92,16 @@ class ZetarisReader:
             raise ZetarisError(f"HTTP {resp.status_code}: {_message(resp)}")
         body = resp.json()
         headers = body.get("headers") or []
-        return [{h: _value(self._types.get(h), v) for h, v in zip(headers, row)} for row in body.get("data") or []]
+        types = self._types_read_by(text)
+        return [{h: _value(types.get(h), v) for h, v in zip(headers, row)} for row in body.get("data") or []]
+
+    def _types_read_by(self, sql: str) -> dict[str, str | None]:
+        """Column name → udt_name over the tables the query reads (None for a name they type differently)."""
+        types: dict[str, str | None] = {}
+        for table in set(self._tables.findall(sql)):
+            for column, udt in self._types.get(table, {}).items():
+                types[column] = udt if types.get(column, udt) == udt else None
+        return types
 
     async def wait_visible(self, sql, params, *, expect_rows, timeout_s):
         deadline = time.monotonic() + timeout_s
@@ -102,12 +114,14 @@ class ZetarisReader:
             await asyncio.sleep(self._poll_s)
 
 
-async def pg_column_types(pool) -> dict[str, str]:
-    """Column name → Postgres udt_name over our public tables, for ZetarisReader. Agents read no column whose name
-    has two types (only `at`, on the trace and World Model log tables, does)."""
-    rows = await pool.fetch("SELECT DISTINCT column_name, udt_name FROM information_schema.columns "
+async def pg_column_types(pool) -> dict[str, dict[str, str]]:
+    """Table → column name → Postgres udt_name over our public tables, for ZetarisReader."""
+    rows = await pool.fetch("SELECT table_name, column_name, udt_name FROM information_schema.columns "
                             "WHERE table_schema = 'public'")
-    return {r["column_name"]: r["udt_name"] for r in rows}
+    types: dict[str, dict[str, str]] = {}
+    for r in rows:
+        types.setdefault(r["table_name"], {})[r["column_name"]] = r["udt_name"]
+    return types
 
 
 class ZetarisError(Exception): ...
