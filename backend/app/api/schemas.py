@@ -85,9 +85,8 @@ class DiagnosisCheckOut(BaseModel):
     id: str
     text: str
     shortlist: list[ConditionLabelOut]   # offered labels, best fit first; empty when none fit
-    ticked: list[str]
+    ticked: list[str]                   # status ticked: the Condition term, the labels that select Trials; else []
     status: Literal["proposed", "ticked", "none_of_these", "not_sure"]
-    condition: list[str] | None         # the Condition term: the ticked labels that select Trials
     needs_gp: bool                      # show the GP message; a diagnosis Doctor question is raised
     ask_again: bool                     # "none_of_these" without new words: ask the Respondent to re-word
     message: str

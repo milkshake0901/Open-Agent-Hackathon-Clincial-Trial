@@ -77,9 +77,8 @@ export type DiagnosisCheck = {
   id: string;
   text: string;
   shortlist: ConditionLabel[]; // best fit first; empty when no label fits
-  ticked: string[];
+  ticked: string[]; // status "ticked": the Condition term, the labels that select Trials
   status: "proposed" | "ticked" | "none_of_these" | "not_sure";
-  condition: string[] | null; // the Condition term: the ticked labels
   needs_gp: boolean;
   ask_again: boolean;
   message: string;

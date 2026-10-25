@@ -73,8 +73,7 @@ def _message(c: record.DiagnosisCheck) -> str:
 
 def _check_out(c: record.DiagnosisCheck, rescan: RescanSummary | None = None) -> DiagnosisCheckOut:
     return DiagnosisCheckOut(id=c.id, text=c.text, shortlist=[asdict(one) for one in c.shortlist],
-                             ticked=list(c.ticked), status=c.status,
-                             condition=list(c.condition_term) if c.condition_term else None, needs_gp=c.needs_gp,
+                             ticked=list(c.ticked), status=c.status, needs_gp=c.needs_gp,
                              ask_again=c.ask_again, message=_message(c), rescan=rescan)
 
 

@@ -46,7 +46,7 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         proposed = await http.post(url, json={})
         assert proposed.status_code == 201
         body = proposed.json()
-        assert body["status"] == "proposed" and body["ticked"] == [] and body["condition"] is None
+        assert body["status"] == "proposed" and body["ticked"] == [] and "condition" not in body
         assert body["shortlist"] == [{"label": "Non-Small Cell Lung Cancer", "open": 1, "closed": 0}]
         assert "Tick" in body["message"]
 
@@ -60,7 +60,7 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
 
         ticked = (await http.post(f"{url}/{again['id']}", json={"answer": "ticked",
                                                                 "labels": ["non-small cell lung cancer"]})).json()
-        assert ticked["status"] == "ticked" and ticked["condition"] == ["Non-Small Cell Lung Cancer"]
+        assert ticked["status"] == "ticked" and ticked["ticked"] == ["Non-Small Cell Lung Cancer"]
         assert ticked["rescan"] == {"judged": 1, "failed": 0}
         assert "Non-Small Cell Lung Cancer" in ticked["message"]
 
