@@ -54,6 +54,8 @@ async def test_a_reply_that_does_not_parse_is_logged_with_its_error_on_each_atte
     calls = [x for x in lines(log_path) if x["step"] == "llm.complete"]
     assert len(calls) == 2
     assert all(c["parsed"] is None and "validation error" in c["error"] for c in calls)
+    assert all(json.loads(c["raw"]) == {"answer": 1} for c in calls)
+    assert all(c["model_requested"] == "fake" and c["model_answered"] is None for c in calls)
     assert "did not match the schema" in calls[1]["user"]
 
 

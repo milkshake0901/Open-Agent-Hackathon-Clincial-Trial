@@ -107,6 +107,26 @@ async def test_lane_completion_goes_through_langchain_pinned_model():
     assert req.headers["meterless-app"] == "trialmatch" and req.headers["meterless-scope"] == "user"
 
 
+async def test_a_nightshift_reply_with_reasoning_and_a_code_fence_parses_through_the_gateway():
+    reply = 'Thinking.</think>```json\n{"answer": "yes", "confident": true}\n```'
+    done = await llm.complete(SimpleNamespace(llm=ns([], reply=reply)), Lane.FAST, system="s", user="q", out=Answer,
+                              run_id=None)
+    assert done.value == Answer(answer="yes", confident=True)
+    assert done.model_requested == done.model_answered == "nvidia/nemotron-3.5-lightning-30b-a3b"
+    assert (done.prompt_tokens, done.completion_tokens) == (3, 2)
+
+
+async def test_a_nightshift_reply_missing_a_required_field_is_retried_with_the_error_then_gives_up():
+    seen: list[httpx.Request] = []
+    with pytest.raises(LlmUnavailable, match="did not parse twice"):
+        await llm.complete(SimpleNamespace(llm=ns(seen, reply='{"answer": "yes"}')), Lane.FAST, system="s", user="q",
+                           out=Answer, run_id=None)
+    chats = [json.loads(r.content) for r in seen if r.url.path == "/v1/chat/completions"]
+    assert len(chats) == 2
+    assert "did not match the schema" in chats[1]["messages"][-1]["content"]
+    assert "confident" in chats[1]["messages"][-1]["content"]
+
+
 async def test_gateway_retries_once_with_the_validation_error_then_gives_up():
     calls: list[str] = []
 
