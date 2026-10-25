@@ -9,6 +9,7 @@ Mapping (see timeline.py for how domain operations become these events):
   snapshot    attrs.kind=profile      → profile_version + profile_version_fact
   upsertEntity type=trial             → trial (upsert) + criterion rows from attrs.criteria (immutable per hash)
                                         + trial_site rows from attrs.sites (replaced)
+  upsertEntity type=criteria          → criterion rows split lazily for one (Trial, eligibility hash)
   relate      type=verdict, open edge → verdict + criterion_result + doctor_question + respondent_question
               (the closing re-emit of a superseded edge changes no row: old Verdicts are history, ADR 0002)
 """
@@ -33,6 +34,8 @@ async def project(tx: "Tx", event: "WorldEvent") -> None:
         await _profile_version(tx, p)
     elif event.kind == "upsertEntity" and isinstance(p, Entity) and p.type == "trial":
         await _trial(tx, p)
+    elif event.kind == "upsertEntity" and isinstance(p, Entity) and p.type == "criteria":
+        await _criteria(tx, p.attrs["nct_id"], p.attrs["eligibility_hash"], p.attrs["criteria"])
     elif event.kind == "relate" and isinstance(p, Relationship) and p.type == "verdict" and p.valid_to is None:
         await _verdict(tx, p)
 
@@ -68,11 +71,7 @@ async def _trial(tx: "Tx", e) -> None:
         "eligibility_hash = EXCLUDED.eligibility_hash, source = EXCLUDED.source, fetched_at = EXCLUDED.fetched_at",
         (a["external_id"], a["title"], list(a["conditions"]), a["status"], a["text"], a["eligibility_hash"],
          a["source"], _timestamp(a["observed_at"])))
-    for c in a["criteria"]:
-        await tx.execute(
-            "INSERT INTO criterion (id, nct_id, eligibility_hash, kind, ordinal, text) VALUES ($1, $2, $3, $4, $5, $6) "
-            "ON CONFLICT (id) DO NOTHING",
-            (c["id"], a["external_id"], a["eligibility_hash"], c["kind"], c["ordinal"], c["text"]))
+    await _criteria(tx, a["external_id"], a["eligibility_hash"], a["criteria"])
     if "sites" in a:
         await tx.execute("DELETE FROM trial_site WHERE nct_id = $1", (a["external_id"],))
         for i, site in enumerate(a["sites"], 1):
@@ -81,6 +80,14 @@ async def _trial(tx: "Tx", e) -> None:
                 "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                 (a["external_id"], i, site["facility"], site["city"], site["country"], site["status"],
                  site["lat"], site["lon"]))
+
+
+async def _criteria(tx: "Tx", nct_id: str, eligibility_hash: str, criteria: list[dict]) -> None:
+    for c in criteria:
+        await tx.execute(
+            "INSERT INTO criterion (id, nct_id, eligibility_hash, kind, ordinal, text) VALUES ($1, $2, $3, $4, $5, $6) "
+            "ON CONFLICT (id) DO NOTHING",
+            (c["id"], nct_id, eligibility_hash, c["kind"], c["ordinal"], c["text"]))
 
 
 async def _verdict(tx: "Tx", r) -> None:

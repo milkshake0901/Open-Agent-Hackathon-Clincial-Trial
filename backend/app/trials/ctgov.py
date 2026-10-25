@@ -4,12 +4,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from app.ctx import Ctx
-from app.trials import NctId, TrialSite, Trial
+from app.trials import NctId, SavedPages, TrialSite, Trial
 
 
 @dataclass(frozen=True)
@@ -70,4 +70,27 @@ def read_snapshot(directory: Path) -> list[tuple[RawStudy, str]]:
         fetched_at = data.get("fetched_at") or study["protocolSection"]["statusModule"].get(
             "lastUpdatePostDateStruct", {}).get("date", "1970-01-01")
         out.append((parse_study(study), fetched_at))
+    return out
+
+
+AUSTRALIA = "Australia"   # the v2 API's country name; also the `query.locn` filter the live source pages by
+
+
+def in_australia(raw: RawStudy) -> RawStudy:
+    """The study with only its Australian Trial sites (ADR 0004); no sites left means it is not a Trial."""
+    return replace(raw, sites=tuple(s for s in raw.sites if s.country == AUSTRALIA))
+
+
+def read_pages(source: SavedPages) -> list[tuple[RawStudy, str]]:
+    """Saved `GET /api/v2/studies` responses, one page per JSON file: either the cached response envelope
+    {url, fetched_at, body} or a bare body {studies, nextPageToken}. Returns (study, fetched_at) in file-name then
+    page order; a bare page's studies are dated by their last-update date, as in read_snapshot."""
+    out = []
+    for path in sorted(Path(source.directory).glob("*.json")):
+        data = json.loads(path.read_text())
+        page = data.get("body", data)
+        for study in page.get("studies", ()):
+            fetched_at = data.get("fetched_at") or study["protocolSection"]["statusModule"].get(
+                "lastUpdatePostDateStruct", {}).get("date", "1970-01-01")
+            out.append((parse_study(study), fetched_at))
     return out

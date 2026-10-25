@@ -1,6 +1,7 @@
 # Scripts
 
 - `meterless.py` checks the Nightshift connection: status, Auto Detect, chat, a lane's JSON call, media plan and `illustrate`. Usage in DEVELOPER.md, "Check the LLM connection yourself".
+- `ingest_trials.py --pages <dir>` runs the Australia-wide ingest (`trials.ingest`, ADR 0004) from saved ClinicalTrials.gov v2 study pages and prints new / changed / unchanged counts. Safe to re-run; no model calls, no Re-scan.
 
 To be written:
 

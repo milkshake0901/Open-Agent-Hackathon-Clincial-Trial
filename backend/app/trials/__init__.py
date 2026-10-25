@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import NewType
 
 from app.ctx import Ctx
@@ -62,12 +63,22 @@ class SyncReport:
     source: str
 
 
-__all__ = ["sync", "load_snapshot", "trial", "criteria", "sites", "active_trials", "studies_condition", "Trial",
-           "Criterion", "Site", "CriterionKind",
+@dataclass(frozen=True)
+class SavedPages:
+    """An ingest source: ClinicalTrials.gov v2 `GET /api/v2/studies` responses saved under `directory`, one page
+    per JSON file (the response body, or the cached envelope {url, fetched_at, body}), read in file-name order."""
+    directory: Path
+
+
+__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "active_trials", "studies_condition",
+           "Trial", "Criterion", "TrialSite", "CriterionKind", "SavedPages",
            "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES", "trial_columns", "trial_from_row", "active_filter"]
 
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
 ACTIVE_STATUSES = ("RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION")
+
+# A study withdrawn before enrolling anyone is not a Trial (glossary) and is never stored.
+WITHDRAWN = "WITHDRAWN"
 
 _STOP_WORDS = frozenset({"of", "the", "and", "with", "in", "a", "an"})
 
@@ -105,24 +116,34 @@ async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30)
     raise NotImplementedError
 
 
+async def ingest(ctx: Ctx, source: SavedPages) -> SyncReport:
+    """Record every study the source holds that has an Australian Trial site (ADR 0004), keeping only its
+    Australian sites and never a withdrawn study. Stores eligibility text and its hash only: no model call, and
+    Criteria are split the first time they are asked for (`criteria`). Idempotent on NCT id and content: a second
+    run over the same pages records nothing and reports every Trial unchanged."""
+    studies = [(ctgov.in_australia(raw), fetched_at) for raw, fetched_at in ctgov.read_pages(source)]
+    return await _record(ctx, [(raw, fetched_at) for raw, fetched_at in studies
+                               if raw.sites and raw.status != WITHDRAWN], "saved_pages")
+
+
 async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
     """Record the Trials saved under `directory` (ClinicalTrials.gov v2 study JSON, one file per Trial; the
-    repo keeps data/trials_snapshot/) in place of a live sync. Criteria are split deterministically. Idempotent:
-    loading the same files again records nothing and reports every Trial unchanged."""
+    repo keeps data/trials_snapshot/) in place of a live sync. Like `ingest`, Criteria are split lazily.
+    Idempotent: loading the same files again records nothing and reports every Trial unchanged."""
+    return await _record(ctx, ctgov.read_snapshot(directory), "snapshot")
+
+
+async def _record(ctx: Ctx, studies: list[tuple[ctgov.RawStudy, str]], source: str) -> SyncReport:
     from app.worldmodel import timeline
 
-    studies = ctgov.read_snapshot(directory)
     before = {s.nct_id: await repo.trial(ctx.ui_reader, NctId(s.nct_id)) for s, _ in studies}
-    loaded = []
-    for raw, fetched_at in studies:
-        t = ctgov.to_trial(raw, "snapshot", fetched_at)
-        loaded.append((t, splitting.split_deterministic(t.nct_id, t.eligibility_hash, t.eligibility_text), raw.sites))
+    loaded = [(ctgov.to_trial(raw, source, fetched_at), (), raw.sites) for raw, fetched_at in studies]
     report = await timeline.record_trials(ctx.wm, loaded, None)
     changed = {i.split(":", 1)[1] for i in report.changed_ids}
     return SyncReport(fetched=len(loaded),
                       new=tuple(t.nct_id for t, *_ in loaded if before[t.nct_id] is None),
                       changed=tuple(t.nct_id for t, *_ in loaded if before[t.nct_id] is not None and t.nct_id in changed),
-                      unchanged=tuple(t.nct_id for t, *_ in loaded if t.nct_id not in changed), source="snapshot")
+                      unchanged=tuple(t.nct_id for t, *_ in loaded if t.nct_id not in changed), source=source)
 
 
 async def trial(ctx: Ctx, nct_id: NctId) -> Trial | None:
@@ -139,7 +160,19 @@ async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:
 
 
 async def criteria(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> tuple[Criterion, ...]:
-    """Criteria for the trial's CURRENT eligibility hash, in ordinal order. for_agent reads through Zetaris."""
+    """Criteria for the trial's CURRENT eligibility hash, in ordinal order. for_agent reads through Zetaris.
+    The ingest stores only eligibility text and its hash (ADR 0004), so the first ask for a hash splits the text
+    deterministically and records the Criteria; later asks read them back."""
+    from app.worldmodel import timeline
+
     reader = ctx.agent_reader if for_agent else ctx.ui_reader
     t = await repo.trial(reader, nct_id)
-    return await repo.criteria(reader, nct_id, t.eligibility_hash) if t else ()
+    if t is None:
+        return ()
+    stored = await repo.criteria(reader, nct_id, t.eligibility_hash)
+    if stored:
+        return stored
+    split = splitting.split_deterministic(t.nct_id, t.eligibility_hash, t.eligibility_text)
+    if split:
+        await timeline.record_criteria(ctx.wm, t, split)
+    return split

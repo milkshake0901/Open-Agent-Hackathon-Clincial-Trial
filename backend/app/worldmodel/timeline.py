@@ -10,7 +10,10 @@ World Model primitives. record, trials and matching call these; none of them cal
   Profile version    snapshot(entities=[patient], attrs={kind: "profile", number, document_hash, fact_ids})
   Trial              ingest([IngestObservation(type="trial", external_id=<NCT>, text=<eligibility text>,
                                                attrs={..., eligibility_hash, criteria})]) → entity trial:<NCT>;
-                     changed_ids drive the Re-scan
+                     changed_ids drive the Re-scan. The Australia-wide ingest leaves criteria empty (ADR 0004):
+  Criteria           ingest([IngestObservation(type="criteria", external_id=<NCT>:<eligibility hash>,
+                                               attrs={nct_id, eligibility_hash, criteria})]), written the first
+                     time a Trial's Criteria are asked for; immutable per hash, so a re-split appends nothing
   Verdict            relate(patient → trial:<NCT>, type="verdict", context="verdict:<NCT>",
                             valid_from=<profile version time>,
                             attrs={outcome, profile_version_id, eligibility_hash, results, questions, degraded, ...})
@@ -99,6 +102,21 @@ async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Crite
                 **({"sites": [{"facility": s.facility, "city": s.city, "country": s.country, "status": s.status,
                                "lat": s.lat, "lon": s.lon} for s in sites[0]]} if sites else {})}))
     return await wm.ingest(observations, run_id=run_id)
+
+
+async def record_criteria(wm: "WorldModel", trial: "Trial", criteria: "tuple[Criterion, ...]") -> None:
+    """The Criteria split from the Trial's current eligibility text, recorded apart from the Trial so that splitting
+    lazily never changes the Trial's content (a later identical ingest stays unchanged). Idempotent per hash."""
+    from app.worldmodel.engine import IngestObservation, Provenance
+
+    key = f"{trial.nct_id}:{trial.eligibility_hash}"
+    source = Provenance(kind="api", at=trial.fetched_at, by="trials",
+                        url=f"https://clinicaltrials.gov/study/{trial.nct_id}")
+    await wm.ingest([IngestObservation(
+        type="criteria", external_id=key, title=trial.title, at=trial.fetched_at, source=source,
+        text=trial.eligibility_text, attrs={
+            "nct_id": trial.nct_id, "eligibility_hash": trial.eligibility_hash,
+            "criteria": [{"id": c.id, "kind": str(c.kind), "ordinal": c.ordinal, "text": c.text} for c in criteria]})])
 
 
 async def record_verdict(wm: "WorldModel", patient_id: "PatientId", verdict: "Verdict") -> None:
