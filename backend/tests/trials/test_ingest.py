@@ -198,3 +198,65 @@ async def test_a_closed_trial_that_ages_past_15_years_is_dropped_on_a_later_run(
     events = len(ctx.wm.events())
     again = await trials.ingest(a_year_on, source)
     assert again.dropped == ("NCT00000041",) and len(ctx.wm.events()) == events
+def with_contacts(raw):
+    """The study with the contact fields ClinicalTrials.gov lists (#27): central contacts, overall officials, lead
+    sponsor and responsible party."""
+    p = raw["protocolSection"]
+    p["contactsLocationsModule"].update({
+        "centralContacts": [{"name": "Trial Contact Centre", "role": "CONTACT", "phone": "1800 000 000",
+                             "email": "trials@example.org"}],
+        "overallOfficials": [{"name": "Dr Jane Citizen", "affiliation": "Example University",
+                              "role": "PRINCIPAL_INVESTIGATOR"}]})
+    p["sponsorCollaboratorsModule"] = {
+        "leadSponsor": {"name": "Example Oncology Group", "class": "OTHER"},
+        "responsibleParty": {"type": "PRINCIPAL_INVESTIGATOR", "investigatorFullName": "Jane Citizen",
+                             "investigatorTitle": "Professor", "investigatorAffiliation": "Example University"}}
+    return raw
+
+
+async def test_a_trials_contacts_are_stored_with_its_australian_sites_contacts(ctx, tmp_path):
+    sydney = {**AU, "contacts": [{"name": "Sam Coordinator", "role": "CONTACT", "phone": "+61 2 0000 0000",
+                                  "email": "sam@example.org"}]}
+    source = save_pages(tmp_path, [with_contacts(study("NCT00000007", sites=[
+        site("Mayo Clinic", "Rochester", "United States"), sydney]))])
+
+    await trials.ingest(ctx, source)
+
+    c = await trials.contacts(ctx, trials.NctId("NCT00000007"))
+    assert c.sponsor == "Example Oncology Group"
+    assert c.page_url == "https://clinicaltrials.gov/study/NCT00000007"
+    assert c.central == (trials.Contact(name="Trial Contact Centre", role="CONTACT", email="trials@example.org",
+                                        phone="1800 000 000"),)
+    assert c.officials == (trials.Contact(name="Dr Jane Citizen", role="PRINCIPAL_INVESTIGATOR",
+                                          affiliation="Example University"),)
+    assert c.responsible_party == trials.Contact(name="Jane Citizen", role="PRINCIPAL_INVESTIGATOR",
+                                                 title="Professor", affiliation="Example University")
+    [kept] = await trials.sites(ctx, trials.NctId("NCT00000007"))
+    assert kept.facility == "Royal Prince Alfred Hospital"
+    assert kept.contacts == (trials.Contact(name="Sam Coordinator", role="CONTACT", email="sam@example.org",
+                                            phone="+61 2 0000 0000"),)
+
+
+async def test_a_sponsor_responsible_party_is_named_by_the_sponsor_and_missing_contacts_are_empty(ctx, tmp_path):
+    raw = study("NCT00000008", sites=[AU])
+    raw["protocolSection"]["sponsorCollaboratorsModule"] = {"leadSponsor": {"name": "Example Pharma"},
+                                                            "responsibleParty": {"type": "SPONSOR"}}
+    await trials.ingest(ctx, save_pages(tmp_path, [raw]))
+
+    c = await trials.contacts(ctx, trials.NctId("NCT00000008"))
+    assert c.responsible_party == trials.Contact(name="Example Pharma", role="SPONSOR")
+    assert c.central == () and c.officials == ()
+    assert (await trials.sites(ctx, trials.NctId("NCT00000008")))[0].contacts == ()
+    assert await trials.contacts(ctx, trials.NctId("NCT09999999")) is None
+
+
+async def test_changed_contacts_replace_the_stored_ones(ctx, tmp_path):
+    await trials.ingest(ctx, save_pages(tmp_path / "before", [with_contacts(study("NCT00000007", sites=[AU]))]))
+    later = study("NCT00000007", sites=[AU])
+    later["protocolSection"]["contactsLocationsModule"]["centralContacts"] = [{"name": "New Desk", "role": "CONTACT"}]
+
+    await trials.ingest(ctx, save_pages(tmp_path / "after", [later]))
+
+    c = await trials.contacts(ctx, trials.NctId("NCT00000007"))
+    assert c.central == (trials.Contact(name="New Desk", role="CONTACT"),)
+    assert c.officials == () and c.sponsor == "" and c.responsible_party is None

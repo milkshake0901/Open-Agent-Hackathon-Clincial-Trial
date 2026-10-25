@@ -117,6 +117,21 @@ export type ClosedTrialOut = {
   url: string;
 };
 
+// Registry fields it does not give are "".
+export type ContactOut = { name: string; role: string; email: string; phone: string; affiliation: string; title: string };
+
+export type TrialDetail = {
+  nct_id: string;
+  title: string;
+  status: string;
+  page_url: string; // the Trial's ClinicalTrials.gov page
+  sponsor: string;
+  responsible_party: ContactOut | null;
+  central_contacts: ContactOut[];
+  overall_officials: ContactOut[];
+  sites: { facility: string; city: string; status: string; contacts: ContactOut[] }[]; // Australian sites only
+};
+
 export type ReturnOpened = {
   patient_id: string;
   profile_version_id: string | null;
@@ -240,6 +255,7 @@ export const api = {
     call<{ condition_term: string | null; trials: ClosedTrialOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/closed-trials`,
     ),
+  trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
   checkDiagnosis: (patientId: string, text?: string) =>
     call<DiagnosisCheck>(`/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check`, {
       method: "POST",

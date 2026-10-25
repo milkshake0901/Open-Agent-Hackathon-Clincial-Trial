@@ -5,10 +5,14 @@ Hides: Zetaris REST table vs direct HTTP, paging, rate limits, hashing, criteria
 """
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import NewType
+
+import httpx
 
 from app.ctx import Ctx
 
@@ -52,6 +56,27 @@ class Criterion:
 
 
 @dataclass(frozen=True)
+class Contact:
+    """A person or desk ClinicalTrials.gov names for a Trial or Trial site; fields it does not give are ""."""
+    name: str
+    role: str                    # registry role, e.g. CONTACT, PRINCIPAL_INVESTIGATOR, STUDY_DIRECTOR, SPONSOR
+    email: str = ""
+    phone: str = ""
+    affiliation: str = ""
+    title: str = ""
+
+
+@dataclass(frozen=True)
+class TrialContacts:
+    """Who to contact about a Trial (#27), besides each Trial site's own contacts (TrialSite.contacts)."""
+    sponsor: str                         # lead sponsor's name; "" if not given
+    responsible_party: Contact | None    # a SPONSOR responsible party is named by the lead sponsor
+    central: tuple[Contact, ...]         # central contacts
+    officials: tuple[Contact, ...]       # overall officials
+    page_url: str                        # the Trial's ClinicalTrials.gov page
+
+
+@dataclass(frozen=True)
 class TrialSite:
     """One of a Trial's locations as ClinicalTrials.gov lists it. lat/lon is the registry's geoPoint (None if absent)."""
     facility: str
@@ -60,6 +85,7 @@ class TrialSite:
     status: str                  # per-site recruitment status, e.g. RECRUITING, NOT_YET_RECRUITING; "" if not given
     lat: float | None
     lon: float | None
+    contacts: tuple[Contact, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -84,10 +110,33 @@ class SavedPages:
     directory: Path
 
 
-__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "active_trials", "closed_trials",
-           "studies_condition", "Trial", "Criterion", "TrialSite", "CriterionKind", "SavedPages",
+@dataclass(frozen=True)
+class LivePages:
+    """An ingest source: the live ClinicalTrials.gov v2 API, `GET /api/v2/studies` filtered to Australia and paged
+    by pageToken. Requests are spaced to stay under `requests_per_minute` (the API allows about 50) and a transient
+    failure (timeout, connection error, 429, 5xx) is retried up to `retries` times. `transport` and `sleep` are
+    for tests: recorded pages, and pacing that is observed rather than waited for."""
+    base_url: str = "https://clinicaltrials.gov/api/v2"
+    page_size: int = 1000
+    requests_per_minute: int = 40
+    retries: int = 4
+    timeout_s: float = 60.0
+    transport: httpx.AsyncBaseTransport | None = None
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+
+
+__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "page_url", "active_trials",
+           "closed_trials",
+           "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
+           "SavedPages", "LivePages",
            "NctId", "CriterionId", "SyncReport", "IngestReport", "ACTIVE_STATUSES", "CLOSED_STATUSES",
            "trial_columns", "trial_from_row", "active_filter"]
+
+
+def page_url(nct_id: str) -> str:
+    """The Trial's page on ClinicalTrials.gov."""
+    return f"https://clinicaltrials.gov/study/{nct_id}"
+
 
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
 ACTIVE_STATUSES = ("RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION")
@@ -137,7 +186,7 @@ async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30)
     raise NotImplementedError
 
 
-async def ingest(ctx: Ctx, source: SavedPages) -> IngestReport:
+async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
     """Record every study the source holds that has an Australian Trial site (ADR 0004), keeping only its
     Australian sites and never a withdrawn study. A Closed trial whose cutoff date is more than 15 years before
     the ingest date (ctx.now) is not stored, and is removed if an earlier run stored it. Stores eligibility text and
@@ -146,9 +195,13 @@ async def ingest(ctx: Ctx, source: SavedPages) -> IngestReport:
     unchanged."""
     from app.worldmodel import timeline
 
+    if isinstance(source, LivePages):
+        pages, name = await ctgov.fetch_pages(source, ctx.now().isoformat()), "http"
+    else:
+        pages, name = ctgov.read_pages(source), "saved_pages"
     cutoff = _years_before(ctx.now().date(), CLOSED_YEARS_KEPT).isoformat()
     kept, too_old = [], []
-    for raw, fetched_at in ctgov.read_pages(source):
+    for raw, fetched_at in pages:
         raw = ctgov.in_australia(raw)
         if not raw.sites or raw.status == WITHDRAWN:
             continue
@@ -157,7 +210,7 @@ async def ingest(ctx: Ctx, source: SavedPages) -> IngestReport:
             too_old.append((raw, fetched_at))
         else:
             kept.append((raw, fetched_at))
-    report = await _record(ctx, kept, "saved_pages")
+    report = await _record(ctx, kept, name)
     stored = [t for t in [await repo.trial(ctx.ui_reader, NctId(raw.nct_id)) for raw, _ in too_old] if t is not None]
     await timeline.drop_trials(ctx.wm, stored, ctx.now().isoformat())
     return IngestReport(**vars(report), closed=tuple(NctId(raw.nct_id) for raw, _ in kept
@@ -183,7 +236,7 @@ async def _record(ctx: Ctx, studies: list[tuple[ctgov.RawStudy, str]], source: s
     from app.worldmodel import timeline
 
     before = {s.nct_id: await repo.trial(ctx.ui_reader, NctId(s.nct_id)) for s, _ in studies}
-    loaded = [(ctgov.to_trial(raw, source, fetched_at), (), raw.sites) for raw, fetched_at in studies]
+    loaded = [(ctgov.to_trial(raw, source, fetched_at), (), raw.sites, raw.contacts) for raw, fetched_at in studies]
     report = await timeline.record_trials(ctx.wm, loaded, None)
     changed = {i.split(":", 1)[1] for i in report.changed_ids}
     return SyncReport(fetched=len(loaded),
@@ -210,6 +263,13 @@ async def closed_trials(ctx: Ctx, condition_term: str) -> list[Trial]:
 async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:
     """The Trial's locations as last loaded, in registry order (empty for an unknown Trial)."""
     return await repo.sites(ctx.ui_reader, nct_id)
+
+
+async def contacts(ctx: Ctx, nct_id: NctId) -> TrialContacts | None:
+    """Who to contact about the Trial as last loaded (None for an unknown Trial); its sites' contacts are on `sites`."""
+    if await repo.trial(ctx.ui_reader, nct_id) is None:
+        return None
+    return await repo.contacts(ctx.ui_reader, nct_id)
 
 
 async def criteria(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> tuple[Criterion, ...]:

@@ -252,6 +252,34 @@ class VerdictOut(BaseModel):
     further_away: bool = False            # no recruiting site within the travel limit: show under "Further away"
 
 
+class ContactOut(BaseModel):
+    name: str
+    role: str                   # registry role, e.g. CONTACT, PRINCIPAL_INVESTIGATOR, SPONSOR
+    email: str                  # "" when the registry gives none (likewise phone, affiliation, title)
+    phone: str
+    affiliation: str
+    title: str
+
+
+class TrialSiteOut(BaseModel):
+    facility: str
+    city: str
+    status: str                 # registry status, e.g. RECRUITING; "" if not given
+    contacts: list[ContactOut]
+
+
+class TrialDetailOut(BaseModel):
+    nct_id: str
+    title: str
+    status: str
+    page_url: str                         # the Trial's ClinicalTrials.gov page
+    sponsor: str                          # "" if not given
+    responsible_party: ContactOut | None
+    central_contacts: list[ContactOut]
+    overall_officials: list[ContactOut]
+    sites: list[TrialSiteOut]             # Australian Trial sites only, in registry order
+
+
 class VerdictListOut(BaseModel):
     profile_version_id: str
     verdicts: list[VerdictOut]  # ranked: outcome (possible: fewest unknowns first), then nearest recruiting site

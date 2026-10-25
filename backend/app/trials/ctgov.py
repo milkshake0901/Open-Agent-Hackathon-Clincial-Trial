@@ -4,12 +4,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from app.ctx import Ctx
-from app.trials import NctId, SavedPages, TrialSite, Trial
+from app.trials import Contact, LivePages, NctId, SavedPages, TrialContacts, TrialSite, Trial, page_url
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,7 @@ class RawStudy:
     primary_completion_date: str | None = None
     completion_date: str | None = None
     last_update_date: str | None = None
+    contacts: TrialContacts | None = None
 
 
 async def fetch(ctx: Ctx, condition: str, location: str, max_trials: int) -> tuple[list[RawStudy], str]:
@@ -57,6 +61,7 @@ def parse_study(study: dict[str, Any]) -> RawStudy:
                     status=p["statusModule"]["overallStatus"],
                     eligibility_text=p.get("eligibilityModule", {}).get("eligibilityCriteria", ""),
                     sites=tuple(_site(loc) for loc in p.get("contactsLocationsModule", {}).get("locations", ())),
+                    contacts=_contacts(p),
                     primary_completion_date=_date(dates.get("primaryCompletionDateStruct")),
                     completion_date=_date(dates.get("completionDateStruct")),
                     last_update_date=_date(dates.get("lastUpdatePostDateStruct")))
@@ -71,7 +76,29 @@ def _date(struct: dict[str, Any] | None) -> str | None:
 def _site(loc: dict[str, Any]) -> TrialSite:
     geo = loc.get("geoPoint") or {}
     return TrialSite(facility=loc.get("facility", ""), city=loc.get("city", ""), country=loc.get("country", ""),
-                status=loc.get("status", ""), lat=geo.get("lat"), lon=geo.get("lon"))
+                status=loc.get("status", ""), lat=geo.get("lat"), lon=geo.get("lon"),
+                contacts=tuple(map(_contact, loc.get("contacts", ()))))
+
+
+def _contact(c: dict[str, Any]) -> Contact:
+    return Contact(name=c.get("name", ""), role=c.get("role", ""), email=c.get("email", ""),
+                   phone=c.get("phone", ""), affiliation=c.get("affiliation", ""))
+
+
+def _contacts(p: dict[str, Any]) -> TrialContacts:
+    """Central contacts, overall officials, lead sponsor and responsible party (#27). A responsible party of type
+    SPONSOR names no person, so it is named by the lead sponsor."""
+    cl = p.get("contactsLocationsModule", {})
+    sc = p.get("sponsorCollaboratorsModule", {})
+    sponsor = sc.get("leadSponsor", {}).get("name", "")
+    rp = sc.get("responsibleParty")
+    responsible = None if not rp else Contact(
+        name=sponsor if rp.get("type") == "SPONSOR" else rp.get("investigatorFullName", ""), role=rp.get("type", ""),
+        affiliation=rp.get("investigatorAffiliation", ""), title=rp.get("investigatorTitle", ""))
+    return TrialContacts(sponsor=sponsor, responsible_party=responsible,
+                         central=tuple(map(_contact, cl.get("centralContacts", ()))),
+                         officials=tuple(map(_contact, cl.get("overallOfficials", ()))),
+                         page_url=page_url(p["identificationModule"]["nctId"]))
 
 
 def read_snapshot(directory: Path) -> list[tuple[RawStudy, str]]:
@@ -108,3 +135,58 @@ def read_pages(source: SavedPages) -> list[tuple[RawStudy, str]]:
                 "lastUpdatePostDateStruct", {}).get("date", "1970-01-01")
             out.append((parse_study(study), fetched_at))
     return out
+
+
+async def fetch_pages(source: LivePages, fetched_at: str) -> list[tuple[RawStudy, str]]:
+    """Every study `GET /api/v2/studies?query.locn=Australia` returns, following nextPageToken to the last page,
+    each dated `fetched_at`. The location filter is the API's text search, so a study it returns may still have no
+    Australian site; `in_australia` decides."""
+    out = []
+    params: dict[str, str | int] = {"query.locn": AUSTRALIA, "pageSize": source.page_size}
+    async with httpx.AsyncClient(base_url=source.base_url, timeout=source.timeout_s,
+                                 transport=source.transport) as client:
+        pace = _Pace(source)
+        while True:
+            page = await _get_page(client, params, source, pace)
+            out.extend((parse_study(study), fetched_at) for study in page.get("studies", ()))
+            if not (token := page.get("nextPageToken")):
+                return out
+            params = {**params, "pageToken": token}
+
+
+class _Pace:
+    """Spaces requests at least 60/requests_per_minute seconds apart, retries included."""
+    def __init__(self, source: LivePages):
+        self.interval, self.sleep, self.last = 60.0 / source.requests_per_minute, source.sleep, None
+
+    async def wait(self) -> None:
+        if self.last is not None and (gap := self.interval - (time.monotonic() - self.last)) > 0:
+            await self.sleep(gap)
+        self.last = time.monotonic()
+
+
+_TRANSIENT = frozenset({429, 500, 502, 503, 504})
+
+
+async def _get_page(client: httpx.AsyncClient, params: dict, source: LivePages, pace: _Pace) -> dict[str, Any]:
+    for attempt in range(source.retries + 1):
+        await pace.wait()
+        try:
+            r = await client.get("/studies", params=params)
+        except httpx.TransportError:
+            if attempt == source.retries:
+                raise
+            await source.sleep(2.0 ** attempt)
+            continue
+        if r.status_code not in _TRANSIENT or attempt == source.retries:
+            r.raise_for_status()
+            return r.json()
+        await source.sleep(_retry_after(r) or 2.0 ** attempt)
+    raise AssertionError("unreachable")
+
+
+def _retry_after(r: httpx.Response) -> float | None:
+    try:
+        return float(r.headers["retry-after"])
+    except (KeyError, ValueError):
+        return None

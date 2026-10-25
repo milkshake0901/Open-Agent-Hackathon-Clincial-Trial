@@ -11,6 +11,7 @@ import {
   api, type CriterionResultOut, type DoctorQuestion, type RespondentQuestion, type SiteOut, type VerdictOut,
 } from "@/lib/api";
 import { QuestionsForYou } from "./questions-for-you";
+import { TrialContacts } from "./trial-contacts";
 
 type State =
   | { kind: "loading" }
@@ -118,6 +119,7 @@ function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
           {v.results.map((r) => <ResultItem key={r.criterion_id} result={r} />)}
         </ul>
       </details>
+      <TrialContacts nctId={v.nct_id} />
     </article>
   );
 }
