@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -32,6 +33,17 @@ class Lane(StrEnum):
 
 
 @dataclass(frozen=True)
+class Reply:
+    """What a provider answers: the reply text as the model sent it, unparsed, and the call's metadata."""
+    text: str
+    model_requested: str
+    model_answered: str      # from the response's `model` field; logged on LlmCalled
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: int
+
+
+@dataclass(frozen=True)
 class Completion(Generic[T]):
     value: T
     model_requested: str
@@ -39,19 +51,27 @@ class Completion(Generic[T]):
     prompt_tokens: int
     completion_tokens: int
     latency_ms: int
-    raw: str | None = None   # the reply text as the model sent it; written to the log file only
 
 
-class UnparsedReply(Exception):
-    """A provider's reply that did not validate against `out`: the ValidationError and the raw text, so the log
-    file can show what the model said. app.llm.complete treats it as a pydantic.ValidationError."""
-    def __init__(self, raw: str, error: ValidationError) -> None:
-        super().__init__(str(error))
-        self.raw, self.error = raw, error
+def strip_reasoning(text: str) -> str:
+    """Some lanes leak their reasoning, sometimes without the opening tag: keep what follows the last </think>."""
+    return text.rsplit("</think>", 1)[-1].strip()
+
+
+def json_object(text: str) -> str:
+    """The JSON object in a reply, without reasoning or code fences."""
+    text = strip_reasoning(text)
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
+    if fenced:
+        text = fenced.group(1)
+    start, end = text.find("{"), text.rfind("}")
+    return text[start : end + 1] if start != -1 and end > start else text
 
 
 class LLM(Protocol):
-    async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Completion[T]: ...
+    async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Reply:
+        """JSON-mode call; `out` is the shape the prompt asks for. app.llm.complete parses the reply."""
+        ...
     def model_for(self, lane: Lane | None) -> str:
         """The model a lane asks for; the log file names it when a call fails before any reply."""
         ...
@@ -61,7 +81,7 @@ class LLM(Protocol):
 
 
 async def complete(ctx, lane: Lane, *, system: str, user: str, out: type[T], run_id: RunId | None) -> Completion[T]:
-    """JSON-mode call, parse into `out`; ONE transport-level retry on parse failure with the validation error
+    """JSON-mode call, parse the reply into `out`; ONE transport-level retry on parse failure with the validation error
     appended (this is not a domain loop and is not traced as one). Records an llm_call row and emits LlmCalled to the run when run_id given.
     Timeout 180 s (model load). Raises LlmUnavailable after that; loops treat it as a failed Trial / Rejected run.
     Every attempt writes one `llm.complete` line to the log file (app.logfile), run or not."""
@@ -72,10 +92,16 @@ async def complete(ctx, lane: Lane, *, system: str, user: str, out: type[T], run
     for attempt in (1, 2):
         started = time.monotonic()
         try:
-            completion = await asyncio.wait_for(ctx.llm.complete(lane, system, prompt, out), timeout=_TIMEOUT_S)
-        except (ValidationError, UnparsedReply) as e:
-            raw, invalid = (e.raw, e.error) if isinstance(e, UnparsedReply) else (None, e)
-            _log_call(ctx, lane, system, prompt, run_id, started, raw=raw, error=str(invalid))
+            reply = await asyncio.wait_for(ctx.llm.complete(lane, system, prompt, out), timeout=_TIMEOUT_S)
+        except Exception as e:   # timeout, transport, provider: one place turns them into LlmUnavailable
+            _log_call(ctx, lane, system, prompt, run_id, started, error=f"{type(e).__name__}: {e}")
+            if run_id is not None:
+                await trace.record_llm_call(ctx.writer, run_id, _failed(lane))
+            raise LlmUnavailable(f"{lane} model unavailable: {e}") from e
+        try:
+            value = out.model_validate_json(json_object(reply.text))
+        except ValidationError as invalid:
+            _log_call(ctx, lane, system, prompt, run_id, started, raw=reply.text, error=str(invalid))
             if run_id is not None:
                 await trace.record_llm_call(ctx.writer, run_id, _failed(lane))
             if attempt == 2:
@@ -83,12 +109,10 @@ async def complete(ctx, lane: Lane, *, system: str, user: str, out: type[T], run
             prompt = (f"{user}\n\nYour previous answer did not match the schema:\n{invalid}\n"
                       "Answer again with valid JSON.")
             continue
-        except Exception as e:   # timeout, transport, provider: one place turns them into LlmUnavailable
-            _log_call(ctx, lane, system, prompt, run_id, started, error=f"{type(e).__name__}: {e}")
-            if run_id is not None:
-                await trace.record_llm_call(ctx.writer, run_id, _failed(lane))
-            raise LlmUnavailable(f"{lane} model unavailable: {e}") from e
-        _log_call(ctx, lane, system, prompt, run_id, started, completion=completion)
+        completion = Completion(value=value, model_requested=reply.model_requested,
+                                model_answered=reply.model_answered, prompt_tokens=reply.prompt_tokens,
+                                completion_tokens=reply.completion_tokens, latency_ms=reply.latency_ms)
+        _log_call(ctx, lane, system, prompt, run_id, started, raw=reply.text, completion=completion)
         if run_id is not None:   # an llm_call row and an LlmCalled event belong to a run
             call_id = await trace.record_llm_call(ctx.writer, run_id, trace.LlmCall(
                 id=_call_id(), lane=lane, model_requested=completion.model_requested,
@@ -107,16 +131,13 @@ log = logging.getLogger(__name__)
 
 def _log_call(ctx, lane: Lane, system: str, user: str, run_id: RunId | None, started: float, *,
               completion: Completion | None = None, raw: str | None = None, error: str | None = None) -> None:
-    """The prompts are the de-identified text the model was sent; nothing else about the patient is added."""
-    try:
-        requested = completion.model_requested if completion else ctx.llm.model_for(lane)
-        logfile.step(log, "llm.complete", lane=str(lane), model_requested=requested,
-                     model_answered=completion.model_answered if completion else None, system=system, user=user,
-                     raw=completion.raw if completion else raw,
-                     parsed=completion.value.model_dump(mode="json") if completion else None, error=error,
-                     duration_ms=int((time.monotonic() - started) * 1000), run_id=run_id)
-    except Exception:   # noqa: BLE001 — the log never fails a model call
-        pass
+    """The prompts are the de-identified text the model was sent; nothing else about the patient is added.
+    `raw` is the reply text as the model sent it; None when no reply came."""
+    logfile.step(log, "llm.complete", lane=str(lane),
+                 model_requested=completion.model_requested if completion else ctx.llm.model_for(lane),
+                 model_answered=completion.model_answered if completion else None, system=system, user=user,
+                 raw=raw, parsed=completion.value.model_dump(mode="json") if completion else None, error=error,
+                 duration_ms=int((time.monotonic() - started) * 1000), run_id=run_id)
 
 
 def _call_id() -> str:

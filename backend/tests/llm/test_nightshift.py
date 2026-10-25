@@ -99,8 +99,9 @@ class Answer(BaseModel):
 
 async def test_lane_completion_goes_through_langchain_pinned_model():
     seen: list[httpx.Request] = []
-    done = await ns(seen, reply='```json\n{"answer": "yes", "confident": true}\n```').complete(Lane.FAST, "sys", "q", Answer)
-    assert done.value == Answer(answer="yes", confident=True)
+    reply = '```json\n{"answer": "yes", "confident": true}\n```'
+    done = await ns(seen, reply=reply).complete(Lane.FAST, "sys", "q", Answer)
+    assert done.text == reply
     assert done.model_requested == done.model_answered == "nvidia/nemotron-3.5-lightning-30b-a3b"
     req = seen[-1]
     assert json.loads(req.content)["response_format"] == {"type": "json_object"}
@@ -131,9 +132,13 @@ async def test_gateway_retries_once_with_the_validation_error_then_gives_up():
     calls: list[str] = []
 
     class Flaky:
+        def model_for(self, lane):
+            return "flaky"
+
         async def complete(self, lane, system, user, out):
             calls.append(user)
-            return out.model_validate_json('{"answer": 1}')   # always invalid
+            return llm.Reply(text='{"answer": 1}', model_requested="flaky", model_answered="flaky",   # always invalid
+                             prompt_tokens=0, completion_tokens=0, latency_ms=0)
 
     with pytest.raises(LlmUnavailable, match="did not parse twice"):
         await llm.complete(SimpleNamespace(llm=Flaky()), Lane.JUDGE, system="s", user="u", out=Answer, run_id=None)
