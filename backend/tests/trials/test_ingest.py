@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 from app import trials
+from tests.condition_term import tick_condition_term
 
 ELIGIBILITY = ("Inclusion Criteria:\n\n* Adults aged 18 years or older\n* ECOG Performance Status 0-1\n\n"
                "Exclusion Criteria:\n\n* Untreated CNS metastases")
@@ -142,6 +143,7 @@ async def test_a_trial_judged_while_open_keeps_its_verdict_once_closed_and_is_ne
         for line in user.splitlines() if line.startswith("- NCT")]} if lane == "deep" else {"checks": []}
     await trials.ingest(ctx, save_pages(tmp_path / "before", [study("NCT00000001", sites=[AU])]))
     patient = await record.create_patient(ctx, "Demo patient")
+    await tick_condition_term(ctx, patient)
     v1 = (await record.submit_questionnaire(ctx, patient, {"sex": "female"}, respondent="other")).version.id
     await matching.rescan(ctx, v1)
     judged = await matching.verdict(ctx, trials.NctId("NCT00000001"), v1)
@@ -229,6 +231,7 @@ async def test_a_stored_trial_later_found_withdrawn_or_without_an_australian_sit
     await trials.ingest(ctx, save_pages(tmp_path / "before", [study("NCT00000051", sites=[AU]),
                                                               study("NCT00000052", sites=[AU])]))
     patient = await record.create_patient(ctx, "Demo patient")
+    await tick_condition_term(ctx, patient)
     v1 = (await record.submit_questionnaire(ctx, patient, {"sex": "female"}, respondent="other")).version.id
     await matching.rescan(ctx, v1)
     judged = await matching.verdict(ctx, trials.NctId("NCT00000051"), v1)

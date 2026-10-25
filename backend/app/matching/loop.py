@@ -103,10 +103,10 @@ async def plan(ctx: Ctx, version_id: ProfileVersionId, only: set[NctId] | None,
     """(to_judge, skipped). SQL: active trials LEFT JOIN verdict ON (nct, trial.eligibility_hash, version)
     WHERE verdict is null. Reads via ctx.agent_reader (Zetaris). Old-hash Verdicts are kept (ADR 0002).
     A Condition term (its ticked Condition labels, ADR 0005) leaves out Open trials listing none of them (neither
-    judged nor skipped)."""
-    to_judge, skipped = await repo.trials_needing_verdict(ctx.agent_reader, version_id, only)
+    judged nor skipped); with no Condition term nothing is planned."""
     if condition_term is None:
-        return to_judge, skipped
+        return [], []
+    to_judge, skipped = await repo.trials_needing_verdict(ctx.agent_reader, version_id, only)
     selected = {t.nct_id for t in await trials.open_trials_with_labels(ctx, list(condition_term))}
     return [t for t in to_judge if t.nct_id in selected], [n for n in skipped if n in selected]
 
@@ -120,9 +120,14 @@ async def condition_term_for(ctx: Ctx, patient_id: record.PatientId) -> tuple[st
 async def run_rescan(ctx: Ctx, version_id: ProfileVersionId, only: set[NctId] | None, run_id: trace.RunId,
                      max_attempts: int, concurrency: int) -> RescanReport:
     """Plan, then judge each planned Trial with bounded concurrency. A Trial that fails (model unavailable) is
-    reported and left without a Verdict, so the next Re-scan picks it up."""
+    reported and left without a Verdict, so the next Re-scan picks it up. With no Condition term it judges nothing
+    and calls no model (ADR 0005)."""
     profile = await record.profile_version(ctx, version_id, for_agent=True)
-    to_judge, skipped = await plan(ctx, version_id, only, await condition_term_for(ctx, profile.patient_id))
+    term = await condition_term_for(ctx, profile.patient_id)
+    if term is None:
+        logfile.step(log, "matching.rescan.no_condition_term", run_id=run_id, profile_version_id=version_id,
+                     patient_id=profile.patient_id)
+    to_judge, skipped = await plan(ctx, version_id, only, term)
     await trace.append(ctx.writer, run_id, RescanPlanned(
         actor="matching", profile_version_id=version_id, to_judge=[t.nct_id for t in to_judge],
         skipped_existing=list(skipped)))

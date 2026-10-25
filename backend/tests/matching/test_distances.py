@@ -4,6 +4,7 @@ then nearest recruiting site) without ever changing one. Trials beyond the trave
 from __future__ import annotations
 
 from app import matching, trials
+from tests.condition_term import tick_condition_term
 from tests.matching.test_rescan import ANSWERS, NCT, _setup, answer_all, script, study, write_snapshot
 
 
@@ -104,6 +105,7 @@ async def test_the_same_verdict_outcomes_result_with_and_without_a_postcode(clea
     await matching.rescan(ctx, version.id)
     outcomes = {v.nct_id: v.outcome for v in await matching.verdicts_for_version(ctx, version.id)}
     other = await record.create_patient(ctx, "Demo patient without a postcode")
+    await tick_condition_term(ctx, other)
     no_postcode = {k: v for k, v in ANSWERS.items() if k != "postcode"}
     v2 = (await record.submit_questionnaire(ctx, other, {**no_postcode, "max_travel_km": "50"},
                                             respondent="other")).version

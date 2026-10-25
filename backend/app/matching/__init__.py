@@ -31,7 +31,9 @@ _RANK = {VerdictOutcome.ELIGIBLE: 0, VerdictOutcome.POSSIBLE: 1, VerdictOutcome.
 
 async def rescan(ctx: Ctx, version_id: ProfileVersionId, *, only: set[NctId] | None = None,
                  run_id: RunId | None = None, correlation_id: RunId | None = None) -> RescanReport:
-    """Produce a Verdict for every active Trial that lacks one for (trial, version, trial.eligibility_hash).
+    """Produce a Verdict for every Open trial the patient's Condition term selects that lacks one for (trial, version,
+    trial.eligibility_hash). With no Condition term (no settled Diagnosis check, or not sure) nothing is judged and no
+    model is called (ADR 0005).
 
     Idempotent and cheap: the plan is a set difference computed in SQL; Trials already judged
     for this version with the current eligibility hash are skipped without a model call.
@@ -71,9 +73,9 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[V
     recruiting site (unknown distance last); ties by NCT id. Results, Citations and questions are loaded (the
     Trials page shows them). Each Verdict carries its sites' km from the patient's CURRENT postcode, and Trials
     with no recruiting site within the travel limit are flagged `further_away`, never dropped. Distance only
-    orders and flags: the outcome is the stored one, with or without a postcode. Once the patient has a Condition
-    term (ADR 0005), only Trials listing one of its labels are listed, including Verdicts judged before it was
-    chosen; Verdicts for Trials an earlier choice selected stay stored but are not listed.
+    orders and flags: the outcome is the stored one, with or without a postcode. Only Trials listing one of the
+    patient's Condition term labels are listed (ADR 0005), including Verdicts judged before it was chosen, and none
+    while there is no Condition term; Verdicts for Trials an earlier choice selected stay stored but are not listed.
     A Trial that closed after it was judged keeps its Verdict (ADR 0002, 0004) and is listed after every Trial
     still open, ranked the same way among the others that closed."""
     patient_id = (await record.profile_version(ctx, version_id)).patient_id
@@ -143,10 +145,10 @@ async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[
 
 
 async def _selector(ctx: Ctx, condition_term: tuple[str, ...] | None, *, with_closed: bool = False):
-    """Which Trials count: all while there is no Condition term, else the Open trials (and, with_closed, the Closed
+    """Which Trials count: none while there is no Condition term, else the Open trials (and, with_closed, the Closed
     trials) listing one of its labels."""
     if condition_term is None:
-        return lambda nct_id: True
+        return lambda nct_id: False
     labels = list(condition_term)
     found = await trials.open_trials_with_labels(ctx, labels)
     if with_closed:
@@ -156,7 +158,7 @@ async def _selector(ctx: Ctx, condition_term: tuple[str, ...] | None, *, with_cl
 
 
 async def _selected(ctx: Ctx, version_id: ProfileVersionId):
-    """Which Trials the version's patient is matched against: all, or those its Condition term selects."""
+    """Which Trials the version's patient is matched against: those its Condition term selects (none without one)."""
     profile = await record.profile_version(ctx, version_id)
     return await _selector(ctx, await loop.condition_term_for(ctx, profile.patient_id))
 

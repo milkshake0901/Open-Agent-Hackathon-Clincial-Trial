@@ -13,6 +13,7 @@ from app.llm.nightshift import FakeLLM
 from app.main import app
 from tests.api.questionnaire_http import submit
 from tests.api.test_verdicts_api import matcher_citing
+from tests.condition_term import tick_condition_term
 from tests.trials.test_ingest import AU, save_pages, site, study, with_contacts
 from tests.trials.test_outcomes import with_outcomes
 
@@ -64,6 +65,7 @@ async def judged(clean_db, tmp_path, http, *studies):
     await trials.ingest(ctx, save_pages(tmp_path, list(studies)))
     app.state.ctx = ctx
     patient = (await http.post("/api/patients", json={"label": "Demo patient E"})).json()["patient_id"]
+    await tick_condition_term(ctx, patient)
     _, state = await submit(http, patient, ANSWERS)
     assert state["phase"] == "committed"
     return patient, state["profile_version_id"], writer

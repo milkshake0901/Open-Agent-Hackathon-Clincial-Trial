@@ -80,10 +80,14 @@ async def rescan(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
 
 @router.get("/patients/{pid}/versions/{vid}/verdicts", response_model=VerdictListOut)
 async def list_verdicts(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
-    """Ranked: eligible, then possible (fewest unknowns first), then excluded."""
+    """Ranked: eligible, then possible (fewest unknowns first), then excluded. Only Trials the patient's Condition term
+    selects; with none (the diagnosis step unfinished) `condition_term` is None and nothing is listed."""
     await patient_version(ctx, pid, vid)
     verdicts = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
-    return VerdictListOut(profile_version_id=vid, verdicts=[await _verdict_out(ctx, v) for v in verdicts])
+    held = await record.diagnosis(ctx, record.PatientId(pid))
+    term = list(held.condition_term) if held and held.condition_term else None
+    return VerdictListOut(profile_version_id=vid, condition_term=term,
+                          verdicts=[await _verdict_out(ctx, v) for v in verdicts])
 
 
 @router.get("/patients/{pid}/versions/{vid}/verdicts/{nct}", response_model=VerdictOut)

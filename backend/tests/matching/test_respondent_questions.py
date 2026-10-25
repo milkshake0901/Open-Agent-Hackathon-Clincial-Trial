@@ -5,6 +5,7 @@ Trials are synthetic snapshot studies; the Matcher and Intake agent are a script
 from __future__ import annotations
 
 from app import matching, record, trials
+from tests.condition_term import tick_condition_term
 from tests.matching.test_rescan import ANSWERS, _setup, script, study, write_snapshot
 
 WASHOUT = "No chemotherapy within 4 weeks before the first dose"
@@ -63,6 +64,7 @@ async def _setup_with_intake(clean_db, snapshot, answers, facts):
     ctx = make_ctx(clean_db, fake)
     await trials.load_snapshot(ctx, snapshot)
     patient = await record.create_patient(ctx, "Demo patient R")
+    await tick_condition_term(ctx, patient)
     outcome = await record.submit_questionnaire(ctx, patient, answers, respondent="patient")
     assert isinstance(outcome, record.Committed)
     return ctx, fake, await record.profile_version(ctx, outcome.version.id)

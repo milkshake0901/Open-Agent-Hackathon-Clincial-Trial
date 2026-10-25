@@ -3,6 +3,8 @@ Respondent ticks select which Trials a Re-scan judges and lists; "not sure" rais
 that belongs to no Criterion or Trial. Scripted fake model throughout."""
 from __future__ import annotations
 
+import json
+
 from app import matching, record, trials
 from app.llm.nightshift import FakeLLM
 from tests.matching.test_rescan import NCT, study, write_snapshot
@@ -71,8 +73,9 @@ async def test_ticked_labels_select_the_trials_listing_them(clean_db, tmp_path):
     assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {NCT}
 
 
-async def test_verdicts_judged_before_the_labels_were_ticked_are_listed_only_for_selected_trials(clean_db, tmp_path):
+async def test_verdicts_judged_under_an_earlier_choice_are_listed_only_for_trials_the_new_one_selects(clean_db, tmp_path):
     ctx, fake, patient, version = await _setup(clean_db, tmp_path)
+    await _tick(ctx, patient, LUNG + HER2)
     await matching.rescan(ctx, version.id)
     assert judged_trials(fake) == {NCT, BREAST}
 
@@ -96,30 +99,64 @@ async def test_changing_the_ticked_labels_hides_the_verdicts_the_new_choice_does
     assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {BREAST}
 
 
-async def test_without_a_settled_diagnosis_every_active_trial_is_judged(clean_db, tmp_path):
+async def test_without_a_condition_term_a_rescan_judges_nothing_and_calls_no_model(clean_db, tmp_path):
+    ctx, fake, patient, version = await _setup(clean_db, tmp_path)
+    calls = len(fake.calls)
+
+    report = await matching.rescan(ctx, version.id)
+
+    assert report.planned == () and report.judged == () and report.skipped_existing == ()
+    assert fake.calls[calls:] == []
+    assert await matching.verdicts_for_version(ctx, version.id) == []
+    assert await matching.questions_for_version(ctx, version.id) == []
+
+
+async def test_none_of_these_leaves_no_condition_term_so_nothing_is_judged(clean_db, tmp_path):
     ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     check = await record.check_diagnosis(ctx, patient)
     await record.answer_diagnosis_check(ctx, patient, check.id, "none_of_these")
+    calls = len(fake.calls)
 
     report = await matching.rescan(ctx, version.id)
 
-    assert set(report.planned) == {NCT, BREAST}
-    assert not any(q.criterion_id is None for q in await matching.questions_for_version(ctx, version.id))
+    assert report.planned == () and fake.calls[calls:] == []
+    assert await matching.questions_for_version(ctx, version.id) == []
 
 
-async def test_not_sure_raises_a_doctor_question_for_the_diagnosis_on_no_criterion(clean_db, tmp_path):
-    ctx, _, patient, version = await _setup(clean_db, tmp_path)
+async def test_not_sure_judges_nothing_and_raises_a_doctor_question_for_the_diagnosis_on_no_criterion(
+        clean_db, tmp_path):
+    ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     check = await record.check_diagnosis(ctx, patient)
     await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
+    calls = len(fake.calls)
     report = await matching.rescan(ctx, version.id)
-    assert set(report.planned) == {NCT, BREAST}
+    assert report.planned == () and fake.calls[calls:] == []
 
     questions = await matching.questions_for_version(ctx, version.id)
 
     first = questions[0]
     assert first.criterion_id is None and first.nct_id is None and first.subject == "diagnosis"
     assert DIAGNOSIS in first.text
-    assert [q for q in questions if q.criterion_id is None] == [first]
+    assert questions == [first]
+    assert await matching.respondent_questions_for_version(ctx, version.id) == []
+
+
+async def test_a_rescan_without_a_condition_term_says_so_in_the_log_file(clean_db, tmp_path):
+    from app import logfile
+    ctx, _, patient, version = await _setup(clean_db, tmp_path)
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        report = await matching.rescan(ctx, version.id)
+    finally:
+        logfile.reset()
+
+    steps = [json.loads(x) for x in path.read_text().splitlines()]
+    names = [s["step"] for s in steps if s["step"].startswith("matching.")]
+    assert names == ["matching.rescan.no_condition_term", "matching.rescan.started", "matching.rescan.finished"]
+    [said] = [s for s in steps if s["step"] == "matching.rescan.no_condition_term"]
+    assert said["run_id"] == report.run_id and said["profile_version_id"] == version.id
+    assert not any(s["step"] == "llm.complete" for s in steps)
 
 
 async def test_when_no_label_fits_not_sure_raises_the_diagnosis_doctor_question_too(clean_db, tmp_path):
@@ -161,7 +198,7 @@ async def test_torn_acl_offers_the_acl_labels_and_ticking_them_selects_only_the_
     assert {v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)} == {"NCT00000101", "NCT00000102"}
 
 
-async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_not_also_asked_the_diagnosis_question(
+async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_asked_nothing_until_it_is_settled(
         clean_db, tmp_path):
     ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     respond = fake.responder
@@ -174,6 +211,7 @@ async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_not_also_
                 r["ask"] = "Q6" if "ECOG" not in line else "Q8"
         return out
     fake.responder = ask_again
+    await _tick(ctx, patient, LUNG + HER2)
     await matching.rescan(ctx, version.id)
     assert "Q6" in {q.question for q in await matching.respondent_questions_for_version(ctx, version.id)}
 
@@ -182,5 +220,4 @@ async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_not_also_
 
     doctor = await matching.questions_for_version(ctx, version.id)
     assert doctor[0].subject == "diagnosis"
-    asked = {q.question for q in await matching.respondent_questions_for_version(ctx, version.id)}
-    assert "Q6" not in asked and "Q8" in asked
+    assert await matching.respondent_questions_for_version(ctx, version.id) == []

@@ -375,6 +375,7 @@ class EnquiryOut(BaseModel):
 
 class VerdictListOut(BaseModel):
     profile_version_id: str
+    condition_term: list[str] | None  # the ticked Condition labels; None (and `verdicts` empty) until some are ticked
     verdicts: list[VerdictOut]  # ranked: outcome (possible: fewest unknowns first), then nearest recruiting site
 
 

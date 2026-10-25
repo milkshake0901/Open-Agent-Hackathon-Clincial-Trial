@@ -40,6 +40,8 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         _, state = await submit(http, patient, {"diagnosis": DIAGNOSIS})
         vid = state["profile_version_id"]
         url = f"/api/patients/{patient}/questionnaire/diagnosis-check"
+        unchecked = (await http.get(f"/api/patients/{patient}/versions/{vid}/verdicts")).json()
+        assert unchecked["condition_term"] is None and unchecked["verdicts"] == []
 
         proposed = await http.post(url, json={})
         assert proposed.status_code == 201
@@ -59,7 +61,7 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         ticked = (await http.post(f"{url}/{again['id']}", json={"answer": "ticked",
                                                                 "labels": ["non-small cell lung cancer"]})).json()
         assert ticked["status"] == "ticked" and ticked["condition"] == ["Non-Small Cell Lung Cancer"]
-        assert ticked["rescan"] == {"judged": 0, "failed": 0}
+        assert ticked["rescan"] == {"judged": 1, "failed": 0}
         assert "Non-Small Cell Lung Cancer" in ticked["message"]
 
         third = (await http.post(url, json={"text": "something in the lung"})).json()

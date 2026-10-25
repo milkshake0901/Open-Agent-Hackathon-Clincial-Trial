@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app import matching, record, trials
 from app.llm.nightshift import FakeLLM
+from tests.condition_term import tick_condition_term
 
 SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "trials_snapshot"
 NCT = trials.NctId("NCT07680790")
@@ -30,12 +31,14 @@ def script(fake, matcher, judge=None):
 
 
 async def _setup(clean_db, answers=ANSWERS, snapshot=SNAPSHOT):
-    """Trials loaded from the snapshot and Profile v1 committed from structured answers (no model call yet)."""
+    """Trials loaded from the snapshot, a Condition term selecting all of them, and Profile v1 committed from
+    structured answers (no model call captured yet)."""
     from tests.conftest import make_ctx
     fake = FakeLLM()
     ctx = make_ctx(clean_db, fake)
     await trials.load_snapshot(ctx, snapshot)
     patient = await record.create_patient(ctx, "Demo patient M")
+    await tick_condition_term(ctx, patient)
     outcome = await record.submit_questionnaire(ctx, patient, answers, respondent="other")
     assert isinstance(outcome, record.Committed)
     return ctx, fake, await record.profile_version(ctx, outcome.version.id)
