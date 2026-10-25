@@ -300,7 +300,7 @@ export const api = {
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
   verdicts: (patientId: string, versionId: string) =>
-    call<{ profile_version_id: string; verdicts: VerdictOut[] }>(
+    call<{ profile_version_id: string; condition_term: string[] | null; verdicts: VerdictOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
     ),
   closedTrials: (patientId: string) =>
