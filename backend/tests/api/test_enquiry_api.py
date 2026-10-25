@@ -162,3 +162,15 @@ async def test_no_enquiry_without_a_verdict_and_none_yet_for_a_closed_trial(clea
     assert (await http.post(enquiry_url(patient, version, "NCT09999999"), json={})).status_code == 404
     assert (await http.post(enquiry_url(patient, version, "NCT00000009"), json={})).status_code == 409
     assert (await http.post(enquiry_url("pt_someone_else", version), json={})).status_code == 404
+
+
+async def test_a_trial_that_closed_after_it_was_judged_keeps_its_verdict_but_gets_no_open_trial_enquiry(
+        clean_db, tmp_path, http):
+    patient, version, writer = await judged(clean_db, tmp_path / "open", http, study(NCT, sites=[sydney()]))
+    await trials.ingest(app.state.ctx, save_pages(tmp_path / "closed", [study(NCT, status="COMPLETED",
+                                                                            sites=[sydney()])]))
+
+    r = await http.post(enquiry_url(patient, version), json={})
+
+    assert r.status_code == 409
+    assert writer.enquiry_prompts() == []

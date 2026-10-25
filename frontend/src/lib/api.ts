@@ -93,6 +93,7 @@ export type VerdictOut = {
   nct_id: string;
   title: string;
   status: string;
+  no_longer_recruiting: boolean; // closed after it was judged: the Verdict is kept, never re-judged
   profile_version_id: string;
   outcome: "eligible" | "possible" | "excluded";
   degraded: boolean;

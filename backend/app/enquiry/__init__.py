@@ -40,7 +40,7 @@ async def draft(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId, *,
     trial = await trials.trial(ctx, nct_id)
     if trial is None:
         raise LookupError(f"no Trial {nct_id}")
-    kind = "open" if trial.status in trials.ACTIVE_STATUSES else "closed"
+    kind = "open" if trial.is_open else "closed"
     template = templates.TEMPLATES.get(kind)
     if template is None:
         raise NoTemplate(f"Enquiries for Closed trials are not available yet ({nct_id})")
