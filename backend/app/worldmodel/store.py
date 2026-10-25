@@ -88,6 +88,27 @@ class PgEventStore:
         return int(rows[0]["head"])
 
 
+# Every table projector.py writes, so all of them can be rebuilt from wm_event (ADR 0001). No other table references
+# them, so they truncate together without CASCADE.
+PROJECTED_TABLES = ("fact", "profile_version", "profile_version_fact", "trial", "criterion", "trial_site",
+                    "trial_contact", "trial_outcome", "trial_outcome_value", "trial_publication", "outcome_summary", "verdict",
+                    "criterion_result", "doctor_question", "respondent_question")
+
+
+async def rebuild_projections(writer: "PgWriter", namespace: str) -> int:
+    """Truncate the projected tables and replay the namespace's wm_event log through the projector, in one
+    transaction, proving they are derived from the World Model (scripts/rebuild_projections.py). The app uses one
+    namespace; projections of any other are not replayed. Returns the number of events replayed."""
+    from app.worldmodel import projector
+
+    events = await PgEventStore(writer, namespace).load(namespace)
+    async with writer.transaction() as tx:
+        await tx.execute(f"TRUNCATE {', '.join(PROJECTED_TABLES)}")
+        for event in events:
+            await projector.project(tx, event)
+    return len(events)
+
+
 def _event_from_row(namespace: str, row: dict) -> "WorldEvent":
     """Rebuild the dataclasses a WorldEvent payload was serialised from (asdict → JSON)."""
     import json

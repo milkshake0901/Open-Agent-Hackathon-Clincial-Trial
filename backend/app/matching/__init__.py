@@ -16,9 +16,14 @@ from app.record import ProfileVersionId
 from app.trials import NctId
 from app.trace import RunId
 
-__all__ = ["rescan", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
+__all__ = ["rescan", "km", "CLOSED_SITE", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
            "respondent_questions_for_version", "Verdict", "DoctorQuestion", "RespondentQuestion", "RescanReport",
            "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation", "TrialSiteDistance"]
+
+# Distance from a coarse location point to a Trial site, and the site statuses that will never take a patient; for
+# other modules that rank Trial sites the way matching does (an Enquiry's nearest site contact).
+km = distance.km
+CLOSED_SITE = distance.CLOSED_SITE
 
 DIAGNOSIS_QUESTION = "diagnosis"   # the questionnaire question (Q6) a Diagnosis check reads
 _RANK = {VerdictOutcome.ELIGIBLE: 0, VerdictOutcome.POSSIBLE: 1, VerdictOutcome.EXCLUDED: 2}
@@ -30,7 +35,7 @@ async def rescan(ctx: Ctx, version_id: ProfileVersionId, *, only: set[NctId] | N
 
     Idempotent and cheap: the plan is a set difference computed in SQL; Trials already judged
     for this version with the current eligibility hash are skipped without a model call.
-    `only` narrows to Trials that trials.sync reported changed. Runs Trials with bounded
+    `only` narrows to the given Trials (e.g. those an ingest reported new or changed). Runs Trials with bounded
     concurrency; each Verdict commits in its own transaction, so a crash loses at most the
     in-flight Trials and the next rescan finishes the rest.
     The rescan run is traced under `correlation_id` (the ingest run that committed the version), if given.
@@ -50,10 +55,11 @@ async def _with_distances(ctx: Ctx, v: Verdict, at: distance.Origin) -> Verdict:
     return replace(v, nearest_site=r.nearest_recruiting, sites=r.sites, further_away=r.further_away)
 
 
-async def verdict(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId) -> Verdict | None:
+async def verdict(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId, *, for_agent: bool = False) -> Verdict | None:
     """With criterion results, citations (fact + document + page + quote + question) and doctor questions.
-    The Verdict judged against the Trial's current Criteria. Site distances as in verdicts_for_version."""
-    v = await repo.verdict(ctx.ui_reader, nct_id, version_id, with_results=True)
+    The Verdict judged against the Trial's current Criteria. Site distances as in verdicts_for_version.
+    for_agent reads the Verdict through Zetaris (ADR 0001), for a model input."""
+    v = await repo.verdict(ctx.agent_reader if for_agent else ctx.ui_reader, nct_id, version_id, with_results=True)
     if v is None:
         return None
     profile = await record.profile_version(ctx, version_id)
@@ -66,18 +72,25 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[V
     Trials page shows them). Each Verdict carries its sites' km from the patient's CURRENT postcode, and Trials
     with no recruiting site within the travel limit are flagged `further_away`, never dropped. Distance only
     orders and flags: the outcome is the stored one, with or without a postcode. Once the patient's diagnosis term
-    is confirmed (#14), only Trials that study it are listed, including Verdicts judged before it was confirmed."""
-    selected = await _selected(ctx, version_id)
+    is confirmed (#14), only Trials that study it are listed, including Verdicts judged before it was confirmed.
+    A Trial that closed after it was judged keeps its Verdict (ADR 0002, 0004) and is listed after every Trial
+    still open, ranked the same way among the others that closed."""
+    patient_id = (await record.profile_version(ctx, version_id)).patient_id
+    term = await loop.condition_term_for(ctx, patient_id)
+    open_now = await trials.active_trials(ctx)
+    selected = _selector(term, open_now + (await trials.closed_trials(ctx, term) if term else []))
     stored = [vu for vu in await repo.verdicts_for_version(ctx.ui_reader, version_id) if selected(vu[0].nct_id)]
     if not stored:
         return []
-    at = await distance.origin(ctx, (await record.profile_version(ctx, version_id)).patient_id)
+    at = await distance.origin(ctx, patient_id)
     located = [(await _with_distances(ctx, v, at), unknowns) for v, unknowns in stored]
+    still_open = {t.nct_id for t in open_now}
 
     def key(vu: tuple[Verdict, int]):
         v, unknowns = vu
         km = v.nearest_site.km if v.nearest_site and v.nearest_site.km is not None else float("inf")
-        return _RANK[v.outcome], unknowns if v.outcome == VerdictOutcome.POSSIBLE else 0, km, v.nct_id
+        return (v.nct_id not in still_open, _RANK[v.outcome], unknowns if v.outcome == VerdictOutcome.POSSIBLE else 0,
+                km, v.nct_id)
     return [v for v, _ in sorted(located, key=key)]
 
 

@@ -78,6 +78,21 @@ def make_ctx(pool, llm=None):
                settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN), now=lambda: NOW)
 
 
+class Recording:
+    """A Postgres agent reader (Zetaris in production) noting every table read through it, to check what a model
+    call is given was read through the agent path (ADR 0001)."""
+
+    def __init__(self, pool):
+        from app.sql.reader import PgReader
+        self._reader = PgReader(pool)
+        self.tables: set[str] = set()
+        self.fetch, self.wait_visible = self._reader.fetch, self._reader.wait_visible
+
+    def table(self, name: str) -> str:
+        self.tables.add(name)
+        return self._reader.table(name)
+
+
 @pytest.fixture
 def fake_llm():
     from app.llm.nightshift import FakeLLM

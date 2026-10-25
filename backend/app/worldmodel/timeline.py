@@ -10,7 +10,13 @@ World Model primitives. record, trials and matching call these; none of them cal
   Profile version    snapshot(entities=[patient], attrs={kind: "profile", number, document_hash, fact_ids})
   Trial              ingest([IngestObservation(type="trial", external_id=<NCT>, text=<eligibility text>,
                                                attrs={..., eligibility_hash, criteria})]) → entity trial:<NCT>;
-                     changed_ids drive the Re-scan
+                     changed_ids drive the Re-scan. The Australia-wide ingest leaves criteria empty (ADR 0004):
+  Criteria           ingest([IngestObservation(type="criteria", external_id=<NCT>:<eligibility hash>,
+                                               attrs={nct_id, eligibility_hash, criteria})]), written the first
+                     time a Trial's Criteria are asked for; immutable per hash, so a re-split appends nothing
+  Outcome summary    ingest([IngestObservation(type="outcome_summary", external_id=<NCT>:<Outcome content hash>,
+                                               text=<summary>, attrs={nct_id, outcomes_hash, model})]), written the
+                     first time a Closed trial's Outcomes are opened (#26)
   Verdict            relate(patient → trial:<NCT>, type="verdict", context="verdict:<NCT>",
                             valid_from=<profile version time>,
                             attrs={outcome, profile_version_id, eligibility_hash, results, questions, degraded, ...})
@@ -20,13 +26,14 @@ World Model primitives. record, trials and matching call these; none of them cal
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.matching import Verdict
     from app.record import Document, DraftFact, PatientId, ProfileVersion
     from app.trace import RunId
-    from app.trials import Criterion, TrialSite, Trial
+    from app.trials import Contact, Criterion, Outcomes, OutcomeSummary, TrialContacts, TrialSite, Trial
     from app.worldmodel.engine import IngestReport, WorldModel
 
 
@@ -78,27 +85,103 @@ def trial_entity_id(nct_id: str) -> str:
     return f"trial:{nct_id}"
 
 
-async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Criterion, ...], *tuple[tuple[TrialSite, ...], ...]]]",
-                        run_id: "RunId | None") -> "IngestReport":
-    """One ingest of (Trial, its Criteria[, its Sites]) tuples keyed by NCT id. Unchanged content appends nothing
-    (the fetch time is the observation time, not content), so changed_ids are the new or edited Trials. Sites, when
-    given, replace the Trial's stored sites; a pair without them leaves the stored sites alone."""
+@dataclass(frozen=True)
+class LoadedTrial:
+    """One Trial as an ingest loaded it, for record_trials. Sites (with their contacts), contacts and Outcomes left
+    None keep the stored ones; given, they replace them."""
+    trial: "Trial"
+    criteria: "tuple[Criterion, ...]" = ()
+    sites: "tuple[TrialSite, ...] | None" = None
+    contacts: "TrialContacts | None" = None
+    outcomes: "Outcomes | None" = None
+
+
+async def record_trials(wm: "WorldModel", loaded: "list[LoadedTrial]", run_id: "RunId | None") -> "IngestReport":
+    """One ingest of the loaded Trials keyed by NCT id. Unchanged content appends nothing (the fetch time is the
+    observation time, not content), so changed_ids are the new or edited Trials."""
+    from app.trials import page_url
     from app.worldmodel.engine import IngestObservation, Provenance
 
     observations = []
-    for t, criteria, *sites in trials:
-        source = Provenance(kind="api", at=t.fetched_at, by="trials",
-                            url=f"https://clinicaltrials.gov/study/{t.nct_id}", run_id=run_id)
+    for one in loaded:
+        t, criteria, sites, contacts, outcomes = one.trial, one.criteria, one.sites, one.contacts, one.outcomes
+        source = Provenance(kind="api", at=t.fetched_at, by="trials", url=page_url(t.nct_id), run_id=run_id)
         observations.append(IngestObservation(
             type="trial", external_id=t.nct_id, title=t.title, at=t.fetched_at, source=source,
             text=t.eligibility_text, attrs={
                 "conditions": list(t.conditions), "status": t.status, "eligibility_hash": t.eligibility_hash,
-                "source": t.source,
+                "source": t.source, "primary_completion_date": t.primary_completion_date,
+                "completion_date": t.completion_date, "last_update_date": t.last_update_date,
                 "criteria": [{"id": c.id, "kind": str(c.kind), "ordinal": c.ordinal, "text": c.text}
                              for c in criteria],
                 **({"sites": [{"facility": s.facility, "city": s.city, "country": s.country, "status": s.status,
-                               "lat": s.lat, "lon": s.lon} for s in sites[0]]} if sites else {})}))
+                               "lat": s.lat, "lon": s.lon, "contacts": [_contact(c) for c in s.contacts]}
+                              for s in sites]} if sites is not None else {}),
+                **({"contacts": {
+                    "sponsor": contacts.sponsor,
+                    "responsible_party": _contact(contacts.responsible_party) if contacts.responsible_party else None,
+                    "central": [_contact(c) for c in contacts.central],
+                    "officials": [_contact(c) for c in contacts.officials]}} if contacts is not None else {}),
+                **({"outcomes": _outcomes(outcomes)} if outcomes is not None else {})}))
     return await wm.ingest(observations, run_id=run_id)
+
+
+def _outcomes(o: "Outcomes") -> dict:
+    measures = lambda ms: [{"measure": m.measure, "description": m.description, "time_frame": m.time_frame}  # noqa: E731
+                           for m in ms]
+    return {"primary": measures(o.primary), "secondary": measures(o.secondary), "other": measures(o.other),
+            "has_results": o.has_results,
+            "results": [{"type": r.type, "title": r.title, "description": r.description, "time_frame": r.time_frame,
+                         "unit": r.unit, "param_type": r.param_type,
+                         "values": [{"group": v.group, "value": v.value, "spread": v.spread, "lower": v.lower,
+                                     "upper": v.upper, "label": v.label} for v in r.values]} for r in o.results],
+            "publications": [{"pmid": p.pmid, "type": p.type, "citation": p.citation} for p in o.publications]}
+
+
+def _contact(c: "Contact") -> dict:
+    return {"name": c.name, "role": c.role, "email": c.email, "phone": c.phone, "affiliation": c.affiliation,
+            "title": c.title}
+async def drop_trials(wm: "WorldModel", trials: "list[Trial]", at: str) -> None:
+    """Stored Trials an ingest no longer keeps (ADR 0004: a Closed trial past the 15-year cutoff, or a Trial now
+    withdrawn, in a status neither Open nor Closed, or with no Australian site): each Trial entity is replaced by a
+    dropped marker, so the projection no longer lists or judges it; its Criteria and any Verdicts stay as history (ADR 0002).
+    Idempotent: dropping a dropped Trial appends nothing, and a later ingest of the study records it again."""
+    from app.trials import page_url
+    from app.worldmodel.engine import IngestObservation, Provenance
+
+    await wm.ingest([IngestObservation(
+        type="trial", external_id=t.nct_id, title=t.title, at=at, attrs={"dropped": True},
+        source=Provenance(kind="api", at=at, by="trials", url=page_url(t.nct_id)))
+        for t in trials])
+
+
+async def record_criteria(wm: "WorldModel", trial: "Trial", criteria: "tuple[Criterion, ...]") -> None:
+    """The Criteria split from the Trial's current eligibility text, recorded apart from the Trial so that splitting
+    lazily never changes the Trial's content (a later identical ingest stays unchanged). Idempotent per hash."""
+    from app.trials import page_url
+    from app.worldmodel.engine import IngestObservation, Provenance
+
+    key = f"{trial.nct_id}:{trial.eligibility_hash}"
+    source = Provenance(kind="api", at=trial.fetched_at, by="trials", url=page_url(trial.nct_id))
+    await wm.ingest([IngestObservation(
+        type="criteria", external_id=key, title=trial.title, at=trial.fetched_at, source=source,
+        text=trial.eligibility_text, attrs={
+            "nct_id": trial.nct_id, "eligibility_hash": trial.eligibility_hash,
+            "criteria": [{"id": c.id, "kind": str(c.kind), "ordinal": c.ordinal, "text": c.text} for c in criteria]})])
+
+
+async def record_outcome_summary(wm: "WorldModel", trial: "Trial", summary: "OutcomeSummary", model: str,
+                                 at: str) -> None:
+    """The plain-language summary written for the Trial's Outcomes, recorded apart from the Trial so that it never
+    changes the Trial's content. Keyed by (NCT id, Outcome content hash): changed Outcomes get a new summary and
+    the old one stays as history."""
+    from app.trials import page_url
+    from app.worldmodel.engine import IngestObservation, Provenance
+
+    await wm.ingest([IngestObservation(
+        type="outcome_summary", external_id=f"{trial.nct_id}:{summary.outcomes_hash}", title=trial.title, at=at,
+        text=summary.text, attrs={"nct_id": trial.nct_id, "outcomes_hash": summary.outcomes_hash, "model": model},
+        source=Provenance(kind="agent", at=at, by="trials", url=page_url(trial.nct_id)))])
 
 
 async def record_verdict(wm: "WorldModel", patient_id: "PatientId", verdict: "Verdict") -> None:

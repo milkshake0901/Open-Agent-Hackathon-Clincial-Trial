@@ -57,5 +57,5 @@ db/            Postgres schema, Zetaris registration SQL
 docs/          architecture, API, ADRs, setup prompts
 frontend/      Next.js (to be created)
 data/          demo (committed), raw (never committed), trials_snapshot
-scripts/       seed, sync, rebuild projections
+scripts/       ingest trials, rebuild projections, seed
 ```

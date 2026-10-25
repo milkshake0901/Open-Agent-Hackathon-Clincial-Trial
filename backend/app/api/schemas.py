@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from app.enquiry import EnquiryKind
+
 
 class DocumentAccepted(BaseModel):
     document_hash: str
@@ -240,6 +242,7 @@ class VerdictOut(BaseModel):
     nct_id: str
     title: str
     status: str
+    no_longer_recruiting: bool = False    # the Trial closed after this Verdict was judged; kept, never re-judged
     profile_version_id: str
     outcome: Literal["eligible", "possible", "excluded"]
     degraded: bool
@@ -252,9 +255,133 @@ class VerdictOut(BaseModel):
     further_away: bool = False            # no recruiting site within the travel limit: show under "Further away"
 
 
+class ContactOut(BaseModel):
+    name: str
+    role: str                   # registry role, e.g. CONTACT, PRINCIPAL_INVESTIGATOR, SPONSOR
+    email: str                  # "" when the registry gives none (likewise phone, affiliation, title)
+    phone: str
+    affiliation: str
+    title: str
+
+
+class TrialSiteOut(BaseModel):
+    facility: str
+    city: str
+    status: str                 # registry status, e.g. RECRUITING; "" if not given
+    contacts: list[ContactOut]
+
+
+class OutcomeMeasureOut(BaseModel):
+    measure: str
+    description: str            # "" when the registry gives none (likewise time_frame)
+    time_frame: str
+
+
+class ResultValueOut(BaseModel):
+    group: str                  # the arm or group's title
+    value: str
+    spread: str                 # "" when the registry gives none (likewise lower, upper)
+    lower: str
+    upper: str
+    label: str                  # class and category the value is for when the measure is split; "" otherwise
+
+
+class PostedResultOut(BaseModel):
+    type: str                   # PRIMARY, SECONDARY, OTHER_PRE_SPECIFIED or POST_HOC
+    title: str
+    description: str
+    time_frame: str
+    unit: str
+    param_type: str             # e.g. MEDIAN, MEAN, COUNT_OF_PARTICIPANTS
+    values: list[ResultValueOut]
+
+
+class PublicationOut(BaseModel):
+    pmid: str                   # "" when the registry gives only a citation
+    type: str                   # RESULT, BACKGROUND or DERIVED
+    citation: str
+    url: str                    # PubMed page; "" without a PubMed id
+
+
+class OutcomesOut(BaseModel):
+    primary: list[OutcomeMeasureOut]
+    secondary: list[OutcomeMeasureOut]
+    other: list[OutcomeMeasureOut]
+    has_results: bool
+    results: list[PostedResultOut]
+    publications: list[PublicationOut]
+
+
+class OutcomeSummaryOut(BaseModel):
+    nct_id: str
+    summary: str                # plain-language summary of the Trial's Outcomes (#26), written on first open
+
+
+class TrialDetailOut(BaseModel):
+    nct_id: str
+    title: str
+    status: str
+    page_url: str                         # the Trial's ClinicalTrials.gov page
+    sponsor: str                          # "" if not given
+    responsible_party: ContactOut | None
+    central_contacts: list[ContactOut]
+    overall_officials: list[ContactOut]
+    sites: list[TrialSiteOut]             # Australian Trial sites only, in registry order
+    outcomes: OutcomesOut                 # what it measured or found (#25)
+
+
+class EnquiryIn(BaseModel):
+    include: list[str]                    # ids of the clinical details the Respondent confirmed (from GET .../enquiry)
+
+
+class ClinicalDetailOut(BaseModel):
+    id: str
+    label: str
+    text: str                             # de-identified
+    included: bool                        # in this draft; an unticked one never reached the model
+
+
+class RecipientOut(BaseModel):
+    name: str
+    email: str
+    kind: Literal["site", "central", "responsible_party", "official"]
+    facility: str | None
+
+
+class EnquiryDetailsOut(BaseModel):
+    """What an Enquiry may include, shown to the Respondent (all ticked) before anything is drafted."""
+    nct_id: str
+    details: list[ClinicalDetailOut]
+
+
+class EnquiryOut(BaseModel):
+    nct_id: str
+    template: EnquiryKind
+    subject: str
+    body: str                             # name and contact are placeholders the Respondent fills in
+    recipient: RecipientOut | None        # None: the Trial lists no email; see sponsor
+    sponsor: str
+    details: list[ClinicalDetailOut]
+
+
 class VerdictListOut(BaseModel):
     profile_version_id: str
     verdicts: list[VerdictOut]  # ranked: outcome (possible: fewest unknowns first), then nearest recruiting site
+
+
+class ClosedTrialOut(BaseModel):
+    """A Closed trial (ADR 0004): no Verdict, no Criterion results, only what it is and when it finished."""
+    nct_id: str
+    title: str
+    status: str
+    conditions: list[str]
+    closed_on: str | None   # primary completion, else completion, else last update (ISO date)
+    url: str                # its ClinicalTrials.gov page
+
+
+class ClosedTrialListOut(BaseModel):
+    condition_term: str | None  # None until a Diagnosis check confirms one; then `trials` is empty
+    trials: list[ClosedTrialOut]  # newest first by closed_on
 
 
 class RescanOut(BaseModel):
@@ -294,4 +421,4 @@ class VersionDiffOut(BaseModel):
     verdicts_changed: list[VerdictChangeOut] = []   # Trials whose outcome or any Criterion result moved
 
 
-# TODO: SyncReportOut, RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.
+# TODO: RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.

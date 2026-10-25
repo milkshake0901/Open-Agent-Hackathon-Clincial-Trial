@@ -19,7 +19,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 5. **Re-scan.** For a new Profile version, judge every active Trial that lacks a Verdict for (NCT, eligibility hash, version). Running it twice does nothing the second time.
 6. **Matcher ⇄ Evaluator** (max 3 attempts). The Matcher judges each Criterion against the patient's Facts, read through Zetaris, and sees each site as "name, status, km": code computes the distances from the postcode, which no model ever sees. The Evaluator rejects any claim without a valid citation. After 3 attempts, unsupported claims become `unknown`: a Doctor question when it needs clinical records, a Respondent question when it turns on something the Respondent could clarify (a vague date, a medicine name). An uncited "met" is never stored.
 7. **Verdicts + why.** Verdicts ranked by outcome, then nearest recruiting site (distance never changes a Verdict), with Citations back to the Document page, what changed since the last version, and the causal trace of how the system decided.
-8. **Trials** arrive separately: the fetcher pulls ClinicalTrials.gov through Zetaris and records them with World Model `ingest`, keyed by NCT ID. Only new or changed Trials trigger work.
+8. **Trials** arrive separately: the Australia-wide ingest ([ADR 0004](docs/adr/0004-australia-wide-ingest-only-open-trials-judged.md), `scripts/ingest_trials.py`) records every ClinicalTrials.gov study with an Australian site through World Model `ingest`, keyed by NCT ID. It makes no model call and never starts a Re-scan; Criteria are split, and Closed trials' Outcome summaries written, the first time they are needed.
 
 ## Folder structure
 
@@ -49,10 +49,12 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   ├── loop.py           Intake ⇄ Critic state machine; commit through the World Model
 │   │   │   └── repo.py           SQL reads; writes only documents and pages
 │   │   │
-│   │   ├── trials/               TRIALS: ClinicalTrials.gov, eligibility hash, Criteria
-│   │   │   ├── __init__.py       public API: sync, trial, active_trials, criteria
-│   │   │   ├── ctgov.py          fetch via Zetaris REST table, HTTP fallback
+│   │   ├── trials/               TRIALS: Australian ClinicalTrials.gov studies, Open and Closed trials (ADR 0004)
+│   │   │   ├── __init__.py       public API: ingest, load_snapshot, trial, active_trials, closed_trials, criteria,
+│   │   │   │                     sites, contacts, outcomes, outcome_summary, page_url
+│   │   │   ├── ctgov.py          study JSON → Trials: saved pages, or the live v2 API paged by pageToken (paced, retried)
 │   │   │   ├── criteria.py       eligibility text → Criteria (deterministic split, model fallback)
+│   │   │   ├── summary.py        a Closed trial's plain-language Outcome summary: prompt and Outcome content hash
 │   │   │   └── repo.py           SQL reads
 │   │   │
 │   │   ├── matching/             MATCHING: Criterion results, Verdicts, Doctor questions, Re-scan
@@ -63,6 +65,14 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   ├── verdict.py        pure rules: outcome from results, questions from unknowns
 │   │   │   ├── loop.py           Matcher ⇄ Evaluator state machine; Re-scan plan and run
 │   │   │   └── repo.py           SQL reads
+│   │   │
+│   │   ├── enquiry/              ENQUIRY: email bodies the Respondent edits, copies and sends themselves
+│   │   │   ├── __init__.py       public API: details (no model call), draft (nothing stored, nothing sent)
+│   │   │   ├── types.py          EnquiryKind, ClinicalDetail, Recipient, Enquiry
+│   │   │   ├── details.py        the de-identified clinical details offered, each untickable
+│   │   │   ├── recipient.py      Open: nearest Australian site contact, else central; Closed: responsible party,
+│   │   │   │                     else an overall official; else blank
+│   │   │   └── templates.py      one prompt per EnquiryKind: Open and Closed
 │   │   │
 │   │   ├── worldmodel/           METERLESS WORLD MODEL (our Python implementation)
 │   │   │   ├── __init__.py       public API: WorldModel, Provenance, timeline, ...
@@ -88,7 +98,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   └── writer.py         Postgres transactions
 │   │   │
 │   │   └── api/                  thin HTTP routes under /api (see docs/api.md)
-│   │       └── documents.py · patients.py · runs.py · trials.py · verdicts.py · health.py · schemas.py
+│   │       └── documents.py · patients.py · runs.py · trials.py · verdicts.py · enquiries.py · health.py · schemas.py
 │   │
 │   └── tests/
 │       ├── test_boundaries.py    fails on imports of another module's internals
@@ -103,7 +113,8 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 ├── docs/
 │   ├── architecture.md           design, synthesis decision, tradeoffs, open risks
 │   ├── api.md                    HTTP endpoints and response shapes
-│   ├── adr/                      decision records (0001 storage split, 0002 append-only + versioned Verdicts, 0003 questionnaire is a Document)
+│   ├── adr/                      decision records (0001 storage split, 0002 append-only + versioned Verdicts,
+│   │                             0003 questionnaire is a Document, 0004 Australia-wide ingest, only Open trials judged)
 │   ├── diagrams/                 agent-workflow.html / .png and its source .workflow.json
 │   └── setup/                    meterless-provider-prompt.md (Nightshift wiring, not yet applied)
 │
@@ -112,7 +123,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   ├── demo/                     de-identified demo Documents (committed)
 │   ├── raw/                      real Documents (gitignored; never commit)
 │   └── trials_snapshot/          saved trial results for an offline demo
-└── scripts/                      seed_demo, sync_trials, rebuild_projections (to write)
+└── scripts/                      ingest_trials, rebuild_projections; seed_demo (to write)
 ```
 
 ## Rules that keep it coherent
@@ -161,6 +172,18 @@ What good looks like:
 - `chat` prints `pong`. `lane fast` prints `requested … answered nvidia/nemotron-3.5-lightning-30b-a3b`; that line is what proves the Nemotron lane served the call.
 - `illustrate` prints `stored data/media/<job>/<seq>-<file>.png` (gitignored). On a runtime without a media engine it prints `Images unavailable: <reason>` and exits 2. The Nightshift web build has no media engine, so seat an image lane (still-sdcpp and weights) first.
 - Media source jobs use `MEDIA_PRIVACY` (default `local-only`). That floor is never widened, so on a box whose only local lane is the in-browser device model, a `local-only` job waits until the Nightshift page is open.
+
+## Ingest Australian trials
+
+Postgres must be up (`docker compose up -d`). From the repo root:
+
+```bash
+backend/.venv/bin/python scripts/ingest_trials.py --live          # page the live ClinicalTrials.gov v2 API, Australia only
+backend/.venv/bin/python scripts/ingest_trials.py --pages <dir>   # or: saved GET /api/v2/studies pages, one per file
+backend/.venv/bin/pytest tests/trials                             # run from backend/: recorded pages, no network
+```
+
+`--live` requests `GET /api/v2/studies?query.locn=Australia&pageSize=1000` and follows `nextPageToken` to the last page (about 13 pages for 12,600 studies), spacing requests to 40 a minute under the API's limit of about 50 and retrying timeouts, 429s and 5xx with back-off. It keeps only studies with an Australian Trial site and drops withdrawn ones (ADR 0004). It prints `N Trials from http: … new, … changed, … unchanged`; a second run reports everything unchanged. If a page still fails after the retries, the run stops and records nothing, so just run it again. It makes no model call and starts no Re-scan.
 
 ## Where to start
 

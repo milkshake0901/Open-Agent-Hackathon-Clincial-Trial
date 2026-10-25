@@ -3,14 +3,18 @@
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
 // first, excluded; then nearest recruiting site). Trials with no recruiting site within the travel limit sit in a
 // collapsed "Further away" group under their outcome, never hidden. Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
-// questionnaire links back to that question. Questions for you (Respondent questions, answered inline) and
-// Questions for your doctor are kept as two separate lists.
+// questionnaire links back to that question. Each Trial offers its contacts and an Enquiry to copy and send (about
+// taking part, or about its results once it is no longer recruiting). Questions for you (Respondent questions, answered inline) and
+// Questions for your doctor are kept as two separate lists. A Trial that stopped recruiting after it was judged keeps
+// its Verdict, shown in its own "No longer recruiting" section after the open ones (ADR 0004).
 
 import { useEffect, useState } from "react";
 import {
   api, type CriterionResultOut, type DoctorQuestion, type RespondentQuestion, type SiteOut, type VerdictOut,
 } from "@/lib/api";
 import { QuestionsForYou } from "./questions-for-you";
+import { Enquiry } from "./enquiry";
+import { TrialContacts } from "./trial-contacts";
 
 type State =
   | { kind: "loading" }
@@ -45,10 +49,11 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
   if (state.verdicts.length === 0)
     return <p>No trials have been checked against these answers yet. Please try again in a few minutes.</p>;
 
+  const closed = state.verdicts.filter((v) => v.no_longer_recruiting);
   return (
     <div className="flex flex-col gap-8">
       {GROUPS.map((g) => {
-        const verdicts = state.verdicts.filter((v) => v.outcome === g.outcome);
+        const verdicts = state.verdicts.filter((v) => v.outcome === g.outcome && !v.no_longer_recruiting);
         if (verdicts.length === 0) return null;
         const near = verdicts.filter((v) => !v.further_away);
         const far = verdicts.filter((v) => v.further_away);
@@ -56,7 +61,7 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
           <section key={g.outcome} aria-labelledby={`group-${g.outcome}`} className="flex flex-col gap-3">
             <h2 id={`group-${g.outcome}`} className="text-lg font-semibold">{g.title}</h2>
             <p className="text-muted">{g.blurb}</p>
-            {near.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
+            {near.map((v) => <VerdictCard key={v.nct_id} verdict={v} patientId={patientId} versionId={versionId} />)}
             {far.length > 0 && (
               <details className="flex flex-col gap-3">
                 <summary className="cursor-pointer min-h-11 flex items-center text-accent">
@@ -64,13 +69,23 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
                 </summary>
                 <p className="text-muted">No site is recruiting within the distance you said you would travel.</p>
                 <div className="flex flex-col gap-3 mt-2">
-                  {far.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
+                  {far.map((v) => <VerdictCard key={v.nct_id} verdict={v} patientId={patientId} versionId={versionId} />)}
                 </div>
               </details>
             )}
           </section>
         );
       })}
+      {closed.length > 0 && (
+        <section aria-labelledby="group-no-longer-recruiting" className="flex flex-col gap-3">
+          <h2 id="group-no-longer-recruiting" className="text-lg font-semibold">No longer recruiting</h2>
+          <p className="text-muted">
+            These trials stopped recruiting after we checked them. Your earlier result is kept so you can see what it
+            was, but they are not checked again.
+          </p>
+          {closed.map((v) => <VerdictCard key={v.nct_id} verdict={v} patientId={patientId} versionId={versionId} />)}
+        </section>
+      )}
       {state.asked.length > 0 && <QuestionsForYou patientId={patientId} questions={state.asked} />}
       {state.questions.length > 0 && (
         <section aria-labelledby="doctor-questions" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
@@ -94,12 +109,18 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
   );
 }
 
-function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
+function VerdictCard({ verdict: v, patientId, versionId }: { verdict: VerdictOut; patientId: string; versionId: string }) {
   const unknown = v.results.filter((r) => r.outcome === "unknown").length;
   return (
     <article className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
       <header className="flex flex-col gap-1">
         <h3 className="font-semibold">{v.title}</h3>
+        {v.no_longer_recruiting && (
+          <p className="text-sm font-medium">
+            No longer recruiting. When we checked, this trial was{" "}
+            {GROUPS.find((g) => g.outcome === v.outcome)?.title.toLowerCase()}.
+          </p>
+        )}
         <p className="text-sm text-muted">
           <a href={`https://clinicaltrials.gov/study/${v.nct_id}`} className="underline" rel="noreferrer" target="_blank">
             {v.nct_id}
@@ -118,6 +139,8 @@ function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
           {v.results.map((r) => <ResultItem key={r.criterion_id} result={r} />)}
         </ul>
       </details>
+      <TrialContacts nctId={v.nct_id} />
+      <Enquiry patientId={patientId} versionId={versionId} nctId={v.nct_id} open={!v.no_longer_recruiting} />
     </article>
   );
 }
