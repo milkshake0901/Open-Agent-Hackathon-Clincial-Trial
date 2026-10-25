@@ -49,12 +49,16 @@ The patient's postcode, how far they would travel and an optional contact detail
 _Avoid_: Settings, location Fact, profile
 
 **Diagnosis check**:
-The step where the Respondent confirms, rejects or is unsure about the Condition term understood from their own words.
+The step where the Respondent is shown a shortlist of Condition labels that fit their diagnosis in their own words, and ticks the ones that match, or answers none of these or not sure.
 _Avoid_: Diagnosis confirmation, normalisation
 
+**Condition label**:
+One condition exactly as a Trial lists it on ClinicalTrials.gov, such as "Anterior Cruciate Ligament Rupture"; a Diagnosis check only ever offers labels some Trial uses.
+_Avoid_: Condition (unqualified), keyword, tag
+
 **Condition term**:
-The formal name of the patient's condition, settled by a Diagnosis check, that decides which Trials are judged.
-_Avoid_: Search term, diagnosis code
+The set of Condition labels the Respondent ticked in their latest Diagnosis check; it selects the Open trials that are judged and the Closed trials that are shown. Until a patient has one, no Trial is judged.
+_Avoid_: Search term, diagnosis code, diagnosis
 
 ## Trials
 
@@ -113,5 +117,5 @@ An email body drafted for the Respondent to edit, copy and send themselves to a 
 _Avoid_: Message, contact request, email (unqualified)
 
 **Re-scan**:
-Re-running matching for every Open trial against a Profile version, run when the Respondent or an operator asks; an ingest never triggers one.
+Re-running matching for every Open trial the patient's Condition term selects against a Profile version, run when the Respondent or an operator asks; an ingest never triggers one.
 _Avoid_: Refresh, re-run, recheck
