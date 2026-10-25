@@ -171,9 +171,23 @@ backend/.venv/bin/pytest tests/llm                         # run from backend/: 
 What good looks like:
 
 - `status` prints `online` and `listed` for every lane. `unauthorized` means the token is wrong: copy it again from `<stateDir>/proxy-token`. `offline` means nothing answered `GET /v1/models`.
-- `chat` prints `pong`. `lane fast` prints `requested … answered nvidia/nemotron-3.5-lightning-30b-a3b`; that line is what proves the Nemotron lane served the call.
+- `chat` prints `pong`. `lane fast` prints `requested … answered nvidia/nemotron-3-ultra-550b-a55b`; that line is what proves the Nemotron lane served the call.
 - `illustrate` prints `stored data/media/<job>/<seq>-<file>.png` (gitignored). On a runtime without a media engine it prints `Images unavailable: <reason>` and exits 2. The Nightshift web build has no media engine, so seat an image lane (still-sdcpp and weights) first.
 - Media source jobs use `MEDIA_PRIVACY` (default `local-only`). That floor is never widened, so on a box whose only local lane is the in-browser device model, a `local-only` job waits until the Nightshift page is open.
+
+### Which Nemotron serves each lane
+
+Lanes name a model, never a `meterless/*` routing mode. Checked on 2026-10-24 against the Nightshift M1-M4 web build:
+
+| Lane | Model | Why |
+|---|---|---|
+| `fast` (Intake, diagnosis check) | Nemotron 3 Ultra 550B | Lightning answers short prompts but fails the Intake prompt at about 60 s (`502 Load failed`) |
+| `deep` (Matcher) | Nemotron 3 Ultra 550B | strongest reasoning, 1M context |
+| `judge` (Evaluator) | Nemotron 3 Ultra 550B, for now | meant to be Lightning 30B, so a different model checks the Matcher (its claims are short); Lightning is switched off in Nightshift's Compute sources, which answers any call naming it with `400 That model is switched off` |
+
+Not usable from this account or build: Nemotron 3 Super 120B and Llama 3.1 Nemotron Ultra 253B (NVIDIA 404), Llama 3.3 Nemotron Super 49B (410, retired), Nemotron 3 Embed 1B (the web build answers `/v1/embeddings` with 501).
+
+**`meterless/fusion` doesn't give us a race.** Until fusion was switched on in Nightshift's own settings, every fusion request came back as auto (`app_policy.mode_coerced: true`, `bound_mode: auto`, `routing.reason: single-candidate`), whatever the `trialmatch` app rule said. Now it runs as fusion (`provider_model: meterless/fusion`), but Ultra still answers alone and the verifier is skipped as low risk (`cross_check.skip_reason: tier_a_chat`): Ultra is the only enabled Nemotron, and fusion wants a family-diverse panel. The app doesn't need it: the Matcher ⇄ Evaluator loop is our race and check.
 
 ## Ingest Australian trials
 
