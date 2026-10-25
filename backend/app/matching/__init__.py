@@ -66,18 +66,25 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[V
     Trials page shows them). Each Verdict carries its sites' km from the patient's CURRENT postcode, and Trials
     with no recruiting site within the travel limit are flagged `further_away`, never dropped. Distance only
     orders and flags: the outcome is the stored one, with or without a postcode. Once the patient's diagnosis term
-    is confirmed (#14), only Trials that study it are listed, including Verdicts judged before it was confirmed."""
-    selected = await _selected(ctx, version_id)
+    is confirmed (#14), only Trials that study it are listed, including Verdicts judged before it was confirmed.
+    A Trial that closed after it was judged keeps its Verdict (ADR 0002, 0004) and is listed after every Trial
+    still open, ranked the same way among the others that closed."""
+    patient_id = (await record.profile_version(ctx, version_id)).patient_id
+    term = await loop.condition_term_for(ctx, patient_id)
+    open_now = await trials.active_trials(ctx)
+    selected = _selector(term, open_now + (await trials.closed_trials(ctx, term) if term else []))
     stored = [vu for vu in await repo.verdicts_for_version(ctx.ui_reader, version_id) if selected(vu[0].nct_id)]
     if not stored:
         return []
-    at = await distance.origin(ctx, (await record.profile_version(ctx, version_id)).patient_id)
+    at = await distance.origin(ctx, patient_id)
     located = [(await _with_distances(ctx, v, at), unknowns) for v, unknowns in stored]
+    still_open = {t.nct_id for t in open_now}
 
     def key(vu: tuple[Verdict, int]):
         v, unknowns = vu
         km = v.nearest_site.km if v.nearest_site and v.nearest_site.km is not None else float("inf")
-        return _RANK[v.outcome], unknowns if v.outcome == VerdictOutcome.POSSIBLE else 0, km, v.nct_id
+        return (v.nct_id not in still_open, _RANK[v.outcome], unknowns if v.outcome == VerdictOutcome.POSSIBLE else 0,
+                km, v.nct_id)
     return [v for v, _ in sorted(located, key=key)]
 
 

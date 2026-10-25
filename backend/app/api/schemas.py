@@ -240,6 +240,7 @@ class VerdictOut(BaseModel):
     nct_id: str
     title: str
     status: str
+    no_longer_recruiting: bool = False    # the Trial closed after this Verdict was judged; kept, never re-judged
     profile_version_id: str
     outcome: Literal["eligible", "possible", "excluded"]
     degraded: bool

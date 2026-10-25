@@ -62,3 +62,44 @@ async def test_closed_trials_for_the_condition_term_are_listed_newest_first_and_
         assert rescan["judged"] + rescan["skipped_existing"] == ["NCT00000001"]
         assert [v["nct_id"] for v in verdicts] == ["NCT00000001"]
         assert not any("NCT0000005" in c.user for c in fake.calls)
+
+
+async def test_a_trial_that_closes_after_it_was_judged_keeps_its_verdict_marked_no_longer_recruiting(clean_db, tmp_path):
+    from tests.conftest import make_ctx
+    fake = FakeLLM(respond)
+    ctx = make_ctx(clean_db, fake)
+    await trials.ingest(ctx, save_pages(tmp_path / "before", [study("NCT00000001", sites=[AU]),
+                                                              study("NCT00000002", sites=[AU])]))
+    app.state.ctx = ctx
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        patient = (await http.post("/api/patients", json={"label": "Demo patient C"})).json()["patient_id"]
+        _, state = await submit(http, patient, {"diagnosis": DIAGNOSIS})
+        vid = state["profile_version_id"]
+        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check", json={})).json()
+        await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check/{check['id']}", json={"answer": "yes"})
+        await http.post(f"/api/patients/{patient}/versions/{vid}/rescan")
+        verdicts = f"/api/patients/{patient}/versions/{vid}/verdicts"
+        before = {v["nct_id"]: v for v in (await http.get(verdicts)).json()["verdicts"]}
+        assert before.keys() == {"NCT00000001", "NCT00000002"}
+
+        await trials.ingest(ctx, save_pages(tmp_path / "after", [
+            study("NCT00000001", status="TERMINATED", sites=[AU], primary_completion="2026-09"),
+            study("NCT00000002", sites=[AU])]))
+
+        listed = (await http.get(verdicts)).json()["verdicts"]
+        assert [v["nct_id"] for v in listed] == ["NCT00000002", "NCT00000001"]   # still recruiting first
+        after = {v["nct_id"]: v for v in listed}
+        assert not after["NCT00000002"]["no_longer_recruiting"]
+        closed = after["NCT00000001"]
+        assert closed["no_longer_recruiting"] and closed["status"] == "TERMINATED"
+        assert closed["outcome"] == before["NCT00000001"]["outcome"]
+        assert closed["results"] == before["NCT00000001"]["results"]
+        one = (await http.get(f"{verdicts}/NCT00000001")).json()
+        assert one["no_longer_recruiting"] and one["outcome"] == closed["outcome"]
+
+        listed = (await http.get(f"/api/patients/{patient}/closed-trials")).json()["trials"]
+        assert [t["nct_id"] for t in listed] == ["NCT00000001"]
+        calls = len(fake.calls)
+        rescan = (await http.post(f"/api/patients/{patient}/versions/{vid}/rescan")).json()
+        assert rescan["planned"] == [] and rescan["skipped_existing"] == ["NCT00000002"]
+        assert len(fake.calls) == calls
