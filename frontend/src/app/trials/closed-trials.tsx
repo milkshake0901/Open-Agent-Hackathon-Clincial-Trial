@@ -1,9 +1,9 @@
 "use client";
 
-// Closed trials for the patient's Condition term (ADR 0004), newest first, in their own section below the Verdicts.
+// Closed trials listing the patient's Condition term labels (ADR 0004), newest first, in their own section below the Verdicts.
 // They can no longer enrol, so they carry no Verdict: only what they studied, their status, when they finished and
 // their Outcomes (#25) and who to contact (#27), with an Enquiry about those Outcomes or a follow-on study (#29).
-// Nothing is shown until a Diagnosis check has confirmed a Condition term.
+// Nothing is shown until a Diagnosis check has ticked Condition labels (the Condition term, ADR 0005).
 
 import { useEffect, useState } from "react";
 import { api, type ClosedTrialOut } from "@/lib/api";
@@ -14,7 +14,7 @@ import { TrialOutcomes } from "./trial-outcomes";
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; term: string | null; trials: ClosedTrialOut[] };
+  | { kind: "ready"; term: string[] | null; trials: ClosedTrialOut[] };
 
 const finished = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString("en-AU", { month: "long", year: "numeric" });
@@ -35,7 +35,7 @@ export function ClosedTrials({ patientId, versionId }: { patientId: string; vers
 
   return (
     <section aria-labelledby="closed-trials" className="flex flex-col gap-3">
-      <h2 id="closed-trials" className="text-lg font-semibold">Past trials for {state.term}</h2>
+      <h2 id="closed-trials" className="text-lg font-semibold">Past trials for {state.term.join(", ")}</h2>
       <p className="text-muted">
         These trials have stopped taking new people, so we have not checked them against your answers. They show what
         research has already been done in Australia. Newest first.

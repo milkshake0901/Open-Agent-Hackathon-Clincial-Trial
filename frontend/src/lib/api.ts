@@ -65,13 +65,21 @@ export type DoctorQuestion = {
   unblocks: string[];
 };
 
+// A Condition label as stored Trials list it, with how many Open and Closed trials list it (ADR 0005).
+export type ConditionLabel = { label: string; open: number; closed: number };
+
+export type DiagnosisAnswer =
+  | { answer: "ticked"; labels: string[] }
+  | { answer: "none_of_these"; text?: string }
+  | { answer: "not_sure" };
+
 export type DiagnosisCheck = {
   id: string;
   text: string;
-  suggested_term: string | null;
-  confidence: number;
-  status: "proposed" | "confirmed" | "rejected" | "not_sure" | "unclear";
-  condition: string | null;
+  shortlist: ConditionLabel[]; // best fit first; empty when no label fits
+  ticked: string[];
+  status: "proposed" | "ticked" | "none_of_these" | "not_sure";
+  condition: string[] | null; // the Condition term: the ticked labels
   needs_gp: boolean;
   ask_again: boolean;
   message: string;
@@ -296,7 +304,7 @@ export const api = {
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
     ),
   closedTrials: (patientId: string) =>
-    call<{ condition_term: string | null; trials: ClosedTrialOut[] }>(
+    call<{ condition_term: string[] | null; trials: ClosedTrialOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/closed-trials`,
     ),
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
@@ -310,10 +318,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(text ? { text } : {}),
     }),
-  answerDiagnosis: (patientId: string, checkId: string, answer: "yes" | "no" | "not_sure") =>
+  // none_of_these with text returns the new check made from those words.
+  answerDiagnosis: (patientId: string, checkId: string, answer: DiagnosisAnswer) =>
     call<DiagnosisCheck>(
       `/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check/${encodeURIComponent(checkId)}`,
-      { method: "POST", body: JSON.stringify({ answer }) },
+      { method: "POST", body: JSON.stringify(answer) },
     ),
   doctorQuestions: (patientId: string, versionId: string) =>
     call<DoctorQuestion[]>(
