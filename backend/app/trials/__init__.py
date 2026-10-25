@@ -31,6 +31,14 @@ class Trial:
     eligibility_hash: str        # sha256 of normalised eligibility_text
     fetched_at: str
     source: str                  # "zetaris" | "http" — logged for the sponsor-tech story
+    primary_completion_date: str | None = None   # ISO dates from the registry; a month-only date is its 1st
+    completion_date: str | None = None
+    last_update_date: str | None = None
+
+    @property
+    def closed_on(self) -> str | None:
+        """A Closed trial's cutoff date (ADR 0004): primary completion, else completion, else last update."""
+        return self.primary_completion_date or self.completion_date or self.last_update_date
 
 
 @dataclass(frozen=True)
@@ -64,18 +72,31 @@ class SyncReport:
 
 
 @dataclass(frozen=True)
+class IngestReport(SyncReport):
+    closed: tuple[NctId, ...] = ()   # Closed trials recorded (new, changed or unchanged), within the 15-year cutoff
+    dropped: tuple[NctId, ...] = ()  # Closed trials past the cutoff: not stored, or removed if an earlier run kept them
+
+
+@dataclass(frozen=True)
 class SavedPages:
     """An ingest source: ClinicalTrials.gov v2 `GET /api/v2/studies` responses saved under `directory`, one page
     per JSON file (the response body, or the cached envelope {url, fetched_at, body}), read in file-name order."""
     directory: Path
 
 
-__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "active_trials", "studies_condition",
-           "Trial", "Criterion", "TrialSite", "CriterionKind", "SavedPages",
-           "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES", "trial_columns", "trial_from_row", "active_filter"]
+__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "active_trials", "closed_trials",
+           "studies_condition", "Trial", "Criterion", "TrialSite", "CriterionKind", "SavedPages",
+           "NctId", "CriterionId", "SyncReport", "IngestReport", "ACTIVE_STATUSES", "CLOSED_STATUSES",
+           "trial_columns", "trial_from_row", "active_filter"]
 
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
 ACTIVE_STATUSES = ("RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION")
+
+# Statuses of a Closed trial: it can no longer enrol, so it is shown for its Outcomes and contacts, never judged.
+CLOSED_STATUSES = ("COMPLETED", "TERMINATED", "SUSPENDED", "ACTIVE_NOT_RECRUITING", "UNKNOWN")
+
+# A Closed trial whose cutoff date (Trial.closed_on) is more than this many years before the ingest date is dropped.
+CLOSED_YEARS_KEPT = 15
 
 # A study withdrawn before enrolling anyone is not a Trial (glossary) and is never stored.
 WITHDRAWN = "WITHDRAWN"
@@ -116,14 +137,39 @@ async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30)
     raise NotImplementedError
 
 
-async def ingest(ctx: Ctx, source: SavedPages) -> SyncReport:
+async def ingest(ctx: Ctx, source: SavedPages) -> IngestReport:
     """Record every study the source holds that has an Australian Trial site (ADR 0004), keeping only its
-    Australian sites and never a withdrawn study. Stores eligibility text and its hash only: no model call, and
-    Criteria are split the first time they are asked for (`criteria`). Idempotent on NCT id and content: a second
-    run over the same pages records nothing and reports every Trial unchanged."""
-    studies = [(ctgov.in_australia(raw), fetched_at) for raw, fetched_at in ctgov.read_pages(source)]
-    return await _record(ctx, [(raw, fetched_at) for raw, fetched_at in studies
-                               if raw.sites and raw.status != WITHDRAWN], "saved_pages")
+    Australian sites and never a withdrawn study. A Closed trial whose cutoff date is more than 15 years before
+    the ingest date (ctx.now) is not stored, and is removed if an earlier run stored it. Stores eligibility text and
+    its hash only: no model call, and Criteria are split the first time they are asked for (`criteria`).
+    Idempotent on NCT id and content: a second run over the same pages records nothing and reports every Trial
+    unchanged."""
+    from app.worldmodel import timeline
+
+    cutoff = _years_before(ctx.now().date(), CLOSED_YEARS_KEPT).isoformat()
+    kept, too_old = [], []
+    for raw, fetched_at in ctgov.read_pages(source):
+        raw = ctgov.in_australia(raw)
+        if not raw.sites or raw.status == WITHDRAWN:
+            continue
+        closed_on = ctgov.to_trial(raw, "", fetched_at).closed_on
+        if raw.status not in ACTIVE_STATUSES and closed_on is not None and closed_on < cutoff:
+            too_old.append((raw, fetched_at))
+        else:
+            kept.append((raw, fetched_at))
+    report = await _record(ctx, kept, "saved_pages")
+    stored = [t for t in [await repo.trial(ctx.ui_reader, NctId(raw.nct_id)) for raw, _ in too_old] if t is not None]
+    await timeline.drop_trials(ctx.wm, stored, ctx.now().isoformat())
+    return IngestReport(**vars(report), closed=tuple(NctId(raw.nct_id) for raw, _ in kept
+                                                      if raw.status not in ACTIVE_STATUSES),
+                        dropped=tuple(NctId(raw.nct_id) for raw, _ in too_old))
+
+
+def _years_before(day, years: int):
+    try:
+        return day.replace(year=day.year - years)
+    except ValueError:   # 29 February
+        return day.replace(year=day.year - years, day=28)
 
 
 async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
@@ -152,6 +198,13 @@ async def trial(ctx: Ctx, nct_id: NctId) -> Trial | None:
 
 async def active_trials(ctx: Ctx) -> list[Trial]:
     return await repo.active_trials(ctx.ui_reader)
+
+
+async def closed_trials(ctx: Ctx, condition_term: str) -> list[Trial]:
+    """Closed trials that study this Condition term (the same `studies_condition` matching as Open trials), newest
+    first by cutoff date (Trial.closed_on). Never judged: they have no Criterion results or Verdict (ADR 0004)."""
+    found = [t for t in await repo.closed_trials(ctx.ui_reader) if studies_condition(t, condition_term)]
+    return sorted(sorted(found, key=lambda t: t.nct_id), key=lambda t: t.closed_on or "", reverse=True)
 
 
 async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:

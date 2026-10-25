@@ -257,6 +257,21 @@ class VerdictListOut(BaseModel):
     verdicts: list[VerdictOut]  # ranked: outcome (possible: fewest unknowns first), then nearest recruiting site
 
 
+class ClosedTrialOut(BaseModel):
+    """A Closed trial (ADR 0004): no Verdict, no Criterion results, only what it is and when it finished."""
+    nct_id: str
+    title: str
+    status: str
+    conditions: list[str]
+    closed_on: str | None   # primary completion, else completion, else last update (ISO date)
+    url: str                # its ClinicalTrials.gov page
+
+
+class ClosedTrialListOut(BaseModel):
+    condition_term: str | None  # None until a Diagnosis check confirms one; then `trials` is empty
+    trials: list[ClosedTrialOut]  # newest first by closed_on
+
+
 class RescanOut(BaseModel):
     run_id: str
     planned: list[str]

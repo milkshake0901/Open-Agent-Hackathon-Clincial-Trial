@@ -8,7 +8,8 @@ Mapping (see timeline.py for how domain operations become these events):
   assertFact  about=patient:*         → fact                     (append-only)
   snapshot    attrs.kind=profile      → profile_version + profile_version_fact
   upsertEntity type=trial             → trial (upsert) + criterion rows from attrs.criteria (immutable per hash)
-                                        + trial_site rows from attrs.sites (replaced)
+                                        + trial_site rows from attrs.sites (replaced);
+                                        attrs.dropped → trial flagged dropped, its sites removed
   upsertEntity type=criteria          → criterion rows split lazily for one (Trial, eligibility hash)
   relate      type=verdict, open edge → verdict + criterion_result + doctor_question + respondent_question
               (the closing re-emit of a superseded edge changes no row: old Verdicts are history, ADR 0002)
@@ -64,13 +65,21 @@ async def _profile_version(tx: "Tx", s) -> None:
 
 async def _trial(tx: "Tx", e) -> None:
     a = e.attrs
+    if a.get("dropped"):
+        await tx.execute("UPDATE trial SET dropped = true WHERE nct_id = $1", (a["external_id"],))
+        await tx.execute("DELETE FROM trial_site WHERE nct_id = $1", (a["external_id"],))
+        return
     await tx.execute(
-        "INSERT INTO trial (nct_id, title, conditions, status, eligibility_text, eligibility_hash, source, fetched_at) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (nct_id) DO UPDATE SET title = EXCLUDED.title, "
+        "INSERT INTO trial (nct_id, title, conditions, status, eligibility_text, eligibility_hash, source, fetched_at, "
+        "primary_completion_date, completion_date, last_update_date) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (nct_id) DO UPDATE SET title = EXCLUDED.title, "
         "conditions = EXCLUDED.conditions, status = EXCLUDED.status, eligibility_text = EXCLUDED.eligibility_text, "
-        "eligibility_hash = EXCLUDED.eligibility_hash, source = EXCLUDED.source, fetched_at = EXCLUDED.fetched_at",
+        "eligibility_hash = EXCLUDED.eligibility_hash, source = EXCLUDED.source, fetched_at = EXCLUDED.fetched_at, "
+        "primary_completion_date = EXCLUDED.primary_completion_date, completion_date = EXCLUDED.completion_date, "
+        "last_update_date = EXCLUDED.last_update_date, dropped = false",
         (a["external_id"], a["title"], list(a["conditions"]), a["status"], a["text"], a["eligibility_hash"],
-         a["source"], _timestamp(a["observed_at"])))
+         a["source"], _timestamp(a["observed_at"]), _date(a.get("primary_completion_date")),
+         _date(a.get("completion_date")), _date(a.get("last_update_date"))))
     await _criteria(tx, a["external_id"], a["eligibility_hash"], a["criteria"])
     if "sites" in a:
         await tx.execute("DELETE FROM trial_site WHERE nct_id = $1", (a["external_id"],))
@@ -120,3 +129,7 @@ def _timestamp(iso: str):
 
     t = datetime.fromisoformat(iso)
     return t if t.tzinfo else t.replace(tzinfo=UTC)
+
+
+def _date(iso: str | None):
+    return date.fromisoformat(iso) if iso else None

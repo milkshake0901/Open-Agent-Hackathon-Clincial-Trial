@@ -2,7 +2,7 @@
 
     backend/.venv/bin/python scripts/ingest_trials.py --pages <dir>   # saved GET /api/v2/studies pages, one per file
 
-Safe to re-run: unchanged studies record nothing. Makes no model call and starts no Re-scan.
+Safe to re-run: unchanged studies record nothing, and Closed trials that have aged past 15 years are dropped. Makes no model call and starts no Re-scan.
 """
 from __future__ import annotations
 
@@ -44,7 +44,8 @@ async def main(args: argparse.Namespace) -> int:
         await llm.aclose()
         await pool.close()
     print(f"{report.fetched} Trials from {report.source}: {len(report.new)} new, {len(report.changed)} changed, "
-          f"{len(report.unchanged)} unchanged")
+          f"{len(report.unchanged)} unchanged; {len(report.closed)} Closed, {len(report.dropped)} dropped (finished over "
+          f"15 years ago)")
     return 0
 
 

@@ -16,12 +16,15 @@ def site(facility, city, country, status="RECRUITING"):
             "geoPoint": {"lat": -33.9, "lon": 151.2}}
 
 
-def study(nct, *, status="RECRUITING", sites=(), eligibility=ELIGIBILITY):
+def study(nct, *, status="RECRUITING", sites=(), eligibility=ELIGIBILITY, primary_completion=None, completion=None,
+          last_update="2026-10-01", conditions=("Non-Small Cell Lung Cancer",)):
     """A ClinicalTrials.gov v2 study with just the fields the ingest reads."""
+    dates = {**({"primaryCompletionDateStruct": {"date": primary_completion}} if primary_completion else {}),
+             **({"completionDateStruct": {"date": completion}} if completion else {})}
     return {"protocolSection": {
         "identificationModule": {"nctId": nct, "briefTitle": f"Synthetic trial {nct}"},
-        "statusModule": {"overallStatus": status, "lastUpdatePostDateStruct": {"date": "2026-10-01"}},
-        "conditionsModule": {"conditions": ["Non-Small Cell Lung Cancer"]},
+        "statusModule": {"overallStatus": status, "lastUpdatePostDateStruct": {"date": last_update}, **dates},
+        "conditionsModule": {"conditions": list(conditions)},
         "eligibilityModule": {"eligibilityCriteria": eligibility},
         "contactsLocationsModule": {"locations": list(sites)}}}
 
@@ -128,3 +131,70 @@ async def test_a_trial_that_closes_between_runs_is_reported_changed_and_is_no_lo
     assert later.changed == ("NCT00000001",) and later.new == () and later.unchanged == ()
     assert (await trials.trial(ctx, trials.NctId("NCT00000001"))).status == "COMPLETED"
     assert await trials.active_trials(ctx) == []
+
+
+# The test clock (conftest NOW) is 2026-10-24, so the 15-year cutoff is 2011-10-24.
+
+async def test_closed_trials_finished_within_15_years_are_kept_and_older_ones_are_not_stored(ctx, tmp_path):
+    source = save_pages(tmp_path, [study("NCT00000014", status="COMPLETED", sites=[AU], primary_completion="2012-10"),
+                                   study("NCT00000016", status="TERMINATED", sites=[AU], primary_completion="2010-10-01"),
+                                   study("NCT00000001", sites=[AU], primary_completion="2001-01")])
+
+    report = await trials.ingest(ctx, source)
+
+    assert report.new == ("NCT00000014", "NCT00000001")
+    assert report.closed == ("NCT00000014",) and report.dropped == ("NCT00000016",)
+    assert await trials.trial(ctx, trials.NctId("NCT00000016")) is None
+    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000014"]
+    assert [t.nct_id for t in await trials.active_trials(ctx)] == ["NCT00000001"]
+
+
+async def test_the_cutoff_falls_back_to_completion_then_last_update(ctx, tmp_path):
+    source = save_pages(tmp_path, [
+        study("NCT00000021", status="COMPLETED", sites=[AU], completion="2010-06", last_update="2025-01-01"),
+        study("NCT00000022", status="UNKNOWN", sites=[AU], last_update="2009-03-01"),
+        study("NCT00000023", status="SUSPENDED", sites=[AU], completion="2013-02-01", last_update="2008-01-01"),
+        study("NCT00000024", status="ACTIVE_NOT_RECRUITING", sites=[AU], last_update="2024-05-01")])
+
+    report = await trials.ingest(ctx, source)
+
+    assert report.dropped == ("NCT00000021", "NCT00000022")
+    assert report.closed == ("NCT00000023", "NCT00000024")
+
+
+async def test_closed_trials_are_listed_for_a_condition_term_newest_first(ctx, tmp_path):
+    source = save_pages(tmp_path, [
+        study("NCT00000031", status="COMPLETED", sites=[AU], primary_completion="2015-04"),
+        study("NCT00000032", status="TERMINATED", sites=[AU], primary_completion="2021-11-30"),
+        study("NCT00000033", status="COMPLETED", sites=[AU], completion="2018-01"),
+        study("NCT00000034", status="COMPLETED", sites=[AU], primary_completion="2023-01",
+              conditions=("Breast Cancer",)),
+        study("NCT00000035", sites=[AU])])
+
+    await trials.ingest(ctx, source)
+
+    closed = await trials.closed_trials(ctx, "non-small cell lung cancer")
+    assert [(t.nct_id, t.closed_on) for t in closed] == [("NCT00000032", "2021-11-30"), ("NCT00000033", "2018-01-01"),
+                                                         ("NCT00000031", "2015-04-01")]
+    assert [t.nct_id for t in await trials.closed_trials(ctx, "breast cancer")] == ["NCT00000034"]
+
+
+async def test_a_closed_trial_that_ages_past_15_years_is_dropped_on_a_later_run(ctx, tmp_path):
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    source = save_pages(tmp_path, [study("NCT00000041", status="COMPLETED", sites=[AU], primary_completion="2012-03"),
+                                   study("NCT00000042", status="COMPLETED", sites=[AU], primary_completion="2020-03")])
+    await trials.ingest(ctx, source)
+    a_year_on = replace(ctx, now=lambda: datetime(2027, 10, 24, tzinfo=timezone.utc))
+
+    later = await trials.ingest(a_year_on, source)
+
+    assert later.dropped == ("NCT00000041",) and later.closed == ("NCT00000042",)
+    assert later.unchanged == ("NCT00000042",) and later.new == () and later.changed == ()
+    assert await trials.trial(ctx, trials.NctId("NCT00000041")) is None
+    assert await trials.sites(ctx, trials.NctId("NCT00000041")) == ()
+    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000042"]
+    events = len(ctx.wm.events())
+    again = await trials.ingest(a_year_on, source)
+    assert again.dropped == ("NCT00000041",) and len(ctx.wm.events()) == events
