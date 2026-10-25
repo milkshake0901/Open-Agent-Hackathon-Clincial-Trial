@@ -1,10 +1,9 @@
 """The Intake questionnaire: its definition, and submitting a completed one for a patient."""
-import logging
 from dataclasses import asdict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
-from app import llm, logfile, matching, record
+from app import llm, matching, record
 from app.api.deps import get_ctx
 from app.api.documents import start_ingest
 from app.api.schemas import (
@@ -14,7 +13,6 @@ from app.api.schemas import (
 from app.ctx import Ctx
 
 router = APIRouter(tags=["questionnaire"])
-log = logging.getLogger(__name__)
 
 
 @router.get("/questionnaire/definition", response_model=QuestionnaireOut)
@@ -85,11 +83,9 @@ async def diagnosis_check(pid: str, body: DiagnosisCheckIn, ctx: Ctx = Depends(g
     """record.check_diagnosis: a shortlist of Condition labels for the Respondent to tick (empty when none fit).
     404: unknown patient or no diagnosis answer yet; 503: model unavailable (nothing stored)."""
     try:
-        out = _check_out(await record.check_diagnosis(ctx, record.PatientId(pid), body.text))
+        return _check_out(await record.check_diagnosis(ctx, record.PatientId(pid), body.text))
     except llm.LlmUnavailable as e:
         raise HTTPException(503, str(e))
-    logfile.step(log, "record.diagnosis_check.offered", patient_id=pid, check=out.model_dump(mode="json"))   # #35
-    return out
 
 
 @router.post("/patients/{pid}/questionnaire/diagnosis-check/{check_id}", response_model=DiagnosisCheckOut)
@@ -100,7 +96,7 @@ async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerI
     patient_id = record.PatientId(pid)
     try:
         check = await record.answer_diagnosis_check(ctx, patient_id, record.DiagnosisCheckId(check_id), body.answer,
-                                                    labels=body.labels, text=body.text)
+                                                    labels=tuple(body.labels), text=body.text)
     except record.AlreadyAnswered as e:
         raise HTTPException(409, str(e))
     except record.InvalidAnswers as e:
@@ -110,7 +106,4 @@ async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerI
     summary = None
     if check.condition_term is not None and (current := await record.current_version(ctx, patient_id)) is not None:
         summary = RescanSummary.of(await matching.rescan(ctx, current.id))
-    out = _check_out(check, summary)
-    logfile.step(log, "record.diagnosis_check.answered", patient_id=pid, answer=body.model_dump(mode="json"),
-                 check=out.model_dump(mode="json"))   # #35
-    return out
+    return _check_out(check, summary)

@@ -59,7 +59,7 @@ def judged_trials(fake):
 
 async def _tick(ctx, patient, labels, text=None):
     check = await record.check_diagnosis(ctx, patient, text)
-    return await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=labels)
+    return await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=tuple(labels))
 
 
 async def test_ticked_labels_select_the_trials_listing_them(clean_db, tmp_path):
@@ -190,7 +190,7 @@ async def test_torn_acl_offers_the_acl_labels_and_ticking_them_selects_only_the_
     check = await record.check_diagnosis(ctx, patient)
     assert [one.label for one in check.shortlist] == ACL_LABELS
     assert "Torn ACL" in fake.calls[-2].user and "Type 1 Diabetes" not in fake.calls[-1].user
-    await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=ACL_LABELS)
+    await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=tuple(ACL_LABELS))
     report = await matching.rescan(ctx, version.id)
 
     assert set(report.planned) == {"NCT00000101", "NCT00000102"}

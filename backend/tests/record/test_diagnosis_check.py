@@ -72,7 +72,7 @@ async def test_ticked_labels_become_the_condition_term_and_the_free_text_stays_t
     check = await record.check_diagnosis(ctx, patient)
 
     answered = await record.answer_diagnosis_check(ctx, patient, check.id, "ticked",
-                                                   labels=["non-small cell lung CANCER"])
+                                                   labels=("non-small cell lung CANCER",))
 
     assert answered.status == "ticked" and answered.condition_term == ("Non-Small Cell Lung Cancer",)
     held = await record.diagnosis(ctx, patient)
@@ -86,11 +86,11 @@ async def test_ticking_a_label_outside_the_shortlist_or_none_at_all_is_refused(c
     check = await record.check_diagnosis(ctx, patient)
 
     with pytest.raises(record.InvalidAnswers):
-        await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=["Breast Cancer"])
+        await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=("Breast Cancer",))
     with pytest.raises(record.InvalidAnswers):
-        await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=[])
+        await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=())
     assert await record.diagnosis(ctx, patient) is None
-    await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=["Non-Small Cell Lung Cancer"])
+    await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=("Non-Small Cell Lung Cancer",))
 
 
 async def test_none_of_these_with_new_words_starts_a_new_check(clean_db, tmp_path):
@@ -107,9 +107,9 @@ async def test_none_of_these_with_new_words_starts_a_new_check(clean_db, tmp_pat
     assert [one.label for one in second.shortlist] == ["Non-Small Cell Lung Cancer", "Non-small Cell Lung Cancer Stage IV"]
     assert await record.diagnosis(ctx, patient) is None
     with pytest.raises(record.InvalidAnswers):           # the first check was answered: none of these
-        await record.answer_diagnosis_check(ctx, patient, first.id, "ticked", labels=["Small Cell Lung Cancer"])
-    await record.answer_diagnosis_check(ctx, patient, second.id, "ticked", labels=["Non-Small Cell Lung Cancer",
-                                                                                  "Non-small Cell Lung Cancer Stage IV"])
+        await record.answer_diagnosis_check(ctx, patient, first.id, "ticked", labels=("Small Cell Lung Cancer",))
+    await record.answer_diagnosis_check(ctx, patient, second.id, "ticked", labels=("Non-Small Cell Lung Cancer",
+                                                                                  "Non-small Cell Lung Cancer Stage IV"))
     assert (await record.diagnosis(ctx, patient)).condition_term == ("Non-Small Cell Lung Cancer",
                                                                      "Non-small Cell Lung Cancer Stage IV")
 
@@ -144,7 +144,7 @@ async def test_when_no_label_fits_the_shortlist_is_empty_and_only_none_of_these_
     assert check.shortlist == () and check.status == "proposed"
     assert not any("shortlist" in c.system for c in fake.calls)      # no candidates: no second call
     with pytest.raises(record.InvalidAnswers):
-        await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=["Breast Cancer"])
+        await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=("Breast Cancer",))
     assert (await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")).needs_gp
 
 
@@ -152,7 +152,7 @@ async def test_an_answer_is_given_once_and_only_to_the_patients_own_check(clean_
     ctx, _, patient, _ = await _submitted(clean_db, tmp_path, NSCLC)
     check = await record.check_diagnosis(ctx, patient)
     other = await record.create_patient(ctx, "Demo patient E")
-    ticked = ["Non-Small Cell Lung Cancer"]
+    ticked = ("Non-Small Cell Lung Cancer",)
 
     with pytest.raises(record.NotFound):
         await record.answer_diagnosis_check(ctx, other, check.id, "ticked", labels=ticked)
@@ -172,3 +172,45 @@ async def test_checking_before_any_diagnosis_answer_raises_not_found(clean_db):
     with pytest.raises(record.NotFound):
         await record.check_diagnosis(ctx, patient)
     assert fake.calls == []
+
+
+REWORDED = "Mrs Jane Citizen here, call me on 0412 345 678: it is NSCLC"
+
+
+async def test_names_and_phone_numbers_in_the_diagnosis_words_never_reach_the_model_the_check_or_the_log_file(
+        clean_db, tmp_path):
+    import json
+
+    from app import logfile
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        ctx, fake, patient, _ = await _submitted(clean_db, tmp_path, NSCLC, NSCLC)
+        first = await record.check_diagnosis(ctx, patient)
+        second = await record.answer_diagnosis_check(ctx, patient, first.id, "none_of_these", text=REWORDED)
+    finally:
+        logfile.reset()
+
+    prompts = " ".join(c.user for c in fake.calls)
+    assert "NSCLC" in prompts and "[PHONE]" in prompts
+    for secret in ("Jane", "Citizen", "0412 345 678"):
+        assert secret not in prompts
+        assert secret not in second.text
+        assert secret not in path.read_text()
+    steps = [line["step"] for line in map(json.loads, path.read_text().splitlines())]
+    assert steps.count("record.diagnosis_check.offered") == 2 and "record.diagnosis_check.answered" in steps
+
+
+async def test_none_of_these_with_new_words_leaves_the_check_unanswered_when_the_model_is_unavailable(
+        clean_db, tmp_path):
+    from app.llm import LlmUnavailable
+    ctx, fake, patient, _ = await _submitted(clean_db, tmp_path, NSCLC)
+    check = await record.check_diagnosis(ctx, patient)
+    fake.responder = None                                  # every later call fails
+
+    with pytest.raises(LlmUnavailable):
+        await record.answer_diagnosis_check(ctx, patient, check.id, "none_of_these", text="NSCLC")
+
+    answered = await record.answer_diagnosis_check(ctx, patient, check.id, "ticked",
+                                                   labels=("Non-Small Cell Lung Cancer",))
+    assert answered.condition_term == ("Non-Small Cell Lung Cancer",)

@@ -18,7 +18,7 @@ async def tick_condition_term(ctx, patient_id, labels: list[str] | None = None):
     fake.responder = respond
     try:
         check = await record.check_diagnosis(ctx, patient_id, " and ".join(labels))
-        answered = await record.answer_diagnosis_check(ctx, patient_id, check.id, "ticked", labels=labels)
+        answered = await record.answer_diagnosis_check(ctx, patient_id, check.id, "ticked", labels=tuple(labels))
     finally:
         fake.responder = scripted
         del fake.calls[before:]
