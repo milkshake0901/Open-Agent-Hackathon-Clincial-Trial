@@ -83,6 +83,7 @@ async def test_each_diagnosis_check_step_writes_a_line_to_the_log_file(clean_db,
     from app import logfile
     from tests.conftest import make_ctx
     ctx = make_ctx(clean_db, FakeLLM(respond))
+    await trials.load_snapshot(ctx, SNAPSHOT)
     app.state.ctx = ctx
     path = tmp_path / "trialmatch.jsonl"
     logfile.configure(path)
@@ -92,7 +93,8 @@ async def test_each_diagnosis_check_step_writes_a_line_to_the_log_file(clean_db,
             await submit(http, patient, {"diagnosis": DIAGNOSIS})
             url = f"/api/patients/{patient}/questionnaire/diagnosis-check"
             check = (await http.post(url, json={})).json()
-            assert (await http.post(f"{url}/{check['id']}", json={"answer": "not_sure"})).status_code == 200
+            tick = {"answer": "ticked", "labels": ["Non-Small Cell Lung Cancer"]}
+            assert (await http.post(f"{url}/{check['id']}", json=tick)).status_code == 200
     finally:
         logfile.reset()
 
@@ -100,5 +102,7 @@ async def test_each_diagnosis_check_step_writes_a_line_to_the_log_file(clean_db,
     offered, answered = steps["record.diagnosis_check.offered"], steps["record.diagnosis_check.answered"]
     assert offered["patient_id"] == answered["patient_id"] == patient
     assert offered["check"]["id"] == answered["check"]["id"] == check["id"]
-    assert answered["answer"] == {"answer": "not_sure"}
+    assert offered["check"]["shortlist"] == [{"label": "Non-Small Cell Lung Cancer", "open": 1, "closed": 0}]
+    assert answered["answer"] == {**tick, "text": None}
+    assert answered["check"]["ticked"] == ["Non-Small Cell Lung Cancer"]
     assert "Demo patient H" not in path.read_text()
