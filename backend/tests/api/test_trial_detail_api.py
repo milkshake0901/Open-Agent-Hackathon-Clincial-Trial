@@ -32,3 +32,29 @@ async def test_the_trial_detail_lists_its_contacts_and_australian_sites(ctx, tmp
     assert [(s["facility"], s["city"], s["status"], [c["email"] for c in s["contacts"]]) for s in detail["sites"]] == [
         ("Royal Prince Alfred Hospital", "Camperdown", "RECRUITING", ["sam@example.org"])]
     assert missing.status_code == 404
+
+
+async def test_the_trial_detail_shows_a_closed_trials_outcomes(ctx, tmp_path):
+    from tests.trials.test_outcomes import with_outcomes
+
+    await trials.ingest(ctx, save_pages(tmp_path, [with_outcomes(study("NCT00000011", status="COMPLETED",
+                                                                       primary_completion="2024-06", sites=[AU]))]))
+    app.state.ctx = ctx
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        o = (await http.get("/api/trials/NCT00000011")).json()["outcomes"]
+
+    assert o["primary"] == [{"measure": "Overall survival", "description": "Time from randomisation to death",
+                             "time_frame": "Up to 5 years"}]
+    assert [m["measure"] for m in o["secondary"]] == ["Progression-free survival", "Quality of life (EORTC QLQ-C30)"]
+    assert [m["measure"] for m in o["other"]] == ["Biomarker levels"]
+    assert o["has_results"] is True
+    [result] = o["results"]
+    assert (result["type"], result["title"], result["unit"], result["param_type"]) == (
+        "PRIMARY", "Overall survival", "months", "MEDIAN")
+    assert result["values"] == [
+        {"group": "Drug A", "value": "18.2", "spread": "", "lower": "15.1", "upper": "21.0", "label": ""},
+        {"group": "Placebo", "value": "12.4", "spread": "3.1", "lower": "", "upper": "", "label": ""}]
+    assert o["publications"] == [
+        {"pmid": "31000001", "type": "RESULT", "citation": "Citizen J, et al. Overall survival in NSCLC. 2024.",
+         "url": "https://pubmed.ncbi.nlm.nih.gov/31000001/"},
+        {"pmid": "", "type": "BACKGROUND", "citation": "Background reading without a PubMed id.", "url": ""}]

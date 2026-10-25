@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from app.sql.reader import SqlReader
-from app.trials import (ACTIVE_STATUSES, CLOSED_STATUSES, Contact, Criterion, CriterionId, CriterionKind, NctId, TrialContacts,
-                        TrialSite, Trial, page_url)
+from app.trials import (ACTIVE_STATUSES, CLOSED_STATUSES, Contact, Criterion, CriterionId, CriterionKind, NctId,
+                        OutcomeMeasure, Outcomes, PostedResult, Publication, ResultValue,
+                        TrialContacts, TrialSite, Trial, page_url)
 
 _TRIAL_COLS = ("nct_id", "title", "conditions", "status", "eligibility_text", "eligibility_hash", "fetched_at", "source",
                "primary_completion_date", "completion_date", "last_update_date")
@@ -87,4 +88,31 @@ def _contact(r: dict) -> Contact:
     return Contact(name=r["name"], role=r["role"], email=r["email"], phone=r["phone"], affiliation=r["affiliation"],
                    title=r["title"])
 
-# Trials, Criteria and Sites are NOT written here: app.worldmodel.timeline.record_trials (World Model ingest → projector).
+
+async def outcomes(reader: SqlReader, nct_id: NctId) -> Outcomes:
+    flag = await reader.fetch(f"SELECT has_results FROM {reader.table('trial')} WHERE nct_id = $1", (nct_id,))
+    rows = await reader.fetch(
+        f"SELECT kind, ordinal, title, description, time_frame, type, unit, param_type "
+        f"FROM {reader.table('trial_outcome')} WHERE nct_id = $1 ORDER BY kind, ordinal", (nct_id,))
+    values: dict[int, list[ResultValue]] = {}
+    for v in await reader.fetch(
+            f"SELECT result_ordinal, group_title, label, value, spread, lower_limit, upper_limit "
+            f"FROM {reader.table('trial_outcome_value')} WHERE nct_id = $1 ORDER BY result_ordinal, ordinal", (nct_id,)):
+        values.setdefault(v["result_ordinal"], []).append(ResultValue(
+            group=v["group_title"], value=v["value"], spread=v["spread"], lower=v["lower_limit"],
+            upper=v["upper_limit"], label=v["label"]))
+    publications = await reader.fetch(f"SELECT pmid, type, citation FROM {reader.table('trial_publication')} "
+                                      "WHERE nct_id = $1 ORDER BY ordinal", (nct_id,))
+    of = lambda kind: tuple(OutcomeMeasure(measure=r["title"], description=r["description"],  # noqa: E731
+                                           time_frame=r["time_frame"]) for r in rows if r["kind"] == kind)
+    return Outcomes(primary=of("primary"), secondary=of("secondary"), other=of("other"),
+                    has_results=bool(flag and flag[0]["has_results"]),
+                    results=tuple(PostedResult(type=r["type"], title=r["title"], description=r["description"],
+                                               time_frame=r["time_frame"], unit=r["unit"], param_type=r["param_type"],
+                                               values=tuple(values.get(r["ordinal"], ())))
+                                  for r in rows if r["kind"] == "result"),
+                    publications=tuple(Publication(pmid=r["pmid"], type=r["type"], citation=r["citation"])
+                                       for r in publications))
+
+
+# Trials, Criteria, Sites, contacts and Outcomes are NOT written here: app.worldmodel.timeline.record_trials (World Model ingest → projector).

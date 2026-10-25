@@ -6,7 +6,9 @@
 --   diagnosis_check                                     app.record.repo (Diagnosis checks and their answers)
 --   wm_event, wm_audit                                  app.worldmodel.store.PgEventStore (engine log)
 --   fact, profile_version, profile_version_fact         app.worldmodel.projector, inside the wm_event append
---   trial, criterion, trial_site, trial_contact         transaction (projections of the World Model, ADR 0001)
+--   trial, criterion, trial_site, trial_contact,        transaction (projections of the World Model, ADR 0001)
+--   trial_outcome, trial_outcome_value,
+--   trial_publication
 --   verdict, criterion_result, doctor_question,
 --   respondent_question
 --   trace_run, trace_event, llm_call                    app.trace
@@ -113,7 +115,8 @@ CREATE TABLE trial (
   primary_completion_date date,           -- registry dates (a month-only date is its 1st); a Closed trial's cutoff
   completion_date         date,           -- is the first of these three that is given (ADR 0004)
   last_update_date        date,
-  dropped          boolean NOT NULL DEFAULT false  -- a Closed trial that aged past 15 years at a later ingest
+  dropped          boolean NOT NULL DEFAULT false, -- a Closed trial that aged past 15 years at a later ingest
+  has_results      boolean NOT NULL DEFAULT false  -- the registry's has-results flag (#25)
 );
 
 CREATE TABLE criterion (                   -- immutable per (nct, eligibility_hash); old rows kept so old Verdicts resolve
@@ -150,6 +153,42 @@ CREATE TABLE trial_contact (               -- who to contact about a Trial (#27)
   affiliation      text NOT NULL,
   title            text NOT NULL,
   PRIMARY KEY (nct_id, kind, site_ordinal, ordinal)
+);
+
+CREATE TABLE trial_outcome (               -- a Trial's Outcomes (#25): planned outcome measures and posted results;
+                                           -- replaced with the trial row
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  kind             text NOT NULL CHECK (kind IN ('primary','secondary','other','result')),
+  ordinal          int  NOT NULL,
+  title            text NOT NULL,         -- the measure
+  description      text NOT NULL,         -- '' when the registry gives none (likewise every text column below)
+  time_frame       text NOT NULL,
+  type             text NOT NULL,         -- kind 'result': PRIMARY, SECONDARY, OTHER_PRE_SPECIFIED, POST_HOC
+  unit             text NOT NULL,         -- kind 'result': unit of measure
+  param_type       text NOT NULL,         -- kind 'result': MEDIAN, MEAN, COUNT_OF_PARTICIPANTS, ...
+  PRIMARY KEY (nct_id, kind, ordinal)
+);
+
+CREATE TABLE trial_outcome_value (         -- each group's value for a posted result (trial_outcome kind 'result')
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  result_ordinal   int  NOT NULL,         -- trial_outcome.ordinal of the kind 'result' row
+  ordinal          int  NOT NULL,
+  group_title      text NOT NULL,         -- the arm or group
+  label            text NOT NULL,         -- class and category titles when the measure is split
+  value            text NOT NULL,
+  spread           text NOT NULL,
+  lower_limit      text NOT NULL,
+  upper_limit      text NOT NULL,
+  PRIMARY KEY (nct_id, result_ordinal, ordinal)
+);
+
+CREATE TABLE trial_publication (           -- publications the registry links to a Trial (#25); replaced with the trial row
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  ordinal          int  NOT NULL,
+  pmid             text NOT NULL,         -- PubMed id; '' when the registry gives only a citation
+  type             text NOT NULL,         -- RESULT, BACKGROUND or DERIVED
+  citation         text NOT NULL,
+  PRIMARY KEY (nct_id, ordinal)
 );
 
 -- ---------- matching ----------

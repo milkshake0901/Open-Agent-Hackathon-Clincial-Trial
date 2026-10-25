@@ -9,8 +9,10 @@ Mapping (see timeline.py for how domain operations become these events):
   snapshot    attrs.kind=profile      → profile_version + profile_version_fact
   upsertEntity type=trial             → trial (upsert) + criterion rows from attrs.criteria (immutable per hash)
                                         + trial_site rows from attrs.sites (replaced)
-                                        + trial_contact rows from attrs.contacts and each site's contacts (replaced);
-                                        attrs.dropped → trial flagged dropped, its sites and contacts removed
+                                        + trial_contact rows from attrs.contacts and each site's contacts (replaced)
+                                        + trial_outcome, trial_outcome_value and trial_publication rows and
+                                          trial.has_results from attrs.outcomes (replaced);
+                                        attrs.dropped → trial flagged dropped, its sites, contacts and Outcomes removed
   upsertEntity type=criteria          → criterion rows split lazily for one (Trial, eligibility hash)
   relate      type=verdict, open edge → verdict + criterion_result + doctor_question + respondent_question
               (the closing re-emit of a superseded edge changes no row: old Verdicts are history, ADR 0002)
@@ -69,6 +71,7 @@ async def _trial(tx: "Tx", e) -> None:
     if a.get("dropped"):
         await tx.execute("UPDATE trial SET dropped = true WHERE nct_id = $1", (a["external_id"],))
         await tx.execute("DELETE FROM trial_contact WHERE nct_id = $1", (a["external_id"],))
+        await _clear_outcomes(tx, a["external_id"])
         await tx.execute("DELETE FROM trial_site WHERE nct_id = $1", (a["external_id"],))
         return
     await tx.execute(
@@ -102,6 +105,35 @@ async def _trial(tx: "Tx", e) -> None:
                         [c["responsible_party"]] if c["responsible_party"] else [])
         await _contacts(tx, a["external_id"], "central", c["central"])
         await _contacts(tx, a["external_id"], "official", c["officials"])
+    if "outcomes" in a:
+        await _outcomes(tx, a["external_id"], a["outcomes"])
+
+
+async def _outcomes(tx: "Tx", nct_id: str, o: dict) -> None:
+    await tx.execute("UPDATE trial SET has_results = $2 WHERE nct_id = $1", (nct_id, o["has_results"]))
+    await _clear_outcomes(tx, nct_id)
+    rows = [(kind, i, m["measure"], m["description"], m["time_frame"], "", "", "")
+            for kind in ("primary", "secondary", "other") for i, m in enumerate(o[kind], 1)]
+    rows += [("result", i, r["title"], r["description"], r["time_frame"], r["type"], r["unit"], r["param_type"])
+             for i, r in enumerate(o["results"], 1)]
+    for row in rows:
+        await tx.execute(
+            "INSERT INTO trial_outcome (nct_id, kind, ordinal, title, description, time_frame, type, unit, param_type) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", (nct_id, *row))
+    for i, r in enumerate(o["results"], 1):
+        for j, v in enumerate(r["values"], 1):
+            await tx.execute(
+                "INSERT INTO trial_outcome_value (nct_id, result_ordinal, ordinal, group_title, label, value, spread, "
+                "lower_limit, upper_limit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                (nct_id, i, j, v["group"], v["label"], v["value"], v["spread"], v["lower"], v["upper"]))
+    for i, p in enumerate(o["publications"], 1):
+        await tx.execute("INSERT INTO trial_publication (nct_id, ordinal, pmid, type, citation) "
+                         "VALUES ($1, $2, $3, $4, $5)", (nct_id, i, p["pmid"], p["type"], p["citation"]))
+
+
+async def _clear_outcomes(tx: "Tx", nct_id: str) -> None:
+    for table in ("trial_outcome_value", "trial_outcome", "trial_publication"):
+        await tx.execute(f"DELETE FROM {table} WHERE nct_id = $1", (nct_id,))
 
 
 async def _contacts(tx: "Tx", nct_id: str, kind: str, contacts, *, site_ordinal: int = 0) -> None:

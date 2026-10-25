@@ -112,7 +112,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   ├── demo/                     de-identified demo Documents (committed)
 │   ├── raw/                      real Documents (gitignored; never commit)
 │   └── trials_snapshot/          saved trial results for an offline demo
-└── scripts/                      seed_demo, sync_trials, rebuild_projections (to write)
+└── scripts/                      ingest_trials, rebuild_projections; seed_demo, sync_trials (to write)
 ```
 
 ## Rules that keep it coherent

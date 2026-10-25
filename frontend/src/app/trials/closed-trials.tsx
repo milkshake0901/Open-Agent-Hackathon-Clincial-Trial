@@ -1,11 +1,13 @@
 "use client";
 
 // Closed trials for the patient's Condition term (ADR 0004), newest first, in their own section below the Verdicts.
-// They can no longer enrol, so they carry no Verdict: only what they studied, their status and when they finished.
+// They can no longer enrol, so they carry no Verdict: only what they studied, their status, when they finished and
+// their Outcomes (#25).
 // Nothing is shown until a Diagnosis check has confirmed a Condition term.
 
 import { useEffect, useState } from "react";
 import { api, type ClosedTrialOut } from "@/lib/api";
+import { TrialOutcomes } from "./trial-outcomes";
 
 type State =
   | { kind: "loading" }
@@ -44,6 +46,7 @@ export function ClosedTrials({ patientId }: { patientId: string }) {
             {" · "}{t.status.toLowerCase().replaceAll("_", " ")}
             {t.closed_on && ` · finished ${finished(t.closed_on)}`}
           </p>
+          <TrialOutcomes nctId={t.nct_id} />
         </article>
       ))}
     </section>

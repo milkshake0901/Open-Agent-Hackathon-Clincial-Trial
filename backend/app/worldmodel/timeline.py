@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from app.matching import Verdict
     from app.record import Document, DraftFact, PatientId, ProfileVersion
     from app.trace import RunId
-    from app.trials import Contact, Criterion, TrialContacts, TrialSite, Trial
+    from app.trials import Contact, Criterion, Outcomes, TrialContacts, TrialSite, Trial
     from app.worldmodel.engine import IngestReport, WorldModel
 
 
@@ -81,17 +81,18 @@ def trial_entity_id(nct_id: str) -> str:
     return f"trial:{nct_id}"
 
 
-async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Criterion, ...], *tuple[tuple[TrialSite, ...] | TrialContacts | None, ...]]]",
+async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Criterion, ...], *tuple[tuple[TrialSite, ...] | TrialContacts | Outcomes | None, ...]]]",
                         run_id: "RunId | None") -> "IngestReport":
-    """One ingest of (Trial, its Criteria[, its Sites[, its TrialContacts]]) tuples keyed by NCT id. Unchanged content appends nothing
-    (the fetch time is the observation time, not content), so changed_ids are the new or edited Trials. Sites, when
-    given, replace the Trial's stored sites (with their contacts), and TrialContacts, when given, its other contacts;
-    a tuple without them leaves the stored ones alone."""
+    """One ingest of (Trial, its Criteria[, its Sites[, its TrialContacts[, its Outcomes]]]) tuples keyed by NCT id.
+    Unchanged content appends nothing (the fetch time is the observation time, not content), so changed_ids are the
+    new or edited Trials. Sites, when given, replace the Trial's stored sites (with their contacts), TrialContacts,
+    when given, its other contacts, and Outcomes, when given, its Outcomes; a tuple without them leaves the stored
+    ones alone."""
     from app.worldmodel.engine import IngestObservation, Provenance
 
     observations = []
     for t, criteria, *rest in trials:
-        sites, contacts = (rest + [None, None])[:2]
+        sites, contacts, outcomes = (rest + [None, None, None])[:3]
         source = Provenance(kind="api", at=t.fetched_at, by="trials",
                             url=f"https://clinicaltrials.gov/study/{t.nct_id}", run_id=run_id)
         observations.append(IngestObservation(
@@ -109,8 +110,21 @@ async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Crite
                     "sponsor": contacts.sponsor,
                     "responsible_party": _contact(contacts.responsible_party) if contacts.responsible_party else None,
                     "central": [_contact(c) for c in contacts.central],
-                    "officials": [_contact(c) for c in contacts.officials]}} if contacts is not None else {})}))
+                    "officials": [_contact(c) for c in contacts.officials]}} if contacts is not None else {}),
+                **({"outcomes": _outcomes(outcomes)} if outcomes is not None else {})}))
     return await wm.ingest(observations, run_id=run_id)
+
+
+def _outcomes(o: "Outcomes") -> dict:
+    measures = lambda ms: [{"measure": m.measure, "description": m.description, "time_frame": m.time_frame}  # noqa: E731
+                           for m in ms]
+    return {"primary": measures(o.primary), "secondary": measures(o.secondary), "other": measures(o.other),
+            "has_results": o.has_results,
+            "results": [{"type": r.type, "title": r.title, "description": r.description, "time_frame": r.time_frame,
+                         "unit": r.unit, "param_type": r.param_type,
+                         "values": [{"group": v.group, "value": v.value, "spread": v.spread, "lower": v.lower,
+                                     "upper": v.upper, "label": v.label} for v in r.values]} for r in o.results],
+            "publications": [{"pmid": p.pmid, "type": p.type, "citation": p.citation} for p in o.publications]}
 
 
 def _contact(c: "Contact") -> dict:

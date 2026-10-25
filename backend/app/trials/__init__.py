@@ -77,6 +77,61 @@ class TrialContacts:
 
 
 @dataclass(frozen=True)
+class OutcomeMeasure:
+    """One planned outcome measure as ClinicalTrials.gov lists it; fields it does not give are ""."""
+    measure: str
+    description: str = ""
+    time_frame: str = ""
+
+
+@dataclass(frozen=True)
+class ResultValue:
+    """One group's posted value for an outcome measure; fields the registry does not give are ""."""
+    group: str                   # the arm or group's title
+    value: str
+    spread: str = ""             # e.g. standard deviation, per the measure's dispersion type
+    lower: str = ""              # confidence or range limits
+    upper: str = ""
+    label: str = ""              # the class and category the value is for, when the measure is split ("" if not)
+
+
+@dataclass(frozen=True)
+class PostedResult:
+    """One outcome measure's posted results from the registry's results section."""
+    type: str                    # PRIMARY, SECONDARY, OTHER_PRE_SPECIFIED or POST_HOC
+    title: str
+    description: str = ""
+    time_frame: str = ""
+    unit: str = ""               # unit of measure
+    param_type: str = ""         # e.g. MEDIAN, MEAN, COUNT_OF_PARTICIPANTS
+    values: tuple[ResultValue, ...] = ()
+
+
+@dataclass(frozen=True)
+class Publication:
+    """A reference the registry links to a Trial."""
+    pmid: str                    # PubMed id; "" when the registry gives only a citation
+    type: str                    # RESULT (reports the Trial's findings), BACKGROUND or DERIVED
+    citation: str
+
+    @property
+    def url(self) -> str:
+        """The publication's PubMed page; "" without a PubMed id."""
+        return f"https://pubmed.ncbi.nlm.nih.gov/{self.pmid}/" if self.pmid else ""
+
+
+@dataclass(frozen=True)
+class Outcomes:
+    """What a Trial measured or found (#25, glossary: Outcome), as last loaded."""
+    primary: tuple[OutcomeMeasure, ...]      # planned outcome measures, in registry order
+    secondary: tuple[OutcomeMeasure, ...]
+    other: tuple[OutcomeMeasure, ...]
+    has_results: bool = False                # the registry's has-results flag
+    results: tuple[PostedResult, ...] = ()   # posted results, in registry order
+    publications: tuple[Publication, ...] = ()
+
+
+@dataclass(frozen=True)
 class TrialSite:
     """One of a Trial's locations as ClinicalTrials.gov lists it. lat/lon is the registry's geoPoint (None if absent)."""
     facility: str
@@ -125,9 +180,10 @@ class LivePages:
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
-__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "page_url", "active_trials",
-           "closed_trials",
+__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
+           "active_trials", "closed_trials",
            "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
+           "OutcomeMeasure", "Outcomes", "PostedResult", "ResultValue", "Publication",
            "SavedPages", "LivePages",
            "NctId", "CriterionId", "SyncReport", "IngestReport", "ACTIVE_STATUSES", "CLOSED_STATUSES",
            "trial_columns", "trial_from_row", "active_filter"]
@@ -236,7 +292,8 @@ async def _record(ctx: Ctx, studies: list[tuple[ctgov.RawStudy, str]], source: s
     from app.worldmodel import timeline
 
     before = {s.nct_id: await repo.trial(ctx.ui_reader, NctId(s.nct_id)) for s, _ in studies}
-    loaded = [(ctgov.to_trial(raw, source, fetched_at), (), raw.sites, raw.contacts) for raw, fetched_at in studies]
+    loaded = [(ctgov.to_trial(raw, source, fetched_at), (), raw.sites, raw.contacts, raw.outcomes)
+              for raw, fetched_at in studies]
     report = await timeline.record_trials(ctx.wm, loaded, None)
     changed = {i.split(":", 1)[1] for i in report.changed_ids}
     return SyncReport(fetched=len(loaded),
@@ -270,6 +327,14 @@ async def contacts(ctx: Ctx, nct_id: NctId) -> TrialContacts | None:
     if await repo.trial(ctx.ui_reader, nct_id) is None:
         return None
     return await repo.contacts(ctx.ui_reader, nct_id)
+
+
+async def outcomes(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> Outcomes | None:
+    """The Trial's Outcomes as last loaded (None for an unknown Trial). for_agent reads through Zetaris."""
+    reader = ctx.agent_reader if for_agent else ctx.ui_reader
+    if await repo.trial(reader, nct_id) is None:
+        return None
+    return await repo.outcomes(reader, nct_id)
 
 
 async def criteria(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> tuple[Criterion, ...]:

@@ -268,6 +268,47 @@ class TrialSiteOut(BaseModel):
     contacts: list[ContactOut]
 
 
+class OutcomeMeasureOut(BaseModel):
+    measure: str
+    description: str            # "" when the registry gives none (likewise time_frame)
+    time_frame: str
+
+
+class ResultValueOut(BaseModel):
+    group: str                  # the arm or group's title
+    value: str
+    spread: str                 # "" when the registry gives none (likewise lower, upper)
+    lower: str
+    upper: str
+    label: str                  # class and category the value is for when the measure is split; "" otherwise
+
+
+class PostedResultOut(BaseModel):
+    type: str                   # PRIMARY, SECONDARY, OTHER_PRE_SPECIFIED or POST_HOC
+    title: str
+    description: str
+    time_frame: str
+    unit: str
+    param_type: str             # e.g. MEDIAN, MEAN, COUNT_OF_PARTICIPANTS
+    values: list[ResultValueOut]
+
+
+class PublicationOut(BaseModel):
+    pmid: str                   # "" when the registry gives only a citation
+    type: str                   # RESULT, BACKGROUND or DERIVED
+    citation: str
+    url: str                    # PubMed page; "" without a PubMed id
+
+
+class OutcomesOut(BaseModel):
+    primary: list[OutcomeMeasureOut]
+    secondary: list[OutcomeMeasureOut]
+    other: list[OutcomeMeasureOut]
+    has_results: bool
+    results: list[PostedResultOut]
+    publications: list[PublicationOut]
+
+
 class TrialDetailOut(BaseModel):
     nct_id: str
     title: str
@@ -278,6 +319,7 @@ class TrialDetailOut(BaseModel):
     central_contacts: list[ContactOut]
     overall_officials: list[ContactOut]
     sites: list[TrialSiteOut]             # Australian Trial sites only, in registry order
+    outcomes: OutcomesOut                 # what it measured or found (#25)
 
 
 class VerdictListOut(BaseModel):

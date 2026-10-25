@@ -12,7 +12,8 @@ from typing import Any
 import httpx
 
 from app.ctx import Ctx
-from app.trials import Contact, LivePages, NctId, SavedPages, TrialContacts, TrialSite, Trial, page_url
+from app.trials import (Contact, LivePages, NctId, OutcomeMeasure, Outcomes, PostedResult, Publication, ResultValue,
+                        SavedPages, TrialContacts, TrialSite, Trial, page_url)
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class RawStudy:
     completion_date: str | None = None
     last_update_date: str | None = None
     contacts: TrialContacts | None = None
+    outcomes: Outcomes | None = None
 
 
 async def fetch(ctx: Ctx, condition: str, location: str, max_trials: int) -> tuple[list[RawStudy], str]:
@@ -61,7 +63,7 @@ def parse_study(study: dict[str, Any]) -> RawStudy:
                     status=p["statusModule"]["overallStatus"],
                     eligibility_text=p.get("eligibilityModule", {}).get("eligibilityCriteria", ""),
                     sites=tuple(_site(loc) for loc in p.get("contactsLocationsModule", {}).get("locations", ())),
-                    contacts=_contacts(p),
+                    contacts=_contacts(p), outcomes=_outcomes(study),
                     primary_completion_date=_date(dates.get("primaryCompletionDateStruct")),
                     completion_date=_date(dates.get("completionDateStruct")),
                     last_update_date=_date(dates.get("lastUpdatePostDateStruct")))
@@ -99,6 +101,34 @@ def _contacts(p: dict[str, Any]) -> TrialContacts:
                          central=tuple(map(_contact, cl.get("centralContacts", ()))),
                          officials=tuple(map(_contact, cl.get("overallOfficials", ()))),
                          page_url=page_url(p["identificationModule"]["nctId"]))
+
+
+def _outcomes(study: dict[str, Any]) -> Outcomes:
+    """Planned outcome measures, the has-results flag, posted results and linked publications (#25)."""
+    om = study["protocolSection"].get("outcomesModule", {})
+    measures = lambda key: tuple(OutcomeMeasure(measure=m.get("measure", ""), description=m.get("description", ""),  # noqa: E731
+                                                time_frame=m.get("timeFrame", "")) for m in om.get(key, ()))
+    posted = study.get("resultsSection", {}).get("outcomeMeasuresModule", {}).get("outcomeMeasures", ())
+    return Outcomes(primary=measures("primaryOutcomes"), secondary=measures("secondaryOutcomes"),
+                    other=measures("otherOutcomes"), has_results=bool(study.get("hasResults")),
+                    results=tuple(map(_posted, posted)),
+                    publications=tuple(Publication(pmid=r.get("pmid", ""), type=r.get("type", ""),
+                                                   citation=r.get("citation", ""))
+                                       for r in study["protocolSection"].get("referencesModule", {}).get("references", ())))
+
+
+def _posted(m: dict[str, Any]) -> PostedResult:
+    """A posted outcome measure, its measurements flattened in registry order; a split measure's values are labelled
+    by their class and category titles."""
+    groups = {g.get("id"): g.get("title", "") for g in m.get("groups", ())}
+    values = tuple(
+        ResultValue(group=groups.get(x.get("groupId"), x.get("groupId", "")), value=x.get("value", ""),
+                    spread=x.get("spread", ""), lower=x.get("lowerLimit", ""), upper=x.get("upperLimit", ""),
+                    label=" · ".join(t for t in (c.get("title", ""), cat.get("title", "")) if t))
+        for c in m.get("classes", ()) for cat in c.get("categories", ()) for x in cat.get("measurements", ()))
+    return PostedResult(type=m.get("type", ""), title=m.get("title", ""), description=m.get("description", ""),
+                        time_frame=m.get("timeFrame", ""), unit=m.get("unitOfMeasure", ""),
+                        param_type=m.get("paramType", ""), values=values)
 
 
 def read_snapshot(directory: Path) -> list[tuple[RawStudy, str]]:

@@ -120,6 +120,28 @@ export type ClosedTrialOut = {
 // Registry fields it does not give are "".
 export type ContactOut = { name: string; role: string; email: string; phone: string; affiliation: string; title: string };
 
+// A Trial's Outcomes (#25). Registry fields it does not give are "".
+export type OutcomeMeasureOut = { measure: string; description: string; time_frame: string };
+
+export type PostedResultOut = {
+  type: string; // PRIMARY, SECONDARY, OTHER_PRE_SPECIFIED or POST_HOC
+  title: string;
+  description: string;
+  time_frame: string;
+  unit: string;
+  param_type: string; // e.g. MEDIAN, MEAN, COUNT_OF_PARTICIPANTS
+  values: { group: string; value: string; spread: string; lower: string; upper: string; label: string }[];
+};
+
+export type OutcomesOut = {
+  primary: OutcomeMeasureOut[];
+  secondary: OutcomeMeasureOut[];
+  other: OutcomeMeasureOut[];
+  has_results: boolean;
+  results: PostedResultOut[];
+  publications: { pmid: string; type: string; citation: string; url: string }[]; // url "" without a PubMed id
+};
+
 export type TrialDetail = {
   nct_id: string;
   title: string;
@@ -130,6 +152,7 @@ export type TrialDetail = {
   central_contacts: ContactOut[];
   overall_officials: ContactOut[];
   sites: { facility: string; city: string; status: string; contacts: ContactOut[] }[]; // Australian sites only
+  outcomes: OutcomesOut;
 };
 
 export type ReturnOpened = {
