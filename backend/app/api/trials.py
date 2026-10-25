@@ -14,13 +14,11 @@ router = APIRouter(tags=["trials"])
 
 @router.get("/patients/{pid}/closed-trials", response_model=ClosedTrialListOut)
 async def closed_trials(pid: str, ctx: Ctx = Depends(get_ctx)):
-    """Closed trials for the patient's confirmed Condition term, newest first; none before one is confirmed."""
-    held = await record.diagnosis(ctx, record.PatientId(pid))
-    term = held.condition_term if held else None
-    found = await trials.closed_trials(ctx, term) if term else []
+    """Closed trials listing one of the patient's Condition term labels, newest first; none before some are ticked."""
+    term = (await record.diagnosis_step(ctx, record.PatientId(pid))).condition_term
     return ClosedTrialListOut(condition_term=term, trials=[ClosedTrialOut(
         nct_id=t.nct_id, title=t.title, status=t.status, conditions=list(t.conditions), closed_on=t.closed_on,
-        url=trials.page_url(t.nct_id)) for t in found])
+        url=trials.page_url(t.nct_id)) for t in await trials.closed_trials_with_labels(ctx, term)])
 
 
 @router.get("/trials")

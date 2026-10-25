@@ -25,6 +25,9 @@ node_modules/
 # generated images and audio from Meterless media jobs
 data/media/
 
+# the operator's JSON-lines log file and its rotations (LOG_FILE)
+data/logs/
+
 # local and generated files
 .claude/settings.local.json
 .taste-skill/

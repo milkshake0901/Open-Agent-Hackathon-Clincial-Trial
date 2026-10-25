@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 from app import trials
+from tests.condition_term import tick_condition_term
 
 ELIGIBILITY = ("Inclusion Criteria:\n\n* Adults aged 18 years or older\n* ECOG Performance Status 0-1\n\n"
                "Exclusion Criteria:\n\n* Untreated CNS metastases")
@@ -40,6 +41,7 @@ def save_pages(directory, *pages):
 
 
 AU = site("Royal Prince Alfred Hospital", "Camperdown", "Australia")
+LUNG = ["Non-Small Cell Lung Cancer"]
 
 
 async def test_an_australian_open_trial_is_ingested_from_saved_pages(ctx, tmp_path):
@@ -141,6 +143,7 @@ async def test_a_trial_judged_while_open_keeps_its_verdict_once_closed_and_is_ne
         for line in user.splitlines() if line.startswith("- NCT")]} if lane == "deep" else {"checks": []}
     await trials.ingest(ctx, save_pages(tmp_path / "before", [study("NCT00000001", sites=[AU])]))
     patient = await record.create_patient(ctx, "Demo patient")
+    await tick_condition_term(ctx, patient)
     v1 = (await record.submit_questionnaire(ctx, patient, {"sex": "female"}, respondent="other")).version.id
     await matching.rescan(ctx, v1)
     judged = await matching.verdict(ctx, trials.NctId("NCT00000001"), v1)
@@ -149,7 +152,7 @@ async def test_a_trial_judged_while_open_keeps_its_verdict_once_closed_and_is_ne
     await trials.ingest(ctx, save_pages(tmp_path / "after", [study("NCT00000001", status="COMPLETED", sites=[AU])]))
 
     assert await matching.verdict(ctx, trials.NctId("NCT00000001"), v1) == judged
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000001"]
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, LUNG)] == ["NCT00000001"]
     calls = len(fake_llm.calls)
     again = await matching.rescan(ctx, v1)
     assert again.planned == () and again.judged == () and again.skipped_existing == ()
@@ -167,7 +170,7 @@ async def test_closed_trials_finished_within_15_years_are_kept_and_older_ones_ar
     assert report.new == ("NCT00000014", "NCT00000001")
     assert report.closed == ("NCT00000014",) and report.dropped == ("NCT00000016",)
     assert await trials.trial(ctx, trials.NctId("NCT00000016")) is None
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000014"]
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, LUNG)] == ["NCT00000014"]
     assert [t.nct_id for t in await trials.active_trials(ctx)] == ["NCT00000001"]
 
 
@@ -184,7 +187,7 @@ async def test_the_cutoff_falls_back_to_completion_then_last_update(ctx, tmp_pat
     assert report.closed == ("NCT00000023", "NCT00000024")
 
 
-async def test_closed_trials_are_listed_for_a_condition_term_newest_first(ctx, tmp_path):
+async def test_closed_trials_are_listed_for_condition_labels_newest_first(ctx, tmp_path):
     source = save_pages(tmp_path, [
         study("NCT00000031", status="COMPLETED", sites=[AU], primary_completion="2015-04"),
         study("NCT00000032", status="TERMINATED", sites=[AU], primary_completion="2021-11-30"),
@@ -195,10 +198,10 @@ async def test_closed_trials_are_listed_for_a_condition_term_newest_first(ctx, t
 
     await trials.ingest(ctx, source)
 
-    closed = await trials.closed_trials(ctx, "non-small cell lung cancer")
+    closed = await trials.closed_trials_with_labels(ctx, LUNG)
     assert [(t.nct_id, t.closed_on) for t in closed] == [("NCT00000032", "2021-11-30"), ("NCT00000033", "2018-01-01"),
                                                          ("NCT00000031", "2015-04-01")]
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "breast cancer")] == ["NCT00000034"]
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, ["Breast Cancer"])] == ["NCT00000034"]
 
 
 async def test_a_closed_trial_that_ages_past_15_years_is_dropped_on_a_later_run(ctx, tmp_path):
@@ -216,7 +219,7 @@ async def test_a_closed_trial_that_ages_past_15_years_is_dropped_on_a_later_run(
     assert later.unchanged == ("NCT00000042",) and later.new == () and later.changed == ()
     assert await trials.trial(ctx, trials.NctId("NCT00000041")) is None
     assert await trials.sites(ctx, trials.NctId("NCT00000041")) == ()
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000042"]
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, LUNG)] == ["NCT00000042"]
     events = len(ctx.wm.events())
     again = await trials.ingest(a_year_on, source)
     assert again.dropped == ("NCT00000041",) and len(ctx.wm.events()) == events
@@ -228,6 +231,7 @@ async def test_a_stored_trial_later_found_withdrawn_or_without_an_australian_sit
     await trials.ingest(ctx, save_pages(tmp_path / "before", [study("NCT00000051", sites=[AU]),
                                                               study("NCT00000052", sites=[AU])]))
     patient = await record.create_patient(ctx, "Demo patient")
+    await tick_condition_term(ctx, patient)
     v1 = (await record.submit_questionnaire(ctx, patient, {"sex": "female"}, respondent="other")).version.id
     await matching.rescan(ctx, v1)
     judged = await matching.verdict(ctx, trials.NctId("NCT00000051"), v1)
@@ -240,7 +244,7 @@ async def test_a_stored_trial_later_found_withdrawn_or_without_an_australian_sit
     assert await trials.trial(ctx, trials.NctId("NCT00000051")) is None
     assert await trials.sites(ctx, trials.NctId("NCT00000052")) == ()
     assert await trials.active_trials(ctx) == []
-    assert await matching.verdicts_for_version(ctx, v1) == []
+    assert (await matching.verdicts_for_version(ctx, v1)).verdicts == ()
     kept = await matching.verdict(ctx, trials.NctId("NCT00000051"), v1)
     assert (kept.outcome, kept.results, kept.eligibility_hash) == (judged.outcome, judged.results,
                                                                    judged.eligibility_hash)
@@ -263,7 +267,7 @@ async def test_a_status_neither_open_nor_closed_is_not_stored_and_closed_counts_
     assert report.new == ("NCT00000063",) and report.dropped == ("NCT00000062",)
     assert await trials.trial(ctx, trials.NctId("NCT00000061")) is None
     assert await trials.trial(ctx, trials.NctId("NCT00000062")) is None
-    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == list(report.closed)
+    assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, LUNG)] == list(report.closed)
 
 
 def with_contacts(raw):
@@ -328,3 +332,22 @@ async def test_changed_contacts_replace_the_stored_ones(ctx, tmp_path):
     c = await trials.contacts(ctx, trials.NctId("NCT00000007"))
     assert c.central == (trials.Contact(name="New Desk", role="CONTACT"),)
     assert c.officials == () and c.sponsor == "" and c.responsible_party is None
+
+
+async def test_an_ingest_run_writes_its_start_and_report_to_the_log_file(ctx, tmp_path):
+    from app import logfile
+    source = save_pages(tmp_path / "pages", [study("NCT00000001", sites=[AU]),
+                                             study("NCT00000009", status="COMPLETED", completion="2025-01", sites=[AU])])
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        await trials.ingest(ctx, source)
+    finally:
+        logfile.reset()
+
+    steps = [json.loads(x) for x in path.read_text().splitlines()]
+    started = next(s for s in steps if s["step"] == "trials.ingest.started")
+    finished = next(s for s in steps if s["step"] == "trials.ingest.finished")
+    assert started["source"] == "saved_pages"
+    assert finished["fetched"] == 2 and finished["new"] == ["NCT00000001", "NCT00000009"]
+    assert finished["closed"] == ["NCT00000009"] and finished["unchanged"] == 0 and finished["dropped"] == []

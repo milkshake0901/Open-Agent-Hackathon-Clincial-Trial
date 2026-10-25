@@ -38,6 +38,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   ├── main.py               FastAPI app; builds one Ctx at startup
 │   │   ├── config.py             Settings from .env: URLs, tokens, loop bounds, lane models
 │   │   ├── ctx.py                the dependency bundle every facade takes
+│   │   ├── logfile.py            the operator's JSON-lines log file: configure once, then logging.getLogger + step
 │   │   │
 │   │   ├── record/               PATIENT RECORD: Documents, Facts, Profile versions, Conflicts
 │   │   │   ├── __init__.py       public API: register_document, ingest, confirm, versions, diff, ...
@@ -50,8 +51,9 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   └── repo.py           SQL reads; writes only documents and pages
 │   │   │
 │   │   ├── trials/               TRIALS: Australian ClinicalTrials.gov studies, Open and Closed trials (ADR 0004)
-│   │   │   ├── __init__.py       public API: ingest, load_snapshot, trial, active_trials, closed_trials, criteria,
-│   │   │   │                     sites, contacts, outcomes, outcome_summary, page_url
+│   │   │   ├── __init__.py       public API: ingest, load_snapshot, trial, active_trials, condition_labels,
+│   │   │   │                     search_condition_labels, selection (Selection), closed_trials_with_labels,
+│   │   │   │                     criteria, sites, contacts, outcomes, outcome_summary, page_url
 │   │   │   ├── ctgov.py          study JSON → Trials: saved pages, or the live v2 API paged by pageToken (paced, retried)
 │   │   │   ├── criteria.py       eligibility text → Criteria (deterministic split, model fallback)
 │   │   │   ├── summary.py        a Closed trial's plain-language Outcome summary: prompt and Outcome content hash
@@ -184,6 +186,43 @@ backend/.venv/bin/pytest tests/trials                             # run from bac
 ```
 
 `--live` requests `GET /api/v2/studies?query.locn=Australia&pageSize=1000` and follows `nextPageToken` to the last page (about 13 pages for 12,600 studies), spacing requests to 40 a minute under the API's limit of about 50 and retrying timeouts, 429s and 5xx with back-off. It keeps only studies with an Australian Trial site and drops withdrawn ones (ADR 0004). It prints `N Trials from http: … new, … changed, … unchanged`; a second run reports everything unchanged. If a page still fails after the retries, the run stops and records nothing, so just run it again. It makes no model call and starts no Re-scan.
+
+## Read the log file
+
+The app and `scripts/ingest_trials.py` write every step to one file, `data/logs/trialmatch.jsonl` (gitignored; set `LOG_FILE` to move it). It rotates at 10 MB (`LOG_MAX_BYTES`), keeping five old files (`trialmatch.jsonl.1` … `.5`, `LOG_BACKUPS`). One JSON object per line, each with `at`, `level`, `logger` and `step`:
+
+| `step` | Written when | Fields |
+| --- | --- | --- |
+| `llm.complete` | every model call through `llm.complete`, each attempt, run or not | `lane`, `model_requested`, `model_answered`, `system`, `user`, `raw`, `parsed`, `error`, `duration_ms`, `run_id` (null outside a run) |
+| `zetaris.sql` | every agent query through Zetaris | `sql`, `rows`, `error`, `duration_ms` |
+| `matching.rescan.started` / `matching.trial_judged` / `matching.rescan.finished` | a Re-scan | `run_id`, `profile_version_id`, `to_judge`; `nct_id`, `outcome`; `judged`, `failed` |
+| `matching.rescan.no_condition_term` | a Re-scan for a patient with no Condition term: it judges nothing (ADR 0005) | `run_id`, `profile_version_id`, `patient_id` |
+| `record.diagnosis_check.offered` / `.answered` | a Diagnosis check is offered or answered (`record.check_diagnosis`, `record.answer_diagnosis_check`) | `patient_id`, `check` (its de-identified words, shortlist, ticked labels, status), `answer` (with de-identified `text`) |
+| `enquiry.drafted`, `trials.outcome_summary.drafted` | a draft is written | `nct_id`, ids and `model_answered` (never the recipient or the body) |
+| `trials.ingest.started` / `.finished` | an ingest run | `source`; the report's `fetched`, `new`, `changed`, `unchanged`, `closed`, `dropped` |
+
+Prompts are the de-identified text the model was sent; nothing else about the Respondent (Search preferences, names, contact details) is added. A log file that can't be written never fails a request: logging reports it on stderr. From the repo root:
+
+```bash
+tail -f data/logs/trialmatch.jsonl | jq -c '{at, step, lane, model_answered, duration_ms, error}'
+jq -c 'select(.step == "llm.complete" and .error != null)' data/logs/trialmatch.jsonl   # failed model calls
+jq -c 'select(.run_id == "<run id>")' data/logs/trialmatch.jsonl                         # one Re-scan
+```
+
+## Agents read through Zetaris
+
+With `ZETARIS_API_KEY` set, the app's agent reader is `ZetarisReader` (ADR 0001): agent queries go to `{ZETARIS_REST_URL}/sql-editor/sqls/run` against our Postgres registered as datasource `trialmatch`, and each SQL is logged under `app.zetaris` (a `zetaris.sql` line in the log file). Without the key the app warns and agents read Postgres directly.
+
+Zetaris returns every value as a string; `ZetarisReader` restores Postgres types from the catalog (`pg_column_types`, read at startup) by the columns of the tables each query reads, so restart the app after a migration too.
+
+A Condition term's labels are matched through `trial_condition` (one row per Trial and label key, written by the projector with the trial row): the label counts, the label search and the Trials a Condition term selects (`trials.selection`) are SQL over it, and a Re-scan's plan filters on it (`trials.listing_filter`) in its one query through Zetaris.
+
+After any migration that adds a table or column, refresh Zetaris's copy of the schema, or agent queries fail with `UNRESOLVED_COLUMN` or `TABLE_OR_VIEW_NOT_FOUND`:
+
+```bash
+python3 .scratch/ctgov-discovery/ref/run_sql.py --env-file .env -e "REGISTER DATASOURCE TABLES FROM trialmatch"
+backend/.venv/bin/pytest tests/sql                          # run from backend/: the live test compares both readers
+```
 
 ## Where to start
 

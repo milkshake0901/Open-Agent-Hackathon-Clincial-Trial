@@ -3,9 +3,9 @@ The frontend generates its TypeScript types from /openapi.json, so this is the o
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.enquiry import EnquiryKind
 
@@ -63,26 +63,40 @@ class RescanSummary(BaseModel):
         return cls(judged=len(report.judged), failed=len(report.failed))
 
 
-class DiagnosisCheckIn(BaseModel):
-    text: str | None = None     # a re-wording after "no"; omitted: the latest accepted diagnosis answer
+class TickedIn(BaseModel):
+    answer: Literal["ticked"]
+    labels: list[str] = Field(min_length=1)   # one or more labels from the check's shortlist
 
 
-class DiagnosisAnswerIn(BaseModel):
-    answer: Literal["yes", "no", "not_sure"]
+class NoneOfTheseIn(BaseModel):
+    answer: Literal["none_of_these"]
+    text: str                   # the diagnosis in other words, which start a new check (returned instead)
+
+
+class NotSureIn(BaseModel):
+    answer: Literal["not_sure"]
+
+
+DiagnosisAnswerIn = Annotated[TickedIn | NoneOfTheseIn | NotSureIn, Field(discriminator="answer")]
+
+
+class ConditionLabelOut(BaseModel):
+    """trials.ConditionLabel: a Condition label and how many stored Open and Closed trials list it."""
+    label: str
+    open: int
+    closed: int
 
 
 class DiagnosisCheckOut(BaseModel):
-    """record.DiagnosisCheck. `message` is what to show the Respondent ("We understood this as ...")."""
+    """record.DiagnosisCheck. `message` is what to show the Respondent ("Tick the conditions that match ...")."""
     id: str
     text: str
-    suggested_term: str | None          # None when the model was not confident enough to offer one
-    confidence: float
-    status: Literal["proposed", "confirmed", "rejected", "not_sure", "unclear"]
-    condition: str | None               # the confirmed term that selects Trials
+    shortlist: list[ConditionLabelOut]   # offered labels, best fit first; empty when none fit
+    ticked: list[str]                   # status ticked: the Condition term, the labels that select Trials; else []
+    status: Literal["proposed", "ticked", "not_sure"]   # none of these returns the new check, proposed
     needs_gp: bool                      # show the GP message; a diagnosis Doctor question is raised
-    ask_again: bool                     # "no": ask the Respondent to re-word, then POST the check again
     message: str
-    rescan: RescanSummary | None = None   # set when a "yes" re-scanned the current version
+    rescan: RescanSummary | None = None   # set when ticking labels re-scanned the current version
 
 
 class ConflictSideOut(BaseModel):
@@ -366,6 +380,9 @@ class EnquiryOut(BaseModel):
 
 class VerdictListOut(BaseModel):
     profile_version_id: str
+    condition_term: list[str] | None  # the ticked Condition labels; None (and `verdicts` empty) until some are ticked
+    diagnosis: Literal["ticked", "not_sure", "unfinished"]   # the diagnosis step: labels ticked (`condition_term`),
+                                                             # answered not sure (it waits on the GP), or neither yet
     verdicts: list[VerdictOut]  # ranked: outcome (possible: fewest unknowns first), then nearest recruiting site
 
 
@@ -380,7 +397,7 @@ class ClosedTrialOut(BaseModel):
 
 
 class ClosedTrialListOut(BaseModel):
-    condition_term: str | None  # None until a Diagnosis check confirms one; then `trials` is empty
+    condition_term: list[str] | None  # the ticked Condition labels; None (and `trials` empty) until some are ticked
     trials: list[ClosedTrialOut]  # newest first by closed_on
 
 

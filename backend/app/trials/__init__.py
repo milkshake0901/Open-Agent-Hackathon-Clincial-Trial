@@ -6,14 +6,17 @@ Hides: Zetaris REST table vs direct HTTP, paging, rate limits, hashing, criteria
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+import logging
+import re
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import NewType
+from typing import ClassVar, NewType
 
 import httpx
 
+from app import logfile
 from app.ctx import Ctx
 
 NctId = NewType("NctId", str)
@@ -158,6 +161,19 @@ class TrialSite:
 
 
 @dataclass(frozen=True)
+class ConditionLabel:
+    """A Condition label and how many stored Open and Closed trials list it. Labels equal ignoring case and repeated
+    whitespace are one label, shown as the spelling most of those Trials use."""
+    label: str
+    open: int
+    closed: int
+
+    @property
+    def total(self) -> int:
+        return self.open + self.closed
+
+
+@dataclass(frozen=True)
 class SyncReport:
     fetched: int
     new: tuple[NctId, ...]
@@ -197,12 +213,14 @@ class LivePages:
 
 
 __all__ = ["ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
-           "active_trials", "closed_trials", "outcome_summary",
-           "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
+           "active_trials", "outcome_summary",
+           "condition_labels", "search_condition_labels", "ConditionLabel", "label_key", "label_words",
+           "selection", "Selection", "closed_trials_with_labels", "label_keys",
+           "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
            "OutcomeMeasure", "Outcomes", "OutcomeSummary", "PostedResult", "ResultValue", "Publication",
            "SavedPages", "LivePages",
            "NctId", "CriterionId", "SyncReport", "IngestReport", "ACTIVE_STATUSES", "CLOSED_STATUSES",
-           "trial_columns", "trial_from_row", "active_filter"]
+           "trial_columns", "trial_from_row", "active_filter", "listing_filter"]
 
 
 def page_url(nct_id: str) -> str:
@@ -223,31 +241,17 @@ CLOSED_YEARS_KEPT = 15
 # (withdrawn before enrolling anyone, not a Trial per the glossary) and the expanded access statuses (AVAILABLE,
 # NO_LONGER_AVAILABLE, TEMPORARILY_NOT_AVAILABLE, APPROVED_FOR_MARKETING), which are neither joinable nor research.
 
-_STOP_WORDS = frozenset({"of", "the", "and", "with", "in", "a", "an"})
-
-
-def _words(text: str) -> frozenset[str]:
-    import re
-    return frozenset(w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOP_WORDS)
-
-
-def studies_condition(trial: Trial, condition_term: str) -> bool:
-    """Does the Trial list this condition (#14: a confirmed diagnosis term selects which snapshot Trials are judged)?
-    Word-set containment either way against each listed condition, ignoring case, punctuation and filler words:
-    "lung cancer" and "non-small cell lung cancer stage iv" both match "Non-Small Cell Lung Cancer"; "breast cancer"
-    does not. No MeSH or synonym expansion yet."""
-    want = _words(condition_term)
-    return bool(want) and any(want <= have or have <= want for have in map(_words, trial.conditions) if have)
-
-
 # Submodules import the types above; imported here (after them) so the `criteria` function below wins the name.
 from app.trials import criteria as splitting, ctgov, repo, summary as summaries  # noqa: E402
 
-# For other modules' SQL that joins the trial table (one SQL text per question, ctx.py): its columns, row mapping
-# and the active filter, so no module restates them.
+log = logging.getLogger(__name__)
+
+# For other modules' SQL that joins the trial table (one SQL text per question, ctx.py): its columns, row mapping,
+# the active filter and the Condition label filter (keys from label_keys), so no module restates them.
 trial_columns = repo.trial_columns
 trial_from_row = repo.to_trial
 active_filter = repo.active_filter
+listing_filter = repo.listing
 
 
 async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
@@ -261,10 +265,13 @@ async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
     Trial unchanged."""
     from app.worldmodel import timeline
 
+    name = "http" if isinstance(source, LivePages) else "saved_pages"
+    logfile.step(log, "trials.ingest.started", source=name,
+                 directory=None if isinstance(source, LivePages) else str(source.directory))
     if isinstance(source, LivePages):
-        pages, name = await ctgov.fetch_pages(source, ctx.now().isoformat()), "http"
+        pages = await ctgov.fetch_pages(source, ctx.now().isoformat())
     else:
-        pages, name = ctgov.read_pages(source), "saved_pages"
+        pages = ctgov.read_pages(source)
     cutoff = _years_before(ctx.now().date(), CLOSED_YEARS_KEPT).isoformat()
     kept, dropped, to_drop = [], [], []
     for raw, fetched_at in pages:
@@ -280,9 +287,13 @@ async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
             dropped.append(NctId(raw.nct_id))
     report = await _record(ctx, kept, name)
     await timeline.drop_trials(ctx.wm, to_drop, ctx.now().isoformat())
-    return IngestReport(**vars(report), closed=tuple(NctId(raw.nct_id) for raw, _ in kept
-                                                      if raw.status in CLOSED_STATUSES),
+    done = IngestReport(**vars(report), closed=tuple(NctId(raw.nct_id) for raw, _ in kept
+                                                     if raw.status in CLOSED_STATUSES),
                         dropped=tuple(dropped))
+    logfile.step(log, "trials.ingest.finished", source=name, fetched=done.fetched, new=list(done.new),
+                 changed=list(done.changed), unchanged=len(done.unchanged), closed=list(done.closed),
+                 dropped=list(done.dropped))
+    return done
 
 
 def _years_before(day, years: int):
@@ -295,7 +306,12 @@ def _years_before(day, years: int):
 async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
     """Record the Trials saved under `directory` (ClinicalTrials.gov v2 study JSON, one file per Trial; the
     repo keeps data/trials_snapshot/) in place of the Australia-wide `ingest`. Like `ingest`, Criteria are split lazily.
+    Unlike it, every site is kept: the snapshot is a dev and test seed, and the distance tests use its overseas sites.
+    It seeds a Trial cache the ingest has not filled: once the ingest has recorded a Trial it records nothing, so an
+    app restart never rolls an ingested Trial back to the older saved copy with all its sites.
     Idempotent: loading the same files again records nothing and reports every Trial unchanged."""
+    if await repo.has_ingested(ctx.ui_reader):
+        return SyncReport(fetched=0, new=(), changed=(), unchanged=(), source="snapshot")
     return await _record(ctx, ctgov.read_snapshot(directory), "snapshot")
 
 
@@ -322,11 +338,77 @@ async def active_trials(ctx: Ctx) -> list[Trial]:
     return await repo.active_trials(ctx.ui_reader)
 
 
-async def closed_trials(ctx: Ctx, condition_term: str) -> list[Trial]:
-    """Closed trials that study this Condition term (the same `studies_condition` matching as Open trials), newest
-    first by cutoff date (Trial.closed_on). Never judged: they have no Criterion results or Verdict (ADR 0004)."""
-    found = [t for t in await repo.closed_trials(ctx.ui_reader) if studies_condition(t, condition_term)]
-    return sorted(sorted(found, key=lambda t: t.nct_id), key=lambda t: t.closed_on or "", reverse=True)
+def _newest_first(closed: list[Trial]) -> list[Trial]:
+    return sorted(sorted(closed, key=lambda t: t.nct_id), key=lambda t: t.closed_on or "", reverse=True)
+
+
+def label_key(label: str) -> str:
+    """Condition labels are equal when they match ignoring case and repeated whitespace."""
+    return " ".join(label.casefold().split())
+
+
+def label_words(text: str) -> str:
+    """A label's or search phrase's words: its runs of letters and digits, casefolded, one space apart. A phrase is
+    in a label when its words appear in the label's, whole and adjacent."""
+    return " ".join(re.findall(r"[a-z0-9]+", text.casefold()))
+
+
+async def condition_labels(ctx: Ctx) -> list[ConditionLabel]:
+    """Every distinct Condition label the stored, non-dropped Trials list, with how many Open and Closed trials list
+    it; most used first, then alphabetically."""
+    return _labels(await repo.condition_spellings(ctx.ui_reader))
+
+
+def _labels(spellings: list[tuple[str, str, int, int]]) -> list[ConditionLabel]:
+    """Spellings of one label key are one label, shown as the spelling most Trials use (then the first by code
+    point), with the counts summed."""
+    by_key: dict[str, list[tuple[str, int, int]]] = {}
+    for key, label, open_, closed in spellings:
+        by_key.setdefault(key, []).append((label, open_, closed))
+    found = [ConditionLabel(min(ss, key=lambda s: (-(s[1] + s[2]), s[0]))[0], open=sum(s[1] for s in ss),
+                            closed=sum(s[2] for s in ss)) for ss in by_key.values()]
+    return sorted(found, key=lambda one: (-one.total, label_key(one.label)))
+
+
+async def search_condition_labels(ctx: Ctx, phrases: list[str], *, limit: int) -> list[ConditionLabel]:
+    """The Condition labels containing any of the phrases as whole words ("cruciate ligament" finds "Anterior Cruciate
+    Ligament Rupture", "injur" finds nothing), at most `limit`, most used first."""
+    words = [w for w in dict.fromkeys(label_words(p) for p in phrases) if w]
+    return _labels(await repo.condition_spellings(ctx.ui_reader, words))[:limit] if words else []
+
+
+@dataclass(frozen=True)
+class Selection:
+    """The Trials a Condition term selects (ADR 0005): the stored Open trials (judged and listed) and Closed trials
+    (listed, never judged) listing one of its labels, equal ignoring case and repeated whitespace. Selection.EMPTY
+    without a Condition term."""
+    open: frozenset[NctId]
+    closed: frozenset[NctId]
+    EMPTY: ClassVar[Selection]
+
+
+Selection.EMPTY = Selection(open=frozenset(), closed=frozenset())
+
+
+async def selection(ctx: Ctx, condition_term: tuple[str, ...] | None) -> Selection:
+    """The Trials the Condition term selects; Selection.EMPTY (and no read) with none."""
+    if not condition_term:
+        return Selection.EMPTY
+    found = await repo.listing_any(ctx.ui_reader, label_keys(condition_term))
+    return Selection(open=frozenset(n for n, status in found if status in ACTIVE_STATUSES),
+                     closed=frozenset(n for n, status in found if status in CLOSED_STATUSES))
+
+
+def label_keys(labels: Sequence[str]) -> list[str]:
+    """The distinct label keys of a Condition term's labels, in order: the parameters of listing_filter."""
+    return list(dict.fromkeys(label_key(label) for label in labels))
+
+
+async def closed_trials_with_labels(ctx: Ctx, condition_term: tuple[str, ...] | None) -> list[Trial]:
+    """The Closed trials the Condition term selects (Selection.closed), newest first by cutoff date (Trial.closed_on);
+    none without a Condition term. Never judged: they have no Criterion results or Verdict (ADR 0004)."""
+    closed = (await selection(ctx, condition_term)).closed
+    return _newest_first(await repo.trials_by_id(ctx.ui_reader, sorted(closed)))
 
 
 async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:
@@ -368,6 +450,8 @@ async def outcome_summary(ctx: Ctx, nct_id: NctId) -> OutcomeSummary | None:
     written = await llm.complete(ctx, llm.Lane.FAST, system=summaries.SYSTEM, user=summaries.prompt(t, o),
                                  out=summaries.Written, run_id=None)
     summary = OutcomeSummary(text=written.value.summary.strip(), outcomes_hash=key)
+    logfile.step(log, "trials.outcome_summary.drafted", nct_id=nct_id, outcomes_hash=key,
+                 model_answered=written.model_answered)
     await timeline.record_outcome_summary(ctx.wm, t, summary, written.model_answered, ctx.now().isoformat())
     return summary
 

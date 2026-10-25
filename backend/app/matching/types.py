@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import NewType
 
-from app.record import DocumentHash, FactId, ProfileVersionId
+from app.record import DiagnosisState, DocumentHash, FactId, ProfileVersionId
 from app.trials import CriterionId, NctId
 from app.trace import RunId
 
@@ -105,6 +105,16 @@ class Verdict:
     nearest_site: TrialSiteDistance | None = None     # nearest RECRUITING site (None: the Trial lists none)
     sites: tuple[TrialSiteDistance, ...] = ()         # open sites, nearest first
     further_away: bool = False                   # beyond the travel limit: shown under "Further away", not dropped
+
+
+@dataclass(frozen=True)
+class ListedVerdicts:
+    """The Verdicts listed for a Profile version (verdicts_for_version) and the Condition term that selected their
+    Trials: None, and no Verdicts, until the patient has one (ADR 0005). `diagnosis`: where the diagnosis step stands
+    (record.DiagnosisStep.state)."""
+    condition_term: tuple[str, ...] | None
+    verdicts: tuple[Verdict, ...]
+    diagnosis: DiagnosisState = "unfinished"
 
 
 @dataclass(frozen=True)

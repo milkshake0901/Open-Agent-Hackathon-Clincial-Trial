@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 import asyncpg  # noqa: E402
 
-from app import trials  # noqa: E402
+from app import logfile, trials  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.ctx import Ctx  # noqa: E402
 from app.llm.nightshift import Nightshift  # noqa: E402
@@ -30,6 +30,7 @@ from app.worldmodel import PgEventStore, WorldModel  # noqa: E402
 
 async def main(args: argparse.Namespace) -> int:
     s = Settings(_env_file=ROOT / ".env")
+    logfile.configure(s.log_file, max_bytes=s.log_max_bytes, backups=s.log_backups)   # the app's log file too
     pool = await asyncpg.create_pool(s.pg_dsn, min_size=1, max_size=4)
     writer, reader = PgWriter(pool), PgReader(pool)
     wm = WorldModel(namespace=WORLD_MODEL_NAMESPACE, store=PgEventStore(writer, WORLD_MODEL_NAMESPACE))

@@ -11,11 +11,14 @@ from tests.api.questionnaire_http import submit
 from tests.trials.test_ingest import AU, save_pages, study
 
 DIAGNOSIS = "lung cancer, the non small cell kind"
+TICK_LUNG = {"answer": "ticked", "labels": ["Non-Small Cell Lung Cancer"]}
 
 
 def respond(lane, system, user):
-    if lane == "fast" and "condition term" in system:
-        return {"term": "non-small cell lung cancer", "confidence": 0.9}
+    if lane == "fast" and "search phrases" in system:
+        return {"phrases": ["lung cancer"]}
+    if lane == "fast" and "shortlist" in system:
+        return {"labels": ["Non-Small Cell Lung Cancer"]}
     if lane == "fast":
         return {"facts": [{"resource": "Condition", "subject": "lung cancer", "value": "non-small cell",
                            "observed_on": "2026-10-24", "page": 2, "quote": DIAGNOSIS, "question": "Q6"}]}
@@ -45,11 +48,11 @@ async def test_closed_trials_for_the_condition_term_are_listed_newest_first_and_
         before = (await http.get(url)).json()
         assert before == {"condition_term": None, "trials": []}
 
-        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check", json={})).json()
-        await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check/{check['id']}", json={"answer": "yes"})
+        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check")).json()
+        await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check/{check['id']}", json=TICK_LUNG)
 
         listed = (await http.get(url)).json()
-        assert listed["condition_term"] == "non-small cell lung cancer"
+        assert listed["condition_term"] == ["Non-Small Cell Lung Cancer"]
         assert [(t["nct_id"], t["status"], t["closed_on"]) for t in listed["trials"]] == [
             ("NCT00000052", "TERMINATED", "2022-08-15"), ("NCT00000051", "COMPLETED", "2016-05-01")]
         first = listed["trials"][0]
@@ -75,8 +78,8 @@ async def test_a_trial_that_closes_after_it_was_judged_keeps_its_verdict_marked_
         patient = (await http.post("/api/patients", json={"label": "Demo patient C"})).json()["patient_id"]
         _, state = await submit(http, patient, {"diagnosis": DIAGNOSIS})
         vid = state["profile_version_id"]
-        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check", json={})).json()
-        await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check/{check['id']}", json={"answer": "yes"})
+        check = (await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check")).json()
+        await http.post(f"/api/patients/{patient}/questionnaire/diagnosis-check/{check['id']}", json=TICK_LUNG)
         await http.post(f"/api/patients/{patient}/versions/{vid}/rescan")
         verdicts = f"/api/patients/{patient}/versions/{vid}/verdicts"
         before = {v["nct_id"]: v for v in (await http.get(verdicts)).json()["verdicts"]}

@@ -38,7 +38,7 @@ def change_out(ch: matching.VerdictChange) -> VerdictChangeOut:
 
 async def verdicts_changed(ctx: Ctx, from_version: str, to_version: str) -> list[VerdictChangeOut]:
     out = []
-    for v in await matching.verdicts_for_version(ctx, record.ProfileVersionId(to_version)):
+    for v in (await matching.verdicts_for_version(ctx, record.ProfileVersionId(to_version))).verdicts:
         ch = await matching.change_between(ctx, v.nct_id, record.ProfileVersionId(from_version), v.profile_version_id)
         if ch.outcome_from != ch.outcome_to or ch.criteria_changed:
             out.append(change_out(ch))
@@ -80,10 +80,13 @@ async def rescan(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
 
 @router.get("/patients/{pid}/versions/{vid}/verdicts", response_model=VerdictListOut)
 async def list_verdicts(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
-    """Ranked: eligible, then possible (fewest unknowns first), then excluded."""
+    """Ranked: eligible, then possible (fewest unknowns first), then excluded. Only Trials the patient's Condition term
+    selects; with none (the diagnosis step unfinished, or answered not sure: `diagnosis`) `condition_term` is None and
+    nothing is listed."""
     await patient_version(ctx, pid, vid)
-    verdicts = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
-    return VerdictListOut(profile_version_id=vid, verdicts=[await _verdict_out(ctx, v) for v in verdicts])
+    listed = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
+    return VerdictListOut(profile_version_id=vid, condition_term=listed.condition_term, diagnosis=listed.diagnosis,
+                          verdicts=[await _verdict_out(ctx, v) for v in listed.verdicts])
 
 
 @router.get("/patients/{pid}/versions/{vid}/verdicts/{nct}", response_model=VerdictOut)

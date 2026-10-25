@@ -7,16 +7,20 @@ concurrently); each approved Verdict is written to the World Model as a patientâ
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 
 from app.ctx import Ctx
 from app.matching import evaluator, matcher, repo, verdict as verdict_rules
 from app.worldmodel import timeline
 from app.matching.types import CriterionResult, Rejection, RescanReport, ValidatedResults, Verdict
-from app import record, trace, trials
+from app import logfile, record, trace, trials
 from app.record import ProfileVersion, ProfileVersionId
 from app.trials import Criterion, NctId, Trial
 from app.trace.events import EvaluatorApproved, EvaluatorRejected, MatcherRetried, RescanPlanned, TrialJudged, RescanFinished
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -93,29 +97,26 @@ async def judge_trial(ctx: Ctx, trial: Trial, criteria: tuple[Criterion, ...], p
 
 
 async def plan(ctx: Ctx, version_id: ProfileVersionId, only: set[NctId] | None,
-               condition_term: str | None = None) -> tuple[list[Trial], list[NctId]]:
-    """(to_judge, skipped). SQL: active trials LEFT JOIN verdict ON (nct, trial.eligibility_hash, version)
-    WHERE verdict is null. Reads via ctx.agent_reader (Zetaris). Old-hash Verdicts are kept (ADR 0002).
-    A confirmed Condition term (#14) leaves out Trials that do not study it (neither judged nor skipped)."""
-    to_judge, skipped = await repo.trials_needing_verdict(ctx.agent_reader, version_id, only)
-    if condition_term is None:
-        return to_judge, skipped
-    selected = {t.nct_id for t in await trials.active_trials(ctx) if trials.studies_condition(t, condition_term)}
-    return [t for t in to_judge if t.nct_id in selected], [n for n in skipped if n in selected]
-
-
-async def condition_term_for(ctx: Ctx, patient_id: record.PatientId) -> str | None:
-    """The patient's confirmed Condition term, if any (record.diagnosis)."""
-    held = await record.diagnosis(ctx, patient_id)
-    return held.condition_term if held else None
+               condition_term: tuple[str, ...]) -> tuple[list[Trial], list[NctId]]:
+    """(to_judge, skipped). One SQL query: active trials listing one of the Condition term's labels (ADR 0005) LEFT JOIN
+    verdict ON (nct, trial.eligibility_hash, version); to_judge are those without one. Reads via ctx.agent_reader
+    (Zetaris). Old-hash Verdicts are kept (ADR 0002)."""
+    return await repo.trials_needing_verdict(ctx.agent_reader, version_id, trials.label_keys(condition_term), only)
 
 
 async def run_rescan(ctx: Ctx, version_id: ProfileVersionId, only: set[NctId] | None, run_id: trace.RunId,
                      max_attempts: int, concurrency: int) -> RescanReport:
     """Plan, then judge each planned Trial with bounded concurrency. A Trial that fails (model unavailable) is
-    reported and left without a Verdict, so the next Re-scan picks it up."""
+    reported and left without a Verdict, so the next Re-scan picks it up. With no Condition term it plans nothing,
+    judges nothing and calls no model (ADR 0005)."""
     profile = await record.profile_version(ctx, version_id, for_agent=True)
-    to_judge, skipped = await plan(ctx, version_id, only, await condition_term_for(ctx, profile.patient_id))
+    term = (await record.diagnosis_step(ctx, profile.patient_id)).condition_term
+    if term is None:
+        logfile.step(log, "matching.rescan.no_condition_term", run_id=run_id, profile_version_id=version_id,
+                     patient_id=profile.patient_id)
+        to_judge, skipped = [], []
+    else:
+        to_judge, skipped = await plan(ctx, version_id, only, term)
     await trace.append(ctx.writer, run_id, RescanPlanned(
         actor="matching", profile_version_id=version_id, to_judge=[t.nct_id for t in to_judge],
         skipped_existing=list(skipped)))

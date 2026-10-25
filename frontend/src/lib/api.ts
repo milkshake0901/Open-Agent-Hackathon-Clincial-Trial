@@ -65,15 +65,25 @@ export type DoctorQuestion = {
   unblocks: string[];
 };
 
+// A Condition label as stored Trials list it, with how many Open and Closed trials list it (ADR 0005).
+export type ConditionLabel = { label: string; open: number; closed: number };
+
+// The diagnosis step, as the Trials page sees it: labels ticked (the Condition term), answered not sure (it waits on
+// the GP), or neither yet.
+export type Diagnosis = "ticked" | "not_sure" | "unfinished";
+
+export type DiagnosisAnswer =
+  | { answer: "ticked"; labels: string[] }
+  | { answer: "none_of_these"; text: string } // the diagnosis in other words: returns the new check
+  | { answer: "not_sure" };
+
 export type DiagnosisCheck = {
   id: string;
   text: string;
-  suggested_term: string | null;
-  confidence: number;
-  status: "proposed" | "confirmed" | "rejected" | "not_sure" | "unclear";
-  condition: string | null;
+  shortlist: ConditionLabel[]; // best fit first; empty when no label fits
+  ticked: string[]; // status "ticked": the Condition term, the labels that select Trials
+  status: "proposed" | "ticked" | "not_sure";
   needs_gp: boolean;
-  ask_again: boolean;
   message: string;
   rescan: { judged: number; failed: number } | null;
 };
@@ -292,11 +302,11 @@ export const api = {
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
   verdicts: (patientId: string, versionId: string) =>
-    call<{ profile_version_id: string; verdicts: VerdictOut[] }>(
+    call<{ profile_version_id: string; condition_term: string[] | null; diagnosis: Diagnosis; verdicts: VerdictOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
     ),
   closedTrials: (patientId: string) =>
-    call<{ condition_term: string | null; trials: ClosedTrialOut[] }>(
+    call<{ condition_term: string[] | null; trials: ClosedTrialOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/closed-trials`,
     ),
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
@@ -305,15 +315,15 @@ export const api = {
     call<{ nct_id: string; details: ClinicalDetailOut[] }>(enquiryPath(patientId, versionId, nctId)),
   enquiry: (patientId: string, versionId: string, nctId: string, include: string[]) =>
     call<EnquiryOut>(enquiryPath(patientId, versionId, nctId), { method: "POST", body: JSON.stringify({ include }) }),
-  checkDiagnosis: (patientId: string, text?: string) =>
+  checkDiagnosis: (patientId: string) =>
     call<DiagnosisCheck>(`/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check`, {
       method: "POST",
-      body: JSON.stringify(text ? { text } : {}),
     }),
-  answerDiagnosis: (patientId: string, checkId: string, answer: "yes" | "no" | "not_sure") =>
+  // none_of_these returns the new check made from its new words.
+  answerDiagnosis: (patientId: string, checkId: string, answer: DiagnosisAnswer) =>
     call<DiagnosisCheck>(
       `/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check/${encodeURIComponent(checkId)}`,
-      { method: "POST", body: JSON.stringify({ answer }) },
+      { method: "POST", body: JSON.stringify(answer) },
     ),
   doctorQuestions: (patientId: string, versionId: string) =>
     call<DoctorQuestion[]>(

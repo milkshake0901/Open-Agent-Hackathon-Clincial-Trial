@@ -6,6 +6,7 @@ Query text is ANSI; table names go through reader.table("fact") so Zetaris can q
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import datetime, time, timezone
 
 from app.record.types import (
@@ -13,6 +14,7 @@ from app.record.types import (
     ProfileVersionId, ReturnTokenHash, SearchPreferences,
 )
 from app.sql.reader import SqlReader
+from app.trials import ConditionLabel
 from app.sql.writer import Tx
 
 
@@ -29,12 +31,17 @@ async def search_preferences(reader: SqlReader, patient_id: PatientId) -> Search
                              location=location)
 
 
-_CHECK_COLS = "id, patient_id, text, suggested_term, confidence, status"
+_CHECK_COLS = "id, patient_id, text, shortlist, ticked, status"
+
+
+def _json(value):
+    return json.loads(value) if isinstance(value, str) else value
 
 
 def _check(r: dict) -> DiagnosisCheck:
     return DiagnosisCheck(id=DiagnosisCheckId(r["id"]), patient_id=PatientId(r["patient_id"]), text=r["text"],
-                          suggested_term=r["suggested_term"], confidence=float(r["confidence"]), status=r["status"])
+                          shortlist=tuple(ConditionLabel(**o) for o in _json(r["shortlist"]) or ()),
+                          ticked=tuple(_json(r["ticked"]) or ()), status=r["status"])
 
 
 async def diagnosis_check(reader: SqlReader, check_id: DiagnosisCheckId) -> DiagnosisCheck | None:
@@ -159,20 +166,21 @@ async def insert_return_token(tx: Tx, token_hash: ReturnTokenHash, patient_id: P
 async def insert_diagnosis_check(tx: Tx, check: DiagnosisCheck, at: datetime) -> None:
     """A settled check (DiagnosisCheck.settled) takes the next settled_seq."""
     await tx.execute(
-        "INSERT INTO diagnosis_check (id, patient_id, text, suggested_term, confidence, status, created_at, "
-        "answered_at, settled_seq) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, "
+        "INSERT INTO diagnosis_check (id, patient_id, text, shortlist, ticked, status, created_at, "
+        "answered_at, settled_seq) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, "
         "CASE WHEN $9 THEN nextval('diagnosis_check_settled') END)",
-        (check.id, check.patient_id, check.text, check.suggested_term, check.confidence, check.status, at,
-         at if check.status != "proposed" else None, check.settled))
+        (check.id, check.patient_id, check.text,
+         json.dumps([asdict(one) for one in check.shortlist]),
+         json.dumps(list(check.ticked)), check.status, at, at if check.status != "proposed" else None, check.settled))
 
 
 async def answer_diagnosis_check(tx: Tx, answered: DiagnosisCheck, at: datetime) -> bool:
-    """Sets the answer (`answered.status`) once: False if the check was not awaiting one. A settled answer takes the
-    next settled_seq."""
+    """Sets the answer (`answered.status` and its ticked labels) once: False if the check was not awaiting one. A
+    settled answer takes the next settled_seq."""
     rows = await tx.fetch(
-        "UPDATE diagnosis_check SET status = $2, answered_at = $3, settled_seq = CASE WHEN $4 THEN "
+        "UPDATE diagnosis_check SET status = $2, ticked = $5::jsonb, answered_at = $3, settled_seq = CASE WHEN $4 THEN "
         "nextval('diagnosis_check_settled') END WHERE id = $1 AND status = 'proposed' RETURNING id",
-        (answered.id, answered.status, at, answered.settled))
+        (answered.id, answered.status, at, answered.settled, json.dumps(list(answered.ticked))))
     return bool(rows)
 
 

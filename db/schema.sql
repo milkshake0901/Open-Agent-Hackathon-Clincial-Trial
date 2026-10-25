@@ -6,8 +6,8 @@
 --   diagnosis_check                                     app.record.repo (Diagnosis checks and their answers)
 --   wm_event, wm_audit                                  app.worldmodel.store.PgEventStore (engine log)
 --   fact, profile_version, profile_version_fact         app.worldmodel.projector, inside the wm_event append
---   trial, criterion, trial_site, trial_contact,        transaction (projections of the World Model, ADR 0001)
---   trial_outcome, trial_outcome_value,
+--   trial, trial_condition, criterion, trial_site,      transaction (projections of the World Model, ADR 0001)
+--   trial_contact, trial_outcome, trial_outcome_value,
 --   trial_publication, outcome_summary
 --   verdict, criterion_result, doctor_question,
 --   respondent_question
@@ -37,18 +37,20 @@ CREATE TABLE return_token (               -- private return link; only the sha25
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE diagnosis_check (            -- proposed condition terms for the free-text diagnosis and the Respondent's answer (#14);
-                                          -- NOT Facts: the diagnosis Fact keeps the Respondent's words as its quote
+CREATE TABLE diagnosis_check (            -- Diagnosis checks: the Condition labels offered for the free-text diagnosis and the
+                                          -- Respondent's answer (#14, #33, ADR 0005); NOT Facts: the diagnosis Fact keeps the
+                                          -- Respondent's words as its quote
   id             text PRIMARY KEY,
   patient_id     text NOT NULL REFERENCES patient(id),
-  text           text NOT NULL,           -- the words the term was proposed from (the answer, or a re-wording after "no")
-  suggested_term text,                    -- NULL when the model could not propose one with confidence
-  confidence     real NOT NULL,
-  status         text NOT NULL CHECK (status IN ('proposed','confirmed','rejected','not_sure','unclear')),
+  text           text NOT NULL,           -- the words the shortlist was made from (the answer, or a re-wording)
+  shortlist      jsonb NOT NULL,          -- [{label, open, closed}] offered, in order of fit; empty when none fit
+  ticked         jsonb NOT NULL,          -- the labels ticked (from shortlist): the Condition term; [] unless ticked
+  status         text NOT NULL CHECK (status IN ('proposed','ticked','none_of_these','not_sure','confirmed')),
+                                          -- confirmed: before Condition labels, holds no Condition term (0006)
   created_at     timestamptz NOT NULL,
   answered_at    timestamptz,
-  settled_seq    bigint                   -- set from diagnosis_check_settled when confirmed / not_sure / unclear; the
-                                          -- latest settled check holds (a clock can repeat, a sequence cannot)
+  settled_seq    bigint                   -- set from diagnosis_check_settled when ticked / not_sure; the latest
+                                          -- settled check holds (a clock can repeat, a sequence cannot)
 );
 CREATE SEQUENCE diagnosis_check_settled;
 CREATE INDEX diagnosis_check_by_patient ON diagnosis_check (patient_id, settled_seq);
@@ -118,6 +120,16 @@ CREATE TABLE trial (
   dropped          boolean NOT NULL DEFAULT false, -- a later ingest no longer keeps it (aged past 15 years, withdrawn, no Australian site)
   has_results      boolean NOT NULL DEFAULT false  -- the registry's has-results flag (#25)
 );
+
+CREATE TABLE trial_condition (             -- the Trial's Condition labels (ADR 0005), normalised once as the trial row is
+                                           -- written: what Condition label counts, searches and selection read
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  label_key        text NOT NULL,         -- the label casefolded, whitespace runs as one space: labels equal on it are one
+  label            text NOT NULL,         -- the Trial's spelling (its last one, when it lists the key twice)
+  words            text NOT NULL,         -- its words: runs of a-z0-9 of the casefolded label, one space apart (search)
+  PRIMARY KEY (nct_id, label_key)
+);
+CREATE INDEX trial_condition_by_key ON trial_condition (label_key);
 
 CREATE TABLE criterion (                   -- immutable per (nct, eligibility_hash); old rows kept so old Verdicts resolve
   id               text PRIMARY KEY,      -- "{nct}:{hash8}:{ordinal}"
