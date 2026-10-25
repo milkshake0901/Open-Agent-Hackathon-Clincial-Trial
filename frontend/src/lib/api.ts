@@ -160,7 +160,7 @@ export type TrialDetail = {
 };
 
 // An Enquiry (#28 Open trial, #29 Closed trial): an email body the Respondent edits, copies and sends themselves.
-// Never stored or sent.
+// Never stored or sent. Its clinical details are fetched first (no model call) and drafted only once confirmed.
 export type ClinicalDetailOut = { id: string; label: string; text: string; included: boolean };
 export type EnquiryOut = {
   nct_id: string;
@@ -255,6 +255,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+const enquiryPath = (patientId: string, versionId: string, nctId: string) =>
+  `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}` +
+  `/trials/${encodeURIComponent(nctId)}/enquiry`;
+
 export const api = {
   definition: () => call<Questionnaire>("/questionnaire/definition"),
   createPatient: (label: string) =>
@@ -297,12 +301,10 @@ export const api = {
     ),
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
   outcomeSummary: (nctId: string) => call<OutcomeSummaryOut>(`/trials/${encodeURIComponent(nctId)}/outcomes/summary`),
-  enquiry: (patientId: string, versionId: string, nctId: string, include?: string[]) =>
-    call<EnquiryOut>(
-      `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}` +
-        `/trials/${encodeURIComponent(nctId)}/enquiry`,
-      { method: "POST", body: JSON.stringify(include ? { include } : {}) },
-    ),
+  enquiryDetails: (patientId: string, versionId: string, nctId: string) =>
+    call<{ nct_id: string; details: ClinicalDetailOut[] }>(enquiryPath(patientId, versionId, nctId)),
+  enquiry: (patientId: string, versionId: string, nctId: string, include: string[]) =>
+    call<EnquiryOut>(enquiryPath(patientId, versionId, nctId), { method: "POST", body: JSON.stringify({ include }) }),
   checkDiagnosis: (patientId: string, text?: string) =>
     call<DiagnosisCheck>(`/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check`, {
       method: "POST",

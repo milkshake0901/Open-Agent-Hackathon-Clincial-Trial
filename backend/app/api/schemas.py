@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from app.enquiry import EnquiryKind
+
 
 class DocumentAccepted(BaseModel):
     document_hash: str
@@ -329,7 +331,7 @@ class TrialDetailOut(BaseModel):
 
 
 class EnquiryIn(BaseModel):
-    include: list[str] | None = None      # ids of the clinical details kept ticked; None: all offered
+    include: list[str]                    # ids of the clinical details the Respondent confirmed (from GET .../enquiry)
 
 
 class ClinicalDetailOut(BaseModel):
@@ -346,9 +348,15 @@ class RecipientOut(BaseModel):
     facility: str | None
 
 
+class EnquiryDetailsOut(BaseModel):
+    """What an Enquiry may include, shown to the Respondent (all ticked) before anything is drafted."""
+    nct_id: str
+    details: list[ClinicalDetailOut]
+
+
 class EnquiryOut(BaseModel):
     nct_id: str
-    template: Literal["open", "closed"]
+    template: EnquiryKind
     subject: str
     body: str                             # name and contact are placeholders the Respondent fills in
     recipient: RecipientOut | None        # None: the Trial lists no email; see sponsor

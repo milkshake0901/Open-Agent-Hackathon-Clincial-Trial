@@ -86,3 +86,16 @@ async def test_a_lost_summary_cache_is_rebuilt_from_the_world_model_event_log(ct
 async def test_an_unknown_trial_has_no_summary_and_asks_no_model(ctx, fake_llm):
     assert await trials.outcome_summary(ctx, trials.NctId("NCT09999999")) is None
     assert fake_llm.calls == []
+
+
+async def test_the_outcomes_the_model_is_given_are_read_through_the_agent_reader(ctx, fake_llm, clean_db, tmp_path):
+    from dataclasses import replace
+    from tests.conftest import Recording
+
+    summarising(fake_llm)
+    await trials.ingest(ctx, save_pages(tmp_path, [completed()]))
+    agent = Recording(clean_db)
+
+    await trials.outcome_summary(replace(ctx, agent_reader=agent), NCT)
+
+    assert {"trial", "trial_outcome", "trial_outcome_value", "trial_publication"} <= agent.tables

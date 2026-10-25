@@ -322,8 +322,9 @@ async def _record(ctx: Ctx, studies: list[tuple[ctgov.RawStudy, str]], source: s
                       unchanged=tuple(t.nct_id for t, *_ in loaded if t.nct_id not in changed), source=source)
 
 
-async def trial(ctx: Ctx, nct_id: NctId) -> Trial | None:
-    return await repo.trial(ctx.ui_reader, nct_id)
+async def trial(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> Trial | None:
+    """The Trial as last loaded (None for an unknown or dropped Trial). for_agent reads through Zetaris."""
+    return await repo.trial(ctx.agent_reader if for_agent else ctx.ui_reader, nct_id)
 
 
 async def active_trials(ctx: Ctx) -> list[Trial]:
@@ -365,10 +366,10 @@ async def outcome_summary(ctx: Ctx, nct_id: NctId) -> OutcomeSummary | None:
     from app import llm
     from app.worldmodel import timeline
 
-    t = await repo.trial(ctx.ui_reader, nct_id)
-    if t is None:
+    t = await trial(ctx, nct_id, for_agent=True)
+    o = await outcomes(ctx, nct_id, for_agent=True)   # the model's input, read through Zetaris (ADR 0001)
+    if t is None or o is None:
         return None
-    o = await repo.outcomes(ctx.ui_reader, nct_id)
     key = summaries.outcomes_hash(o)
     cached = await repo.outcome_summary(ctx.ui_reader, nct_id, key)
     if cached is not None:

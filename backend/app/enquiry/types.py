@@ -2,9 +2,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Literal
 
 from app.trials import NctId
+
+
+class EnquiryKind(StrEnum):
+    """Which template an Enquiry is drafted from: OPEN asks about taking part (#28), CLOSED about a Closed trial's
+    Outcomes or a follow-on study (#29)."""
+    OPEN = "open"
+    CLOSED = "closed"
 
 
 @dataclass(frozen=True)
@@ -28,7 +36,7 @@ class Recipient:
 @dataclass(frozen=True)
 class Enquiry:
     nct_id: NctId
-    template: Literal["open", "closed"]
+    template: EnquiryKind
     subject: str
     body: str                                   # greeting, the drafted paragraphs, placeholders for name and contact
     recipient: Recipient | None                 # None: the Trial lists no email; the Respondent finds one

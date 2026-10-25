@@ -55,10 +55,11 @@ async def _with_distances(ctx: Ctx, v: Verdict, at: distance.Origin) -> Verdict:
     return replace(v, nearest_site=r.nearest_recruiting, sites=r.sites, further_away=r.further_away)
 
 
-async def verdict(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId) -> Verdict | None:
+async def verdict(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId, *, for_agent: bool = False) -> Verdict | None:
     """With criterion results, citations (fact + document + page + quote + question) and doctor questions.
-    The Verdict judged against the Trial's current Criteria. Site distances as in verdicts_for_version."""
-    v = await repo.verdict(ctx.ui_reader, nct_id, version_id, with_results=True)
+    The Verdict judged against the Trial's current Criteria. Site distances as in verdicts_for_version.
+    for_agent reads the Verdict through Zetaris (ADR 0001), for a model input."""
+    v = await repo.verdict(ctx.agent_reader if for_agent else ctx.ui_reader, nct_id, version_id, with_results=True)
     if v is None:
         return None
     profile = await record.profile_version(ctx, version_id)

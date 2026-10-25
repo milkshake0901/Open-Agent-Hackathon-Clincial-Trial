@@ -73,10 +73,23 @@ def enquiry_url(patient, version, nct=NCT):
     return f"/api/patients/{patient}/versions/{version}/trials/{nct}/enquiry"
 
 
+async def offered(http, patient, version, nct=NCT) -> list[dict]:
+    """The clinical details the Respondent is shown before anything is drafted."""
+    r = await http.get(enquiry_url(patient, version, nct))
+    assert r.status_code == 200, r.text
+    return r.json()["details"]
+
+
+async def draft(http, patient, version, nct=NCT):
+    """The Respondent opens the Enquiry, sees the details, keeps them all ticked and asks for the draft."""
+    kept = [d["id"] for d in await offered(http, patient, version, nct)]
+    return await http.post(enquiry_url(patient, version, nct), json={"include": kept})
+
+
 async def test_an_open_trial_enquiry_asks_about_taking_part_and_goes_to_the_nearest_site_contact(clean_db, tmp_path, http):
     raw = with_contacts(study(NCT, sites=[melbourne([MEL]), sydney([SAM])]))
     patient, version, writer = await judged(clean_db, tmp_path, http, raw)
-    r = await http.post(enquiry_url(patient, version), json={})
+    r = await draft(http, patient, version)
 
     assert r.status_code == 200, r.text
     e = r.json()
@@ -95,25 +108,34 @@ async def test_an_open_trial_enquiry_asks_about_taking_part_and_goes_to_the_near
     assert "Untreated CNS metastases" in prompt
 
 
-async def test_the_respondent_sees_the_clinical_details_and_an_unticked_one_never_reaches_the_model(
+async def test_the_respondent_sees_the_clinical_details_before_any_model_call_and_an_unticked_one_never_reaches_it(
         clean_db, tmp_path, http):
     patient, version, writer = await judged(clean_db, tmp_path, http, with_contacts(study(NCT, sites=[sydney([SAM])])))
 
-    offered = (await http.post(enquiry_url(patient, version), json={})).json()["details"]
-    assert {(d["label"], d["text"], d["included"]) for d in offered} == {
+    shown = await offered(http, patient, version)
+
+    assert {(d["label"], d["text"], d["included"]) for d in shown} == {
         ("Age", "68 years", True), ("Sex assigned at birth", "Female", True),
         ("Daily activity", "Fully active, doing everything as before the illness", True)}
-    sex = next(d["id"] for d in offered if d["label"] == "Sex assigned at birth")
-    kept = [d["id"] for d in offered if d["id"] != sex]
+    assert writer.enquiry_prompts() == []
+    kept = [d["id"] for d in shown if d["label"] != "Sex assigned at birth"]
 
     r = await http.post(enquiry_url(patient, version), json={"include": kept})
 
     assert r.status_code == 200, r.text
     assert [(d["label"], d["included"]) for d in r.json()["details"] if not d["included"]] == [
         ("Sex assigned at birth", False)]
-    first, second = writer.enquiry_prompts()
-    assert "Female" in first and "Female" not in second
-    assert "Fully active, doing everything as before the illness" in second
+    [prompt] = writer.enquiry_prompts()
+    assert "Female" not in prompt and "Fully active, doing everything as before the illness" in prompt
+
+
+async def test_nothing_is_drafted_until_the_respondent_has_confirmed_the_details(clean_db, tmp_path, http):
+    patient, version, writer = await judged(clean_db, tmp_path, http, with_contacts(study(NCT, sites=[sydney([SAM])])))
+
+    r = await http.post(enquiry_url(patient, version), json={})
+
+    assert r.status_code == 422
+    assert writer.enquiry_prompts() == []
 
 
 async def test_the_model_sees_no_name_postcode_or_contact_and_nothing_is_stored(clean_db, tmp_path, http):
@@ -122,7 +144,7 @@ async def test_the_model_sees_no_name_postcode_or_contact_and_nothing_is_stored(
     tables = {t: await clean_db.fetchval(f"SELECT count(*) FROM {t}") for t in
               [r["tablename"] for r in await clean_db.fetch("SELECT tablename FROM pg_tables WHERE schemaname='public'")]}
 
-    e = (await http.post(enquiry_url(patient, version), json={})).json()
+    e = (await draft(http, patient, version)).json()
 
     [prompt] = writer.enquiry_prompts()
     for private in ("Demo patient E", "respondent@example.com", "2031", "1958"):
@@ -137,7 +159,7 @@ async def test_with_no_site_email_the_enquiry_goes_to_the_central_contact(clean_
     patient, version, _ = await judged(clean_db, tmp_path, http,
                                        with_contacts(study(NCT, sites=[sydney([no_email]), melbourne()])))
 
-    e = (await http.post(enquiry_url(patient, version), json={})).json()
+    e = (await draft(http, patient, version)).json()
 
     assert e["recipient"] == {"name": "Trial Contact Centre", "email": "trials@example.org", "kind": "central",
                               "facility": None}
@@ -150,19 +172,20 @@ async def test_a_trial_with_no_email_still_gets_a_draft_with_a_blank_recipient_a
     raw["protocolSection"]["sponsorCollaboratorsModule"] = {"leadSponsor": {"name": "Example Pharma"}}
     patient, version, _ = await judged(clean_db, tmp_path, http, raw)
 
-    r = await http.post(enquiry_url(patient, version), json={})
+    r = await draft(http, patient, version)
 
     assert r.status_code == 200, r.text
     e = r.json()
     assert e["recipient"] is None and e["sponsor"] == "Example Pharma"
-    assert e["body"].startswith("Dear trial team,") and DRAFTED in e["body"]
+    assert e["body"].startswith("Dear Example Pharma trial team,") and DRAFTED in e["body"]
 
 
 async def test_no_enquiry_for_an_unknown_trial_or_another_patients_version(clean_db, tmp_path, http):
     patient, version, _ = await judged(clean_db, tmp_path, http, study(NCT, sites=[sydney()]))
 
-    assert (await http.post(enquiry_url(patient, version, "NCT09999999"), json={})).status_code == 404
-    assert (await http.post(enquiry_url("pt_someone_else", version), json={})).status_code == 404
+    for url in (enquiry_url(patient, version, "NCT09999999"), enquiry_url("pt_someone_else", version)):
+        assert (await http.get(url)).status_code == 404
+        assert (await http.post(url, json={"include": []})).status_code == 404
 
 
 def closed(nct=CLOSED, **kw):
@@ -174,7 +197,7 @@ async def test_a_closed_trial_enquiry_asks_about_its_outcomes_or_a_follow_on_stu
         clean_db, tmp_path, http):
     patient, version, writer = await judged(clean_db, tmp_path, http, closed())
 
-    r = await http.post(enquiry_url(patient, version, CLOSED), json={})
+    r = await draft(http, patient, version, CLOSED)
 
     assert r.status_code == 200, r.text
     e = r.json()
@@ -196,7 +219,7 @@ async def test_a_trial_that_closed_after_it_was_judged_gets_a_closed_trial_enqui
     await trials.ingest(app.state.ctx, save_pages(tmp_path / "closed", [study(NCT, status="COMPLETED",
                                                                             sites=[sydney()])]))
 
-    r = await http.post(enquiry_url(patient, version), json={})
+    r = await draft(http, patient, version)
 
     assert r.status_code == 200, r.text
     assert r.json()["template"] == "closed"
@@ -219,7 +242,7 @@ async def test_a_closed_trial_enquiry_goes_to_the_responsible_party_where_the_tr
         clean_db, tmp_path, http):
     patient, version, _ = await judged(clean_db, tmp_path, http, officials(closed(), ALEX, JANE))
 
-    e = (await http.post(enquiry_url(patient, version, CLOSED), json={})).json()
+    e = (await draft(http, patient, version, CLOSED)).json()
 
     assert e["recipient"] == {"name": "Dr Jane Citizen", "email": "jane.citizen@example.edu",
                               "kind": "responsible_party", "facility": None}
@@ -231,7 +254,7 @@ async def test_without_the_responsible_partys_email_a_closed_trial_enquiry_goes_
     no_email = {k: v for k, v in JANE.items() if k != "email"}
     patient, version, _ = await judged(clean_db, tmp_path, http, officials(closed(), no_email, ALEX))
 
-    e = (await http.post(enquiry_url(patient, version, CLOSED), json={})).json()
+    e = (await draft(http, patient, version, CLOSED)).json()
 
     assert e["recipient"] == {"name": "Alex Director", "email": "alex@example.org", "kind": "official",
                               "facility": None}
@@ -242,20 +265,58 @@ async def test_a_closed_trial_with_no_email_still_gets_a_draft_with_a_blank_reci
         clean_db, tmp_path, http):
     patient, version, _ = await judged(clean_db, tmp_path, http, closed())   # a central and a site contact have one
 
-    e = (await http.post(enquiry_url(patient, version, CLOSED), json={})).json()
+    e = (await draft(http, patient, version, CLOSED)).json()
 
     assert e["recipient"] is None and e["sponsor"] == "Example Oncology Group"
-    assert e["body"].startswith("Dear trial team,") and DRAFTED in e["body"]
+    assert e["body"].startswith("Dear Example Oncology Group trial team,") and DRAFTED in e["body"]
 
 
 async def test_an_unticked_detail_never_reaches_the_model_for_a_closed_trial(clean_db, tmp_path, http):
     patient, version, writer = await judged(clean_db, tmp_path, http, closed())
-    offered = (await http.post(enquiry_url(patient, version, CLOSED), json={})).json()["details"]
-    kept = [d["id"] for d in offered if d["label"] != "Sex assigned at birth"]
+    kept = [d["id"] for d in await offered(http, patient, version, CLOSED) if d["label"] != "Sex assigned at birth"]
 
     r = await http.post(enquiry_url(patient, version, CLOSED), json={"include": kept})
 
     assert [(d["label"], d["included"]) for d in r.json()["details"] if not d["included"]] == [
         ("Sex assigned at birth", False)]
-    first, second = writer.enquiry_prompts()
-    assert "Female" in first and "Female" not in second
+    [prompt] = writer.enquiry_prompts()
+    assert "Female" not in prompt
+
+
+async def test_with_no_email_and_no_sponsor_named_the_enquiry_greets_the_trial_team(clean_db, tmp_path, http):
+    patient, version, _ = await judged(clean_db, tmp_path, http, study(NCT, sites=[sydney()]))
+
+    e = (await draft(http, patient, version)).json()
+
+    assert e["recipient"] is None and e["sponsor"] == ""
+    assert e["body"].startswith("Dear trial team,")
+
+
+async def test_an_open_trial_with_no_verdict_yet_gets_an_open_enquiry_that_cites_none(clean_db, tmp_path, http):
+    patient, version, writer = await judged(clean_db, tmp_path / "judged", http, study(NCT, sites=[sydney([SAM])]))
+    later = "NCT00000009"   # ingested after the Re-scan, so not judged yet
+    await trials.ingest(app.state.ctx, save_pages(tmp_path / "later", [study(NCT, sites=[sydney([SAM])]),
+                                                                       study(later, sites=[sydney([SAM])])]))
+
+    r = await draft(http, patient, version, later)
+
+    assert r.status_code == 200, r.text
+    assert r.json()["template"] == "open" and r.json()["recipient"]["email"] == "sam@example.org"
+    [prompt] = writer.enquiry_prompts()
+    assert "taking part" in prompt
+    assert "Eligibility check (Verdict)" not in prompt and "Unknown criteria" not in prompt
+
+
+async def test_what_the_model_is_given_is_read_through_the_agent_reader(clean_db, tmp_path, http):
+    from dataclasses import replace
+    from tests.conftest import Recording
+    patient, version, _ = await judged(clean_db, tmp_path / "open", http, study(NCT, sites=[sydney([SAM])]))
+    await trials.ingest(app.state.ctx, save_pages(tmp_path / "closed", [study(NCT, sites=[sydney([SAM])]), closed()]))
+    agent = Recording(clean_db)
+    app.state.ctx = replace(app.state.ctx, agent_reader=agent)
+
+    assert (await draft(http, patient, version)).status_code == 200
+    assert {"trial", "verdict", "criterion_result", "criterion", "fact"} <= agent.tables
+    agent.tables.clear()
+    assert (await draft(http, patient, version, CLOSED)).status_code == 200
+    assert {"trial", "trial_outcome", "trial_publication", "fact"} <= agent.tables
