@@ -230,23 +230,23 @@ async def test_none_of_these_with_new_words_leaves_the_check_unanswered_when_the
 
 async def test_a_check_confirmed_before_condition_labels_settles_the_diagnosis_with_no_condition_term_or_gp_question(
         clean_db, tmp_path):
-    """Migration 0006 turned a check confirmed under the single-term design into `ticked` with no labels (spec #31: the
-    Respondent redoes the step); 0008 names it `confirmed`. Either way it holds no Condition term, raises no Doctor
-    question, and still outranks the checks settled before it."""
+    """Migration 0006 leaves a check confirmed under the single-term design `confirmed`, with no ticked labels (spec #31:
+    the Respondent redoes the step). It holds no Condition term, raises no Doctor question, and still outranks the
+    checks settled before it."""
     from pathlib import Path
     ctx, _, patient, _ = await _submitted(clean_db, tmp_path, NSCLC)
     unsure = await record.check_diagnosis(ctx, patient)
     await record.answer_diagnosis_check(ctx, patient, unsure.id, record.NotSure())
     await clean_db.execute(
         "INSERT INTO diagnosis_check (id, patient_id, text, shortlist, ticked, status, created_at, answered_at, "
-        "settled_seq) VALUES ('dx_legacy', $1, 'lung cancer', '[]', '[]', 'ticked', now(), now(), "
+        "settled_seq) VALUES ('dx_legacy', $1, 'lung cancer', '[]', '[]', 'confirmed', now(), now(), "
         "nextval('diagnosis_check_settled'))", patient)
 
     def as_before(held):
         assert held.id == "dx_legacy" and held.condition_term is None and not held.needs_gp
 
     as_before(await record.diagnosis(ctx, patient))
-    migration = (Path(__file__).resolve().parents[3] / "db" / "migrations" / "0008_diagnosis_confirmed.sql").read_text()
+    migration = (Path(__file__).resolve().parents[3] / "db" / "migrations" / "0006_diagnosis_shortlist.sql").read_text()
     for _ in range(2):                                     # safe to run twice
         await clean_db.execute(migration)
         assert await clean_db.fetchval("SELECT status FROM diagnosis_check WHERE id = 'dx_legacy'") == "confirmed"

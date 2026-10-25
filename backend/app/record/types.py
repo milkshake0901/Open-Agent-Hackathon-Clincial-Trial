@@ -82,7 +82,7 @@ class NotSure:
 
 
 DiagnosisAnswer = Ticked | NoneOfThese | NotSure
-# "confirmed": a check confirmed under the single-term design, before Condition labels (db/migrations/0008); it has
+# "confirmed": a check confirmed under the single-term design, before Condition labels (db/migrations/0006); it has
 # no ticked labels, so it holds no Condition term (spec #31: the Respondent redoes the step).
 DiagnosisStatus = Literal["proposed", "ticked", "none_of_these", "not_sure", "confirmed"]
 
