@@ -6,6 +6,7 @@ Query text is ANSI; table names go through reader.table("fact") so Zetaris can q
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import datetime, time, timezone
 
 from app.record.types import (
@@ -39,8 +40,7 @@ def _json(value):
 
 def _check(r: dict) -> DiagnosisCheck:
     return DiagnosisCheck(id=DiagnosisCheckId(r["id"]), patient_id=PatientId(r["patient_id"]), text=r["text"],
-                          shortlist=tuple(ConditionLabel(o["label"], open=o["open"], closed=o["closed"])
-                                          for o in _json(r["shortlist"]) or ()),
+                          shortlist=tuple(ConditionLabel(**o) for o in _json(r["shortlist"]) or ()),
                           ticked=tuple(_json(r["ticked"]) or ()), status=r["status"])
 
 
@@ -170,7 +170,7 @@ async def insert_diagnosis_check(tx: Tx, check: DiagnosisCheck, at: datetime) ->
         "answered_at, settled_seq) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, "
         "CASE WHEN $9 THEN nextval('diagnosis_check_settled') END)",
         (check.id, check.patient_id, check.text,
-         json.dumps([{"label": o.label, "open": o.open, "closed": o.closed} for o in check.shortlist]),
+         json.dumps([asdict(one) for one in check.shortlist]),
          json.dumps(list(check.ticked)), check.status, at, at if check.status != "proposed" else None, check.settled))
 
 
