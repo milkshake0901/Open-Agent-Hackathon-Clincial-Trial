@@ -3,8 +3,8 @@
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
 // first, excluded; then nearest recruiting site). Trials with no recruiting site within the travel limit sit in a
 // collapsed "Further away" group under their outcome, never hidden. Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
-// questionnaire links back to that question. Each Trial offers its contacts, and an Open one an Enquiry to copy and
-// send. Questions for you (Respondent questions, answered inline) and
+// questionnaire links back to that question. Each Trial offers its contacts and an Enquiry to copy and send (about
+// taking part, or about its results once it is no longer recruiting). Questions for you (Respondent questions, answered inline) and
 // Questions for your doctor are kept as two separate lists. A Trial that stopped recruiting after it was judged keeps
 // its Verdict, shown in its own "No longer recruiting" section after the open ones (ADR 0004).
 
@@ -140,7 +140,7 @@ function VerdictCard({ verdict: v, patientId, versionId }: { verdict: VerdictOut
         </ul>
       </details>
       <TrialContacts nctId={v.nct_id} />
-      {!v.no_longer_recruiting && <Enquiry patientId={patientId} versionId={versionId} nctId={v.nct_id} />}
+      <Enquiry patientId={patientId} versionId={versionId} nctId={v.nct_id} open={!v.no_longer_recruiting} />
     </article>
   );
 }
