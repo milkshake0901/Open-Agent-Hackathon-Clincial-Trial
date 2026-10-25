@@ -7,7 +7,7 @@ from app import llm, matching, record
 from app.api.deps import get_ctx
 from app.api.documents import start_ingest
 from app.api.schemas import (
-    DiagnosisAnswerIn, DiagnosisCheckIn, DiagnosisCheckOut, LatestAnswersOut, QuestionnaireAccepted, QuestionnaireOut,
+    DiagnosisAnswerIn, DiagnosisCheckOut, LatestAnswersOut, QuestionnaireAccepted, QuestionnaireOut,
     QuestionnaireSubmission, RescanSummary,
 )
 from app.ctx import Ctx
@@ -66,23 +66,22 @@ def _message(c: record.DiagnosisCheck) -> str:
     if c.status == "proposed":
         return ("We couldn't find trials naming this condition. Could you describe the diagnosis in other words, "
                 "or answer not sure?")
-    if c.ask_again:
-        return "Sorry about that. Could you describe the diagnosis in other words?"
     return f"Thanks. We'll look for trials for {', '.join(c.ticked)}."
 
 
 def _check_out(c: record.DiagnosisCheck, rescan: RescanSummary | None = None) -> DiagnosisCheckOut:
     return DiagnosisCheckOut(id=c.id, text=c.text, shortlist=[asdict(one) for one in c.shortlist],
-                             ticked=list(c.ticked), status=c.status, needs_gp=c.needs_gp,
-                             ask_again=c.ask_again, message=_message(c), rescan=rescan)
+                             ticked=list(c.ticked), status=c.status, needs_gp=c.needs_gp, message=_message(c),
+                             rescan=rescan)
 
 
 @router.post("/patients/{pid}/questionnaire/diagnosis-check", status_code=201, response_model=DiagnosisCheckOut)
-async def diagnosis_check(pid: str, body: DiagnosisCheckIn, ctx: Ctx = Depends(get_ctx)):
-    """record.check_diagnosis: a shortlist of Condition labels for the Respondent to tick (empty when none fit).
-    404: unknown patient or no diagnosis answer yet; 503: model unavailable (nothing stored)."""
+async def diagnosis_check(pid: str, ctx: Ctx = Depends(get_ctx)):
+    """record.check_diagnosis: a shortlist of Condition labels for the Respondent to tick (empty when none fit), for
+    the latest diagnosis answer. 404: unknown patient or no diagnosis answer yet; 503: model unavailable (nothing
+    stored)."""
     try:
-        return _check_out(await record.check_diagnosis(ctx, record.PatientId(pid), body.text))
+        return _check_out(await record.check_diagnosis(ctx, record.PatientId(pid)))
     except llm.LlmUnavailable as e:
         raise HTTPException(503, str(e))
 
@@ -90,12 +89,13 @@ async def diagnosis_check(pid: str, body: DiagnosisCheckIn, ctx: Ctx = Depends(g
 @router.post("/patients/{pid}/questionnaire/diagnosis-check/{check_id}", response_model=DiagnosisCheckOut)
 async def answer_diagnosis_check(pid: str, check_id: str, body: DiagnosisAnswerIn, ctx: Ctx = Depends(get_ctx)):
     """record.answer_diagnosis_check. Ticking labels re-scans the current version inline, so the Trials the Condition
-    term selects get a Verdict; none of these with new words returns the new check. 404: not this patient's check;
-    409: already answered; 422: labels missing or not in the shortlist; 503: model unavailable (new words)."""
+    term selects get a Verdict; none of these returns the new check made from its new words. 404: not this patient's
+    check; 409: already answered; 422: an answer in the wrong shape, labels not in the shortlist or no new words;
+    503: model unavailable (new words)."""
     patient_id = record.PatientId(pid)
     try:
-        check = await record.answer_diagnosis_check(ctx, patient_id, record.DiagnosisCheckId(check_id), body.answer,
-                                                    labels=tuple(body.labels), text=body.text)
+        check = await record.answer_diagnosis_check(ctx, patient_id, record.DiagnosisCheckId(check_id),
+                                                    body.to_answer())
     except record.AlreadyAnswered as e:
         raise HTTPException(409, str(e))
     except record.InvalidAnswers as e:

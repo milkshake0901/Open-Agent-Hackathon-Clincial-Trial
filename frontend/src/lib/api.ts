@@ -70,7 +70,7 @@ export type ConditionLabel = { label: string; open: number; closed: number };
 
 export type DiagnosisAnswer =
   | { answer: "ticked"; labels: string[] }
-  | { answer: "none_of_these"; text?: string }
+  | { answer: "none_of_these"; text: string } // the diagnosis in other words: returns the new check
   | { answer: "not_sure" };
 
 export type DiagnosisCheck = {
@@ -78,9 +78,8 @@ export type DiagnosisCheck = {
   text: string;
   shortlist: ConditionLabel[]; // best fit first; empty when no label fits
   ticked: string[]; // status "ticked": the Condition term, the labels that select Trials
-  status: "proposed" | "ticked" | "none_of_these" | "not_sure";
+  status: "proposed" | "ticked" | "not_sure";
   needs_gp: boolean;
-  ask_again: boolean;
   message: string;
   rescan: { judged: number; failed: number } | null;
 };
@@ -312,12 +311,12 @@ export const api = {
     call<{ nct_id: string; details: ClinicalDetailOut[] }>(enquiryPath(patientId, versionId, nctId)),
   enquiry: (patientId: string, versionId: string, nctId: string, include: string[]) =>
     call<EnquiryOut>(enquiryPath(patientId, versionId, nctId), { method: "POST", body: JSON.stringify({ include }) }),
-  checkDiagnosis: (patientId: string, text?: string) =>
+  checkDiagnosis: (patientId: string) =>
     call<DiagnosisCheck>(`/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check`, {
       method: "POST",
-      body: JSON.stringify(text ? { text } : {}),
+      body: JSON.stringify({}),
     }),
-  // none_of_these with text returns the new check made from those words.
+  // none_of_these returns the new check made from its new words.
   answerDiagnosis: (patientId: string, checkId: string, answer: DiagnosisAnswer) =>
     call<DiagnosisCheck>(
       `/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check/${encodeURIComponent(checkId)}`,

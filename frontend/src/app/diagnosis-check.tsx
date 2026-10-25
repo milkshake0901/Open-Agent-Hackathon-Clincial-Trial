@@ -2,8 +2,8 @@
 
 // Flow step 4: the Diagnosis check (ADR 0005). The backend offers a shortlist of Condition labels that stored Trials
 // use, each with how many open and past trials list it. The Respondent ticks the ones that match (they become the
-// Condition term Trials are selected by), answers none of these (and can re-word, which starts a new check), or not
-// sure, which points to the GP.
+// Condition term Trials are selected by), answers none of these by describing the diagnosis in other words (which
+// starts a new check), or not sure, which points to the GP.
 
 import { useEffect, useState } from "react";
 import { api, type DiagnosisAnswer, type DiagnosisCheck } from "@/lib/api";
@@ -49,7 +49,7 @@ export function DiagnosisCheckCard({ patientId }: { patientId: string }) {
   const button = "min-h-12 rounded-lg border border-border px-5 text-base font-semibold disabled:opacity-60";
   const proposed = check?.status === "proposed";
   // Re-wording is offered after "none of these", and straight away when no label fits.
-  const reword = check?.ask_again || (proposed && (noneOfThese || check.shortlist.length === 0));
+  const reword = proposed && (noneOfThese || check.shortlist.length === 0);
   return (
     <section aria-labelledby="diagnosis-heading" aria-live="polite"
              className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
@@ -93,9 +93,7 @@ export function DiagnosisCheckCard({ patientId }: { patientId: string }) {
         <form className="flex flex-col gap-2" onSubmit={(e) => {
           e.preventDefault();
           const text = rewording.trim();
-          if (!text) return;
-          if (proposed) answer({ answer: "none_of_these", text });
-          else run(() => api.checkDiagnosis(patientId, text));
+          if (text) answer({ answer: "none_of_these", text });
         }}>
           <label htmlFor="diagnosis-reword" className="font-medium">The diagnosis, in other words</label>
           <textarea id="diagnosis-reword" rows={2} value={rewording} onChange={(e) => setRewording(e.target.value)}

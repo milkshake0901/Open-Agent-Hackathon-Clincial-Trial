@@ -3,10 +3,11 @@ The frontend generates its TypeScript types from /openapi.json, so this is the o
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from app import record
 from app.enquiry import EnquiryKind
 
 
@@ -63,14 +64,30 @@ class RescanSummary(BaseModel):
         return cls(judged=len(report.judged), failed=len(report.failed))
 
 
-class DiagnosisCheckIn(BaseModel):
-    text: str | None = None     # a re-wording; omitted: the latest accepted diagnosis answer
+class TickedIn(BaseModel):
+    answer: Literal["ticked"]
+    labels: list[str] = Field(min_length=1)   # one or more labels from the check's shortlist
+
+    def to_answer(self) -> record.DiagnosisAnswer:
+        return record.Ticked(tuple(self.labels))
 
 
-class DiagnosisAnswerIn(BaseModel):
-    answer: Literal["ticked", "none_of_these", "not_sure"]
-    labels: list[str] = []      # "ticked": one or more labels from the check's shortlist
-    text: str | None = None     # "none_of_these": new words, which start a new check (returned instead)
+class NoneOfTheseIn(BaseModel):
+    answer: Literal["none_of_these"]
+    text: str                   # the diagnosis in other words, which start a new check (returned instead)
+
+    def to_answer(self) -> record.DiagnosisAnswer:
+        return record.NoneOfThese(self.text)
+
+
+class NotSureIn(BaseModel):
+    answer: Literal["not_sure"]
+
+    def to_answer(self) -> record.DiagnosisAnswer:
+        return record.NotSure()
+
+
+DiagnosisAnswerIn = Annotated[TickedIn | NoneOfTheseIn | NotSureIn, Field(discriminator="answer")]
 
 
 class ConditionLabelOut(BaseModel):
@@ -86,9 +103,8 @@ class DiagnosisCheckOut(BaseModel):
     text: str
     shortlist: list[ConditionLabelOut]   # offered labels, best fit first; empty when none fit
     ticked: list[str]                   # status ticked: the Condition term, the labels that select Trials; else []
-    status: Literal["proposed", "ticked", "none_of_these", "not_sure"]
+    status: Literal["proposed", "ticked", "not_sure"]   # none of these returns the new check, proposed
     needs_gp: bool                      # show the GP message; a diagnosis Doctor question is raised
-    ask_again: bool                     # "none_of_these" without new words: ask the Respondent to re-word
     message: str
     rescan: RescanSummary | None = None   # set when ticking labels re-scanned the current version
 

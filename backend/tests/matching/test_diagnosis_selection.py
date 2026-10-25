@@ -57,9 +57,9 @@ def judged_trials(fake):
             for line in c.user.splitlines() if line.startswith("- NCT")}
 
 
-async def _tick(ctx, patient, labels, text=None):
-    check = await record.check_diagnosis(ctx, patient, text)
-    return await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=tuple(labels))
+async def _tick(ctx, patient, labels):
+    check = await record.check_diagnosis(ctx, patient)
+    return await record.answer_diagnosis_check(ctx, patient, check.id, record.Ticked(tuple(labels)))
 
 
 async def test_ticked_labels_select_the_trials_listing_them(clean_db, tmp_path):
@@ -80,7 +80,7 @@ async def test_verdicts_judged_under_an_earlier_choice_are_listed_only_for_trial
     await matching.rescan(ctx, version.id)
     assert judged_trials(fake) == {NCT, BREAST}
 
-    await _tick(ctx, patient, HER2, "her2 breast cancer")
+    await _tick(ctx, patient, HER2)
 
     assert [v.nct_id for v in (await matching.verdicts_for_version(ctx, version.id)).verdicts] == [BREAST]
     assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {BREAST}
@@ -92,7 +92,7 @@ async def test_changing_the_ticked_labels_hides_the_verdicts_the_new_choice_does
     await matching.rescan(ctx, version.id)
     assert [v.nct_id for v in (await matching.verdicts_for_version(ctx, version.id)).verdicts] == [NCT]
 
-    await _tick(ctx, patient, HER2, "her2 breast cancer")
+    await _tick(ctx, patient, HER2)
     report = await matching.rescan(ctx, version.id)
 
     assert report.planned == (BREAST,)
@@ -116,7 +116,7 @@ async def test_without_a_condition_term_a_rescan_judges_nothing_and_calls_no_mod
 async def test_none_of_these_leaves_no_condition_term_so_nothing_is_judged(clean_db, tmp_path):
     ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     check = await record.check_diagnosis(ctx, patient)
-    await record.answer_diagnosis_check(ctx, patient, check.id, "none_of_these")
+    await record.answer_diagnosis_check(ctx, patient, check.id, record.NoneOfThese("lung cancer"))
     calls = len(fake.calls)
 
     report = await matching.rescan(ctx, version.id)
@@ -129,7 +129,7 @@ async def test_not_sure_judges_nothing_and_raises_a_doctor_question_for_the_diag
         clean_db, tmp_path):
     ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     check = await record.check_diagnosis(ctx, patient)
-    await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
+    await record.answer_diagnosis_check(ctx, patient, check.id, record.NotSure())
     calls = len(fake.calls)
     report = await matching.rescan(ctx, version.id)
     assert report.planned == () and fake.calls[calls:] == []
@@ -165,7 +165,7 @@ async def test_when_no_label_fits_not_sure_raises_the_diagnosis_doctor_question_
     ctx, _, patient, version = await _setup(clean_db, tmp_path, picks=[])
     check = await record.check_diagnosis(ctx, patient)
     assert check.shortlist == ()
-    await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
+    await record.answer_diagnosis_check(ctx, patient, check.id, record.NotSure())
 
     questions = await matching.questions_for_version(ctx, version.id)
 
@@ -192,7 +192,7 @@ async def test_torn_acl_offers_the_acl_labels_and_ticking_them_selects_only_the_
     check = await record.check_diagnosis(ctx, patient)
     assert [one.label for one in check.shortlist] == ACL_LABELS
     assert "Torn ACL" in fake.calls[-2].user and "Type 1 Diabetes" not in fake.calls[-1].user
-    await record.answer_diagnosis_check(ctx, patient, check.id, "ticked", labels=tuple(ACL_LABELS))
+    await record.answer_diagnosis_check(ctx, patient, check.id, record.Ticked(tuple(ACL_LABELS)))
     report = await matching.rescan(ctx, version.id)
 
     assert set(report.planned) == {"NCT00000101", "NCT00000102"}
@@ -219,7 +219,7 @@ async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_asked_not
     assert "Q6" in {q.question for q in await matching.respondent_questions_for_version(ctx, version.id)}
 
     check = await record.check_diagnosis(ctx, patient)
-    await record.answer_diagnosis_check(ctx, patient, check.id, "not_sure")
+    await record.answer_diagnosis_check(ctx, patient, check.id, record.NotSure())
 
     doctor = await matching.questions_for_version(ctx, version.id)
     assert doctor[0].subject == "diagnosis"

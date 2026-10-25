@@ -43,9 +43,10 @@ CREATE TABLE diagnosis_check (            -- Diagnosis checks: the Condition lab
   id             text PRIMARY KEY,
   patient_id     text NOT NULL REFERENCES patient(id),
   text           text NOT NULL,           -- the words the shortlist was made from (the answer, or a re-wording)
-  shortlist      jsonb NOT NULL DEFAULT '[]',   -- [{label, open, closed}] offered, in order of fit; empty when none fit
-  ticked         jsonb NOT NULL DEFAULT '[]',   -- the labels ticked (from shortlist): the Condition term
-  status         text NOT NULL CHECK (status IN ('proposed','ticked','none_of_these','not_sure')),
+  shortlist      jsonb NOT NULL,          -- [{label, open, closed}] offered, in order of fit; empty when none fit
+  ticked         jsonb NOT NULL,          -- the labels ticked (from shortlist): the Condition term; [] unless ticked
+  status         text NOT NULL CHECK (status IN ('proposed','ticked','none_of_these','not_sure','confirmed')),
+                                          -- confirmed: before Condition labels, holds no Condition term (0008)
   created_at     timestamptz NOT NULL,
   answered_at    timestamptz,
   settled_seq    bigint                   -- set from diagnosis_check_settled when ticked / not_sure; the latest

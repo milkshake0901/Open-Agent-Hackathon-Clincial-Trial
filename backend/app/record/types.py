@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
 from typing import Literal, NewType
 
 from app.trace import RunId
-from app.trials import ConditionLabel
+from app.trials import ConditionLabel, label_key
 
 PatientId = NewType("PatientId", str)
 DocumentHash = NewType("DocumentHash", str)      # sha256 hex identifying the Document (its bytes and patient, or a questionnaire submission)
@@ -59,14 +59,36 @@ class Document:
         return self.respondent is not None
 
 
-DiagnosisAnswer = Literal["ticked", "none_of_these", "not_sure"]
-DiagnosisStatus = Literal["proposed", "ticked", "none_of_these", "not_sure"]
+class InvalidAnswers(ValueError):
+    """An answer that does not fit its question (unknown id, unknown option, malformed month), or a Diagnosis check's
+    answer that does not fit the check (labels missing or not in its shortlist, no new words)."""
+
+
+@dataclass(frozen=True)
+class Ticked:
+    """A Diagnosis check answer: these shortlist labels (equal ignoring case and spacing) are the Condition term."""
+    labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class NoneOfThese:
+    """A Diagnosis check answer: no shortlist label matches; `text`, the diagnosis in other words, starts a new check."""
+    text: str
+
+
+@dataclass(frozen=True)
+class NotSure:
+    """A Diagnosis check answer: check the diagnosis with the GP; a Doctor question is raised for it."""
+
+
+DiagnosisAnswer = Ticked | NoneOfThese | NotSure
+# "confirmed": a check confirmed under the single-term design, before Condition labels (db/migrations/0008); it has
+# no ticked labels, so it holds no Condition term (spec #31: the Respondent redoes the step).
+DiagnosisStatus = Literal["proposed", "ticked", "none_of_these", "not_sure", "confirmed"]
 
 # The settling rule, in one place: which statuses settle the diagnosis (the latest settled check holds) and which of
-# those leave it to the GP. An answer gives a proposed check its own name as status. "proposed" awaits an answer;
-# "none_of_these" settles nothing: the Respondent is asked again.
-DIAGNOSIS_ANSWERS: frozenset[DiagnosisAnswer] = frozenset({"ticked", "none_of_these", "not_sure"})
-SETTLED: frozenset[DiagnosisStatus] = frozenset({"ticked", "not_sure"})
+# those leave it to the GP. "proposed" awaits an answer; "none_of_these" settles nothing: a new check is offered.
+SETTLED: frozenset[DiagnosisStatus] = frozenset({"ticked", "not_sure", "confirmed"})
 NEEDS_GP: frozenset[DiagnosisStatus] = frozenset({"not_sure"})
 
 
@@ -75,19 +97,28 @@ class DiagnosisCheck:
     """A shortlist of Condition labels offered for the free-text diagnosis, and the Respondent's answer (#14, #33,
     ADR 0005). Not a Fact: the diagnosis Fact keeps the Respondent's words as its quote; the ticked labels only select
     which Trials are judged and shown. status: proposed (awaiting an answer; the shortlist may be empty when no label
-    fits), ticked (one or more shortlist labels), none_of_these (ask again), or not_sure."""
+    fits), ticked (one or more shortlist labels), none_of_these (a new check was offered), not_sure, or confirmed
+    (DiagnosisStatus)."""
     id: DiagnosisCheckId
     patient_id: PatientId
     text: str
     shortlist: tuple[ConditionLabel, ...]     # in order of fit, at most diagnosis.SHORTLIST_SIZE
     status: DiagnosisStatus
-    ticked: tuple[str, ...] = ()              # spelled as in the shortlist, in shortlist order
+    ticked: tuple[str, ...] = ()              # spelled as in the shortlist, in shortlist order; only when ticked
+
+    def tick(self, labels: tuple[str, ...]) -> DiagnosisCheck:
+        """This check answered with one or more of its shortlist `labels`, spelled as the shortlist spells them.
+        Raises InvalidAnswers when none are given or one is not in the shortlist."""
+        wanted = {label_key(label) for label in labels}
+        ticked = tuple(one.label for one in self.shortlist if label_key(one.label) in wanted)
+        if not wanted or len(ticked) != len(wanted):
+            raise InvalidAnswers(f"tick one or more labels from diagnosis check {self.id}'s shortlist")
+        return replace(self, status="ticked", ticked=ticked)
 
     @property
     def condition_term(self) -> tuple[str, ...] | None:
-        """The Condition term: the ticked labels that select Trials; None unless some were ticked. (A check
-        migrated from the single-term design is ticked with no labels, so holds none.)"""
-        return self.ticked if self.status == "ticked" and self.ticked else None
+        """The Condition term: the ticked labels that select Trials; None unless some were ticked."""
+        return self.ticked or None
 
     @property
     def settled(self) -> bool:
@@ -98,10 +129,6 @@ class DiagnosisCheck:
     def needs_gp(self) -> bool:
         """Tell the Respondent to check with their GP; a Doctor question is raised for the diagnosis."""
         return self.status in NEEDS_GP
-
-    @property
-    def ask_again(self) -> bool:
-        return self.status == "none_of_these"
 
 
 @dataclass(frozen=True)

@@ -47,12 +47,15 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         assert proposed.status_code == 201
         body = proposed.json()
         assert body["status"] == "proposed" and body["ticked"] == [] and "condition" not in body
+        assert "ask_again" not in body
         assert body["shortlist"] == [{"label": "Non-Small Cell Lung Cancer", "open": 1, "closed": 0}]
         assert "Tick" in body["message"]
 
         answer = f"{url}/{body['id']}"
         assert (await http.post(answer, json={"answer": "ticked", "labels": ["Breast Cancer"]})).status_code == 422
-        assert (await http.post(answer, json={"answer": "maybe"})).status_code == 422
+        for wrong in ({"answer": "maybe"}, {"answer": "ticked"}, {"answer": "ticked", "labels": []},
+                      {"answer": "none_of_these"}, {"answer": "none_of_these", "text": "  "}, {}):
+            assert (await http.post(answer, json=wrong)).status_code == 422, wrong
         again = (await http.post(answer, json={"answer": "none_of_these", "text": "NSCLC"})).json()
         assert again["id"] != body["id"] and again["text"] == "NSCLC" and again["status"] == "proposed"
         assert (await http.post(answer, json={"answer": "ticked", "labels": ["Non-Small Cell Lung Cancer"]})
@@ -64,12 +67,8 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         assert ticked["rescan"] == {"judged": 1, "failed": 0}
         assert "Non-Small Cell Lung Cancer" in ticked["message"]
 
-        third = (await http.post(url, json={"text": "something in the lung"})).json()
-        rejected = (await http.post(f"{url}/{third['id']}", json={"answer": "none_of_these"})).json()
-        assert rejected["status"] == "none_of_these" and rejected["ask_again"] is True
-
-        fourth = (await http.post(url, json={"text": "not sure, something in the lung"})).json()
-        unsure = (await http.post(f"{url}/{fourth['id']}", json={"answer": "not_sure"})).json()
+        third = (await http.post(url, json={})).json()
+        unsure = (await http.post(f"{url}/{third['id']}", json={"answer": "not_sure"})).json()
         assert unsure["needs_gp"] is True and "GP" in unsure["message"] and unsure["rescan"] is None
 
         questions = (await http.get(f"/api/patients/{patient}/questions", params={"version": vid})).json()

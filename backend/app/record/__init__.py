@@ -12,17 +12,16 @@ import secrets
 from dataclasses import asdict, dataclass, replace
 from typing import Any
 
-from app import logfile, trace, trials
+from app import logfile, trace
 from app.ctx import Ctx
 from app.record import diagnosis as shortlists, loop, questionnaire, repo, storage
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
 from app.record.pdf import UnreadableDocument, to_pages
 from app.record.questionnaire import (
-    DEFINITION, InvalidAnswers, Option, Question, Questionnaire, Section, SubmittedAnswers,
+    DEFINITION, Option, Question, Questionnaire, Section, SubmittedAnswers,
 )
 from app.record.types import (
-    DIAGNOSIS_ANSWERS,
     AwaitingPatient,
     Committed,
     Conflict,
@@ -36,6 +35,9 @@ from app.record.types import (
     Fact,
     FactId,
     IngestOutcome,
+    InvalidAnswers,
+    NoneOfThese,
+    NotSure,
     Page,
     PatientId,
     ProfileVersion,
@@ -45,6 +47,7 @@ from app.record.types import (
     Resolution,
     Respondent,
     SearchPreferences,
+    Ticked,
     VersionDiff,
     new_diagnosis_check_id,
     new_patient_id,
@@ -58,7 +61,7 @@ __all__ = [
     "document", "Registered", "UnreadableDocument", "issue_return_link", "patient_for_return_link",
     "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
     "deidentify_text", "check_diagnosis", "answer_diagnosis_check", "diagnosis", "DiagnosisCheck", "DiagnosisAnswer",
-    "AlreadyAnswered",
+    "Ticked", "NoneOfThese", "NotSure", "AlreadyAnswered",
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
@@ -186,19 +189,17 @@ async def set_search_preferences(ctx: Ctx, patient_id: PatientId, answers: dict[
     return await repo.search_preferences(ctx.ui_reader, patient_id)
 
 
-async def check_diagnosis(ctx: Ctx, patient_id: PatientId, text: str | None = None) -> DiagnosisCheck:
-    """A shortlist of Condition labels stored Trials use, for the diagnosis in the Respondent's words: `text` (a
-    re-wording), else the latest accepted questionnaire's diagnosis answer (ADR 0005). The words are de-identified
+async def check_diagnosis(ctx: Ctx, patient_id: PatientId) -> DiagnosisCheck:
+    """A shortlist of Condition labels stored Trials use, for the diagnosis in the Respondent's words: the latest accepted
+    questionnaire's diagnosis answer (ADR 0005; new words come with a none of these answer). The words are de-identified
     (deidentify_text) before the model sees them, the check stores them or the log file records them; the model sees
     only those words and the candidate labels. The check comes back `proposed` for the Respondent to answer; its
     shortlist is empty when no label fits (they can only re-word or answer not sure). What to say for each status is
     the HTTP shell's. Raises NotFound (unknown patient, or no diagnosis to check) and llm.LlmUnavailable (nothing
     stored)."""
     await _require_patient(ctx, patient_id)
-    if text is None:
-        answered = await latest_answers(ctx, patient_id)
-        text = (answered.answers.get("diagnosis") if answered else None) or None
-    check = await _new_check(ctx, patient_id, text)
+    answered = await latest_answers(ctx, patient_id)
+    check = await _new_check(ctx, patient_id, answered.answers.get("diagnosis") if answered else None)
     if check is None:
         raise NotFound(f"no diagnosis answer for patient {patient_id}")
     async with ctx.writer.transaction() as tx:
@@ -221,38 +222,38 @@ def _diagnosis_words(text: str | None) -> str:
 
 
 async def answer_diagnosis_check(ctx: Ctx, patient_id: PatientId, check_id: DiagnosisCheckId,
-                                 answer: DiagnosisAnswer, *, labels: tuple[str, ...] = (),
-                                 text: str | None = None) -> DiagnosisCheck:
-    """The Respondent's answer to a proposed check. "ticked" with one or more of its shortlist `labels` (equal
-    ignoring case and spacing) makes them the patient's Condition term, which selects the Trials judged and shown;
-    "none_of_these" asks again, and with new words `text` starts a new check (check_diagnosis), which is returned
-    instead; "not_sure" tells them to check with their GP and raises a Doctor question for the diagnosis. Answered
-    once; with new words, the answer and the new check are stored together or not at all. Raises NotFound (not this
-    patient's check), InvalidAnswers (an unknown answer, labels missing or not in the shortlist; AlreadyAnswered, a
-    subclass, when the check is not awaiting an answer) and, for new words, llm.LlmUnavailable (nothing stored)."""
-    if answer not in DIAGNOSIS_ANSWERS:
-        raise InvalidAnswers(f"answer must be ticked, none_of_these or not_sure, got {answer!r}")
+                                 answer: DiagnosisAnswer) -> DiagnosisCheck:
+    """The Respondent's answer to a proposed check. Ticked: one or more of its shortlist labels (equal ignoring case and
+    spacing) become the patient's Condition term, which selects the Trials judged and shown. NoneOfThese: the diagnosis
+    in other words starts a new check (as check_diagnosis does for the questionnaire's words), which is returned
+    instead. NotSure: tell them to check with their GP; a Doctor question is raised for the diagnosis. Answered once;
+    the answer and a new check are stored together or not at all. Raises NotFound (not this patient's check),
+    AlreadyAnswered (the check is not awaiting an answer; checked before the labels or any model call), InvalidAnswers
+    (labels missing or not in the shortlist, no new words) and, for new words, llm.LlmUnavailable (nothing stored)."""
     check = await repo.diagnosis_check(ctx.ui_reader, check_id)
     if check is None or check.patient_id != patient_id:
         raise NotFound(f"diagnosis check {check_id}")
-    if check.status != "proposed":
+    if check.status != "proposed":   # the transaction below re-checks, for an answer racing this one
         raise AlreadyAnswered(f"diagnosis check {check_id} is {check.status}, not awaiting an answer")
-    ticked: tuple[str, ...] = ()
-    if answer == "ticked":
-        wanted = {trials.label_key(label) for label in labels}
-        ticked = tuple(one.label for one in check.shortlist if trials.label_key(one.label) in wanted)
-        if not wanted or len(ticked) != len(wanted):
-            raise InvalidAnswers(f"tick one or more labels from diagnosis check {check_id}'s shortlist")
-    answered = replace(check, status=answer, ticked=ticked)
-    again = await _new_check(ctx, patient_id, text) if answer == "none_of_these" else None   # before any write
+    again: DiagnosisCheck | None = None
+    match answer:
+        case Ticked(labels=labels):
+            answered = check.tick(labels)
+        case NoneOfThese(text=text):
+            again = await _new_check(ctx, patient_id, text)   # before any write
+            if again is None:
+                raise InvalidAnswers("none of these needs the diagnosis in other words")
+            answered = replace(check, status="none_of_these")
+        case NotSure():
+            answered = replace(check, status="not_sure")
     async with ctx.writer.transaction() as tx:
-        stored = await repo.answer_diagnosis_check(tx, answered, ctx.now())
-        if not stored:
+        if not await repo.answer_diagnosis_check(tx, answered, ctx.now()):
             raise AlreadyAnswered(f"diagnosis check {check_id} is not awaiting an answer")
         if again is not None:
             await repo.insert_diagnosis_check(tx, again, ctx.now())
     logfile.step(log, "record.diagnosis_check.answered", patient_id=patient_id,   # #35
-                 answer={"answer": answer, "labels": list(labels), "text": _diagnosis_words(text) or None},
+                 answer={"answer": answered.status, "labels": list(answer.labels) if isinstance(answer, Ticked) else [],
+                         "text": again.text if again else None},
                  check=_check_line(answered))
     if again is not None:
         _log_offered(again)
