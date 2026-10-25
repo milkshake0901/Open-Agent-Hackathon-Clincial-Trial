@@ -90,3 +90,75 @@ async def test_an_open_trial_enquiry_asks_about_taking_part_and_goes_to_the_near
     assert "possible" in prompt                                     # the Verdict
     assert "Adults aged 18 years or older" in prompt                 # unknown Criteria, to become questions
     assert "Untreated CNS metastases" in prompt
+
+
+async def test_the_respondent_sees_the_clinical_details_and_an_unticked_one_never_reaches_the_model(
+        clean_db, tmp_path, http):
+    patient, version, writer = await judged(clean_db, tmp_path, http, with_contacts(study(NCT, sites=[sydney([SAM])])))
+
+    offered = (await http.post(enquiry_url(patient, version), json={})).json()["details"]
+    assert {(d["label"], d["text"], d["included"]) for d in offered} == {
+        ("Age", "68 years", True), ("Sex assigned at birth", "Female", True),
+        ("Daily activity", "Fully active, doing everything as before the illness", True)}
+    sex = next(d["id"] for d in offered if d["label"] == "Sex assigned at birth")
+    kept = [d["id"] for d in offered if d["id"] != sex]
+
+    r = await http.post(enquiry_url(patient, version), json={"include": kept})
+
+    assert r.status_code == 200, r.text
+    assert [(d["label"], d["included"]) for d in r.json()["details"] if not d["included"]] == [
+        ("Sex assigned at birth", False)]
+    first, second = writer.enquiry_prompts()
+    assert "Female" in first and "Female" not in second
+    assert "Fully active, doing everything as before the illness" in second
+
+
+async def test_the_model_sees_no_name_postcode_or_contact_and_nothing_is_stored(clean_db, tmp_path, http):
+    patient, version, writer = await judged(clean_db, tmp_path, http, with_contacts(study(NCT, sites=[sydney([SAM])])))
+    events = len(app.state.ctx.wm.events())
+    tables = {t: await clean_db.fetchval(f"SELECT count(*) FROM {t}") for t in
+              [r["tablename"] for r in await clean_db.fetch("SELECT tablename FROM pg_tables WHERE schemaname='public'")]}
+
+    e = (await http.post(enquiry_url(patient, version), json={})).json()
+
+    [prompt] = writer.enquiry_prompts()
+    for private in ("Demo patient E", "respondent@example.com", "2031", "1958"):
+        assert private not in prompt and private not in e["body"]
+    assert e["body"].endswith("Kind regards,\n[Your name]\n[Your email or phone]\n")
+    assert len(app.state.ctx.wm.events()) == events
+    assert {t: await clean_db.fetchval(f"SELECT count(*) FROM {t}") for t in tables} == tables
+
+
+async def test_with_no_site_email_the_enquiry_goes_to_the_central_contact(clean_db, tmp_path, http):
+    no_email = {"name": "Front Desk", "role": "CONTACT", "phone": "02 0000 0000"}
+    patient, version, _ = await judged(clean_db, tmp_path, http,
+                                       with_contacts(study(NCT, sites=[sydney([no_email]), melbourne()])))
+
+    e = (await http.post(enquiry_url(patient, version), json={})).json()
+
+    assert e["recipient"] == {"name": "Trial Contact Centre", "email": "trials@example.org", "kind": "central",
+                              "facility": None}
+    assert e["body"].startswith("Dear Trial Contact Centre,")
+
+
+async def test_a_trial_with_no_email_still_gets_a_draft_with_a_blank_recipient_and_the_sponsor_named(
+        clean_db, tmp_path, http):
+    raw = study(NCT, sites=[sydney()])
+    raw["protocolSection"]["sponsorCollaboratorsModule"] = {"leadSponsor": {"name": "Example Pharma"}}
+    patient, version, _ = await judged(clean_db, tmp_path, http, raw)
+
+    r = await http.post(enquiry_url(patient, version), json={})
+
+    assert r.status_code == 200, r.text
+    e = r.json()
+    assert e["recipient"] is None and e["sponsor"] == "Example Pharma"
+    assert e["body"].startswith("Dear trial team,") and DRAFTED in e["body"]
+
+
+async def test_no_enquiry_without_a_verdict_and_none_yet_for_a_closed_trial(clean_db, tmp_path, http):
+    patient, version, _ = await judged(clean_db, tmp_path, http, study(NCT, sites=[sydney()]),
+                                       study("NCT00000009", status="COMPLETED", sites=[sydney()]))
+
+    assert (await http.post(enquiry_url(patient, version, "NCT09999999"), json={})).status_code == 404
+    assert (await http.post(enquiry_url(patient, version, "NCT00000009"), json={})).status_code == 409
+    assert (await http.post(enquiry_url("pt_someone_else", version), json={})).status_code == 404

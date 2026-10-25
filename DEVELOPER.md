@@ -64,6 +64,12 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   ├── loop.py           Matcher ⇄ Evaluator state machine; Re-scan plan and run
 │   │   │   └── repo.py           SQL reads
 │   │   │
+│   │   ├── enquiry/              ENQUIRY: email bodies the Respondent edits, copies and sends themselves
+│   │   │   ├── __init__.py       public API: draft (nothing stored, nothing sent)
+│   │   │   ├── details.py        the de-identified clinical details offered, each untickable
+│   │   │   ├── recipient.py      nearest Australian site contact, else central contact, else blank
+│   │   │   └── templates.py      one prompt per kind of Trial (Open now; Closed with #29)
+│   │   │
 │   │   ├── worldmodel/           METERLESS WORLD MODEL (our Python implementation)
 │   │   │   ├── __init__.py       public API: WorldModel, Provenance, timeline, ...
 │   │   │   ├── engine.py         upsert_entity, assert_fact, relate, snapshot, ingest, audit
@@ -88,7 +94,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   └── writer.py         Postgres transactions
 │   │   │
 │   │   └── api/                  thin HTTP routes under /api (see docs/api.md)
-│   │       └── documents.py · patients.py · runs.py · trials.py · verdicts.py · health.py · schemas.py
+│   │       └── documents.py · patients.py · runs.py · trials.py · verdicts.py · enquiries.py · health.py · schemas.py
 │   │
 │   └── tests/
 │       ├── test_boundaries.py    fails on imports of another module's internals
