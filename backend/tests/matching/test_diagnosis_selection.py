@@ -264,3 +264,30 @@ async def test_each_shortlist_call_sends_a_user_message_no_other_prompt_sends(cl
     phrases, pick = fake.calls[-2].user, fake.calls[-1].user
     assert phrases != "Diagnosis, in the Respondent's words:\nTorn ACL"
     assert phrases.startswith("Search phrases") and pick.startswith("Shortlist")
+
+
+async def test_labels_sharing_part_of_a_phrase_are_candidates_so_the_model_can_pick_them(clean_db, tmp_path):
+    """Live run on 'Torn ACL': the model's phrases were all "... tear" / "... rupture" / "ACL injury", so a
+    whole-phrase match found only "Anterior Cruciate Ligament Rupture" and missed the Injury labels."""
+    from tests.conftest import make_ctx
+    fake = fake_model(ACL_LABELS, subject="anterior cruciate ligament tear", diagnosis="Torn ACL")
+    respond = fake.responder
+
+    def tear_phrases(lane, system, user):
+        if lane == "fast" and "search phrases" in system:
+            return {"phrases": ["anterior cruciate ligament tear", "ACL injury"]}
+        return respond(lane, system, user)
+    fake.responder = tear_phrases
+    ctx = make_ctx(clean_db, fake)
+    await trials.ingest(ctx, save_pages(tmp_path, [
+        saved_study("NCT00000101", sites=[AU], conditions=("Anterior Cruciate Ligament Rupture",)),
+        saved_study("NCT00000102", sites=[AU], conditions=("Anterior Cruciate Ligament Injury",)),
+        saved_study("NCT00000103", sites=[AU], conditions=("Type 1 Diabetes",))]))
+    patient = await record.create_patient(ctx, "Demo patient N")
+    await record.submit_questionnaire(ctx, patient, {"diagnosis": "Torn ACL"}, "patient")
+
+    check = await record.check_diagnosis(ctx, patient)
+
+    offered = fake.calls[-1].user
+    assert "Anterior Cruciate Ligament Injury" in offered and "Type 1 Diabetes" not in offered
+    assert [one.label for one in check.shortlist] == ACL_LABELS

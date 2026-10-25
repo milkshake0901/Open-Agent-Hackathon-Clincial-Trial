@@ -40,6 +40,20 @@ or carer's own description of a diagnosis. Answer with JSON only: {{"labels": ["
 - If no candidate fits, answer {{"labels": []}}."""
 
 
+def _with_parts(phrases: list[str]) -> list[str]:
+    """The phrases, then every run of two or more consecutive words inside them, longest first: "anterior cruciate
+    ligament tear" also searches "anterior cruciate ligament" and "cruciate ligament", so a label naming the same
+    condition differently ("... Injury") is still a candidate. Single words are left out ("tear" matches anything);
+    the model's pick, not the search, decides what fits."""
+    parts: dict[str, None] = dict.fromkeys(phrases)
+    for phrase in phrases:
+        words = phrase.split()
+        for size in range(len(words) - 1, 1, -1):
+            for start in range(len(words) - size + 1):
+                parts.setdefault(" ".join(words[start:start + size]))
+    return list(parts)
+
+
 async def shortlist(ctx: Ctx, text: str) -> tuple[trials.ConditionLabel, ...]:
     """Up to SHORTLIST_SIZE stored Condition labels that fit the diagnosis words, best fit first; empty when none
     does. At most two fast-lane calls, none for judging. Raises llm.LlmUnavailable."""
@@ -50,7 +64,7 @@ async def shortlist(ctx: Ctx, text: str) -> tuple[trials.ConditionLabel, ...]:
                               out=_PhrasesOut,
                               run_id=None)).value.phrases
     phrases = [p for p in (" ".join(p.split()) for p in phrases[:MAX_PHRASES]) if p]
-    candidates = await trials.search_condition_labels(ctx, phrases, limit=MAX_CANDIDATES) if phrases else []
+    candidates = await trials.search_condition_labels(ctx, _with_parts(phrases), limit=MAX_CANDIDATES) if phrases else []
     if not candidates:
         return ()
     listed = "\n".join(f"- {one.label}" for one in candidates)
