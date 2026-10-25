@@ -58,6 +58,13 @@ async def closed_trials(reader: SqlReader) -> list[Trial]:
     return [to_trial(r) for r in rows]
 
 
+async def conditions(reader: SqlReader) -> list[tuple[str, tuple[str, ...]]]:
+    """(status, conditions) of every stored, non-dropped Trial. The array is read whole and unnested by the caller:
+    Spark SQL behind Zetaris has no UNNEST."""
+    rows = await reader.fetch(f"SELECT status, conditions FROM {reader.table('trial')} WHERE NOT dropped ORDER BY nct_id")
+    return [(r["status"], tuple(r["conditions"] or ())) for r in rows]
+
+
 async def criteria(reader: SqlReader, nct_id: NctId, eligibility_hash: str) -> tuple[Criterion, ...]:
     rows = await reader.fetch(
         f"SELECT id, nct_id, eligibility_hash, kind, ordinal, text FROM {reader.table('criterion')} "

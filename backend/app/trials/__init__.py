@@ -158,6 +158,19 @@ class TrialSite:
 
 
 @dataclass(frozen=True)
+class ConditionLabel:
+    """A Condition label and how many stored Open and Closed trials list it. Labels equal ignoring case and repeated
+    whitespace are one label, shown as the spelling most of those Trials use."""
+    label: str
+    open: int
+    closed: int
+
+    @property
+    def total(self) -> int:
+        return self.open + self.closed
+
+
+@dataclass(frozen=True)
 class SyncReport:
     fetched: int
     new: tuple[NctId, ...]
@@ -198,6 +211,8 @@ class LivePages:
 
 __all__ = ["ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
            "active_trials", "closed_trials", "outcome_summary",
+           "condition_labels", "search_condition_labels", "ConditionLabel",
+           "open_trials_with_labels", "closed_trials_with_labels",
            "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
            "OutcomeMeasure", "Outcomes", "OutcomeSummary", "PostedResult", "ResultValue", "Publication",
            "SavedPages", "LivePages",
@@ -330,8 +345,65 @@ async def active_trials(ctx: Ctx) -> list[Trial]:
 async def closed_trials(ctx: Ctx, condition_term: str) -> list[Trial]:
     """Closed trials that study this Condition term (the same `studies_condition` matching as Open trials), newest
     first by cutoff date (Trial.closed_on). Never judged: they have no Criterion results or Verdict (ADR 0004)."""
-    found = [t for t in await repo.closed_trials(ctx.ui_reader) if studies_condition(t, condition_term)]
-    return sorted(sorted(found, key=lambda t: t.nct_id), key=lambda t: t.closed_on or "", reverse=True)
+    return _newest_first([t for t in await repo.closed_trials(ctx.ui_reader) if studies_condition(t, condition_term)])
+
+
+def _newest_first(closed: list[Trial]) -> list[Trial]:
+    return sorted(sorted(closed, key=lambda t: t.nct_id), key=lambda t: t.closed_on or "", reverse=True)
+
+
+def _label_key(label: str) -> str:
+    """Condition labels are equal when they match ignoring case and repeated whitespace."""
+    return " ".join(label.casefold().split())
+
+
+async def condition_labels(ctx: Ctx) -> list[ConditionLabel]:
+    """Every distinct Condition label the stored, non-dropped Trials list, with how many Open and Closed trials list
+    it; most used first, then alphabetically."""
+    counts: dict[str, list[int]] = {}
+    spellings: dict[str, dict[str, int]] = {}
+    for status, conditions in await repo.conditions(ctx.ui_reader):
+        if status not in ACTIVE_STATUSES + CLOSED_STATUSES:
+            continue
+        is_open = status in ACTIVE_STATUSES
+        for key, label in {_label_key(c): c for c in conditions if c.strip()}.items():
+            counts.setdefault(key, [0, 0])[0 if is_open else 1] += 1
+            spellings.setdefault(key, {}).setdefault(label, 0)
+            spellings[key][label] += 1
+    found = [ConditionLabel(min(spellings[k], key=lambda s: (-spellings[k][s], s)), open=o, closed=c)
+             for k, (o, c) in counts.items()]
+    return sorted(found, key=lambda one: (-one.total, _label_key(one.label)))
+
+
+def _contains_phrase(label: str, phrase: str) -> bool:
+    """Do the phrase's words appear in the label, in order and adjacent, ignoring case and punctuation?"""
+    import re
+    have, want = (" ".join(re.findall(r"[a-z0-9]+", text.casefold())) for text in (label, phrase))
+    return bool(want) and f" {want} " in f" {have} "
+
+
+async def search_condition_labels(ctx: Ctx, phrases: list[str], *, limit: int) -> list[ConditionLabel]:
+    """The Condition labels containing any of the phrases as whole words ("cruciate ligament" finds "Anterior Cruciate
+    Ligament Rupture", "injur" finds nothing), at most `limit`, most used first."""
+    found = [one for one in await condition_labels(ctx) if any(_contains_phrase(one.label, p) for p in phrases)]
+    return found[:limit]
+
+
+def _lists_any(trial: Trial, labels: list[str]) -> bool:
+    wanted = {_label_key(label) for label in labels}
+    return any(_label_key(c) in wanted for c in trial.conditions)
+
+
+async def open_trials_with_labels(ctx: Ctx, labels: list[str]) -> list[Trial]:
+    """The Open trials listing any of these Condition labels (equal ignoring case and repeated whitespace), by NCT id:
+    the Trials a Condition term selects for judging (ADR 0005)."""
+    return [t for t in await repo.active_trials(ctx.ui_reader) if _lists_any(t, labels)]
+
+
+async def closed_trials_with_labels(ctx: Ctx, labels: list[str]) -> list[Trial]:
+    """The Closed trials listing any of these Condition labels, newest first by cutoff date (Trial.closed_on), as
+    `closed_trials`. Never judged (ADR 0004)."""
+    return _newest_first([t for t in await repo.closed_trials(ctx.ui_reader) if _lists_any(t, labels)])
 
 
 async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:
