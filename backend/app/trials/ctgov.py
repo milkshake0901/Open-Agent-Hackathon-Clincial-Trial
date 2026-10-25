@@ -24,6 +24,9 @@ class RawStudy:
     status: str
     eligibility_text: str
     sites: tuple[TrialSite, ...] = ()
+    primary_completion_date: str | None = None
+    completion_date: str | None = None
+    last_update_date: str | None = None
     contacts: TrialContacts | None = None
 
 
@@ -45,18 +48,29 @@ def eligibility_hash(text: str) -> str:
 def to_trial(raw: RawStudy, source: str, fetched_at: str) -> Trial:
     return Trial(nct_id=NctId(raw.nct_id), title=raw.title, conditions=raw.conditions, status=raw.status,
                  eligibility_text=raw.eligibility_text, eligibility_hash=eligibility_hash(raw.eligibility_text),
-                 fetched_at=fetched_at, source=source)
+                 fetched_at=fetched_at, source=source, primary_completion_date=raw.primary_completion_date,
+                 completion_date=raw.completion_date, last_update_date=raw.last_update_date)
 
 
 def parse_study(study: dict[str, Any]) -> RawStudy:
     """One v2 study (`GET /api/v2/studies/{nct}` body) → RawStudy."""
     p = study["protocolSection"]
+    dates = p["statusModule"]
     return RawStudy(nct_id=p["identificationModule"]["nctId"], title=p["identificationModule"]["briefTitle"],
                     conditions=tuple(p.get("conditionsModule", {}).get("conditions", ())),
                     status=p["statusModule"]["overallStatus"],
                     eligibility_text=p.get("eligibilityModule", {}).get("eligibilityCriteria", ""),
                     sites=tuple(_site(loc) for loc in p.get("contactsLocationsModule", {}).get("locations", ())),
-                    contacts=_contacts(p))
+                    contacts=_contacts(p),
+                    primary_completion_date=_date(dates.get("primaryCompletionDateStruct")),
+                    completion_date=_date(dates.get("completionDateStruct")),
+                    last_update_date=_date(dates.get("lastUpdatePostDateStruct")))
+
+
+def _date(struct: dict[str, Any] | None) -> str | None:
+    """A v2 date struct ({"date": "2012-10"} or "2012-10-15") as an ISO date; a month-only date is its 1st."""
+    day = (struct or {}).get("date")
+    return None if not day else day if len(day) == 10 else f"{day}-01" if len(day) == 7 else f"{day}-01-01"
 
 
 def _site(loc: dict[str, Any]) -> TrialSite:

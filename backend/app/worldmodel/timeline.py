@@ -98,7 +98,8 @@ async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Crite
             type="trial", external_id=t.nct_id, title=t.title, at=t.fetched_at, source=source,
             text=t.eligibility_text, attrs={
                 "conditions": list(t.conditions), "status": t.status, "eligibility_hash": t.eligibility_hash,
-                "source": t.source,
+                "source": t.source, "primary_completion_date": t.primary_completion_date,
+                "completion_date": t.completion_date, "last_update_date": t.last_update_date,
                 "criteria": [{"id": c.id, "kind": str(c.kind), "ordinal": c.ordinal, "text": c.text}
                              for c in criteria],
                 **({"sites": [{"facility": s.facility, "city": s.city, "country": s.country, "status": s.status,
@@ -115,6 +116,16 @@ async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Crite
 def _contact(c: "Contact") -> dict:
     return {"name": c.name, "role": c.role, "email": c.email, "phone": c.phone, "affiliation": c.affiliation,
             "title": c.title}
+async def drop_trials(wm: "WorldModel", trials: "list[Trial]", at: str) -> None:
+    """Closed trials that aged past the 15-year cutoff (ADR 0004): each Trial entity is replaced by a dropped
+    marker, so the projection no longer lists it; its Criteria and any Verdicts stay as history (ADR 0002).
+    Idempotent: dropping a dropped Trial appends nothing, and a later ingest of the study records it again."""
+    from app.worldmodel.engine import IngestObservation, Provenance
+
+    await wm.ingest([IngestObservation(
+        type="trial", external_id=t.nct_id, title=t.title, at=at, attrs={"dropped": True},
+        source=Provenance(kind="api", at=at, by="trials", url=f"https://clinicaltrials.gov/study/{t.nct_id}"))
+        for t in trials])
 
 
 async def record_criteria(wm: "WorldModel", trial: "Trial", criteria: "tuple[Criterion, ...]") -> None:

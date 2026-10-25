@@ -107,6 +107,16 @@ export type VerdictOut = {
 
 export type SiteOut = { name: string; status: string; km: number | null };
 
+// A Closed trial: it can no longer enrol, so it has no Verdict; shown for what it studied and when it finished.
+export type ClosedTrialOut = {
+  nct_id: string;
+  title: string;
+  status: string;
+  conditions: string[];
+  closed_on: string | null; // ISO date: primary completion, else completion, else last update
+  url: string;
+};
+
 // Registry fields it does not give are "".
 export type ContactOut = { name: string; role: string; email: string; phone: string; affiliation: string; title: string };
 
@@ -252,6 +262,10 @@ export const api = {
   verdicts: (patientId: string, versionId: string) =>
     call<{ profile_version_id: string; verdicts: VerdictOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
+    ),
+  closedTrials: (patientId: string) =>
+    call<{ condition_term: string | null; trials: ClosedTrialOut[] }>(
+      `/patients/${encodeURIComponent(patientId)}/closed-trials`,
     ),
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
   enquiry: (patientId: string, versionId: string, nctId: string, include?: string[]) =>

@@ -109,7 +109,11 @@ CREATE TABLE trial (
   eligibility_text text NOT NULL,
   eligibility_hash text NOT NULL,
   source           text NOT NULL,         -- 'zetaris' | 'http'
-  fetched_at       timestamptz NOT NULL
+  fetched_at       timestamptz NOT NULL,
+  primary_completion_date date,           -- registry dates (a month-only date is its 1st); a Closed trial's cutoff
+  completion_date         date,           -- is the first of these three that is given (ADR 0004)
+  last_update_date        date,
+  dropped          boolean NOT NULL DEFAULT false  -- a Closed trial that aged past 15 years at a later ingest
 );
 
 CREATE TABLE criterion (                   -- immutable per (nct, eligibility_hash); old rows kept so old Verdicts resolve

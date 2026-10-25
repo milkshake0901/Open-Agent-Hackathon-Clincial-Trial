@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from app.sql.reader import SqlReader
-from app.trials import (ACTIVE_STATUSES, Contact, Criterion, CriterionId, CriterionKind, NctId, TrialContacts,
+from app.trials import (ACTIVE_STATUSES, CLOSED_STATUSES, Contact, Criterion, CriterionId, CriterionKind, NctId, TrialContacts,
                         TrialSite, Trial, page_url)
 
-_TRIAL_COLS = ("nct_id", "title", "conditions", "status", "eligibility_text", "eligibility_hash", "fetched_at", "source")
+_TRIAL_COLS = ("nct_id", "title", "conditions", "status", "eligibility_text", "eligibility_hash", "fetched_at", "source",
+               "primary_completion_date", "completion_date", "last_update_date")
 
 
 def trial_columns(alias: str = "") -> str:
@@ -16,7 +17,13 @@ def trial_columns(alias: str = "") -> str:
 def to_trial(r: dict) -> Trial:
     return Trial(nct_id=NctId(r["nct_id"]), title=r["title"], conditions=tuple(r["conditions"]), status=r["status"],
                  eligibility_text=r["eligibility_text"], eligibility_hash=r["eligibility_hash"],
-                 fetched_at=r["fetched_at"].isoformat(), source=r["source"])
+                 fetched_at=r["fetched_at"].isoformat(), source=r["source"],
+                 primary_completion_date=_iso(r["primary_completion_date"]), completion_date=_iso(r["completion_date"]),
+                 last_update_date=_iso(r["last_update_date"]))
+
+
+def _iso(day) -> str | None:
+    return day.isoformat() if day is not None else None
 
 
 def active_filter(alias: str = "") -> str:
@@ -26,13 +33,21 @@ def active_filter(alias: str = "") -> str:
 
 
 async def trial(reader: SqlReader, nct_id: NctId) -> Trial | None:
-    rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE nct_id = $1", (nct_id,))
+    rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE nct_id = $1 AND NOT dropped",
+                              (nct_id,))
     return to_trial(rows[0]) if rows else None
 
 
 async def active_trials(reader: SqlReader) -> list[Trial]:
     rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE {active_filter()} "
                               "ORDER BY nct_id")
+    return [to_trial(r) for r in rows]
+
+
+async def closed_trials(reader: SqlReader) -> list[Trial]:
+    statuses = ", ".join(repr(s) for s in CLOSED_STATUSES)
+    rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} "
+                              f"WHERE status IN ({statuses}) AND NOT dropped ORDER BY nct_id")
     return [to_trial(r) for r in rows]
 
 
