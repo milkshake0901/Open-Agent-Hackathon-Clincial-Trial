@@ -13,7 +13,9 @@ one, about its Outcomes or a follow-on study (#29).
 """
 from __future__ import annotations
 
-from app import llm, matching, record, trials
+import logging
+
+from app import llm, logfile, matching, record, trials
 from app.ctx import Ctx
 # The `details` function below wins the name over the submodule, imported here as `clinical`.
 from app.enquiry import details as clinical, recipient as recipients, templates
@@ -24,6 +26,7 @@ from app.trials import NctId
 __all__ = ["details", "draft", "Enquiry", "EnquiryKind", "ClinicalDetail", "Recipient", "NAME", "CONTACT"]
 
 NAME, CONTACT = templates.NAME, templates.CONTACT
+log = logging.getLogger(__name__)
 
 
 async def details(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId) -> tuple[ClinicalDetail, ...]:
@@ -65,6 +68,8 @@ async def draft(ctx: Ctx, nct_id: NctId, version_id: ProfileVersionId, *, includ
         user = templates.closed_prompt(trial, await trials.outcomes(ctx, nct_id, for_agent=True), kept)
     written = await llm.complete(ctx, llm.Lane.FAST, system=template.system, user=user, out=templates.Written,
                                  run_id=None)
+    logfile.step(log, "enquiry.drafted", nct_id=nct_id, profile_version_id=version_id, template=template.kind,
+                 included=sorted(d.id for d in kept), model_answered=written.model_answered)   # never the recipient or the body
     return Enquiry(nct_id=nct_id, template=template.kind, subject=template.subject(trial),
                    body=templates.letter(to, contacts.sponsor, written.value.body), recipient=to,
                    sponsor=contacts.sponsor, details=tuple((d, d in kept) for d in offered))

@@ -7,16 +7,20 @@ concurrently); each approved Verdict is written to the World Model as a patientâ
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 
 from app.ctx import Ctx
 from app.matching import evaluator, matcher, repo, verdict as verdict_rules
 from app.worldmodel import timeline
 from app.matching.types import CriterionResult, Rejection, RescanReport, ValidatedResults, Verdict
-from app import record, trace, trials
+from app import logfile, record, trace, trials
 from app.record import ProfileVersion, ProfileVersionId
 from app.trials import Criterion, NctId, Trial
 from app.trace.events import EvaluatorApproved, EvaluatorRejected, MatcherRetried, RescanPlanned, TrialJudged, RescanFinished
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -89,6 +93,8 @@ async def judge_trial(ctx: Ctx, trial: Trial, criteria: tuple[Criterion, ...], p
         actor="matching", nct_id=trial.nct_id, outcome=outcome, attempts=attempt, unsupported_downgraded=downgraded,
         degraded=v.degraded, questions=len(questions),
         respondent_questions=len(asked)))
+    logfile.step(log, "matching.trial_judged", run_id=run_id, profile_version_id=profile.id, nct_id=trial.nct_id,
+                 outcome=outcome, attempts=attempt, unsupported_downgraded=downgraded)
     return v
 
 
@@ -120,8 +126,11 @@ async def run_rescan(ctx: Ctx, version_id: ProfileVersionId, only: set[NctId] | 
     await trace.append(ctx.writer, run_id, RescanPlanned(
         actor="matching", profile_version_id=version_id, to_judge=[t.nct_id for t in to_judge],
         skipped_existing=list(skipped)))
+    logfile.step(log, "matching.rescan.started", run_id=run_id, profile_version_id=version_id,
+                 to_judge=[t.nct_id for t in to_judge], skipped_existing=list(skipped))
     if not to_judge:
         await trace.append(ctx.writer, run_id, RescanFinished(actor="matching", judged=[], failed=[]))
+        logfile.step(log, "matching.rescan.finished", run_id=run_id, profile_version_id=version_id, judged=[], failed=[])
         return RescanReport.nothing_to_do(version_id, run_id, tuple(skipped))
     sem = asyncio.Semaphore(concurrency)
 
@@ -135,5 +144,7 @@ async def run_rescan(ctx: Ctx, version_id: ProfileVersionId, only: set[NctId] | 
     judged = tuple(t.nct_id for t, e in zip(to_judge, results) if not isinstance(e, BaseException))
     await trace.append(ctx.writer, run_id, RescanFinished(actor="matching", judged=list(judged),
                                                           failed=[list(f) for f in failed]))
+    logfile.step(log, "matching.rescan.finished", run_id=run_id, profile_version_id=version_id, judged=list(judged),
+                 failed=[list(f) for f in failed])
     return RescanReport(version_id=version_id, run_id=run_id, planned=tuple(t.nct_id for t in to_judge),
                         judged=judged, skipped_existing=tuple(skipped), failed=failed)

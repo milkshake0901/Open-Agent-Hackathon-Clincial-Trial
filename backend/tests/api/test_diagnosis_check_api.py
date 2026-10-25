@@ -75,3 +75,30 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         assert questions[0]["subject"] == "diagnosis" and questions[0]["unblocks"] == []
 
         assert (await http.post("/api/patients/pt_nobody/questionnaire/diagnosis-check", json={})).status_code == 404
+
+
+async def test_each_diagnosis_check_step_writes_a_line_to_the_log_file(clean_db, tmp_path):
+    import json
+
+    from app import logfile
+    from tests.conftest import make_ctx
+    ctx = make_ctx(clean_db, FakeLLM(respond))
+    app.state.ctx = ctx
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+            patient = (await http.post("/api/patients", json={"label": "Demo patient H"})).json()["patient_id"]
+            await submit(http, patient, {"diagnosis": DIAGNOSIS})
+            url = f"/api/patients/{patient}/questionnaire/diagnosis-check"
+            check = (await http.post(url, json={})).json()
+            assert (await http.post(f"{url}/{check['id']}", json={"answer": "not_sure"})).status_code == 200
+    finally:
+        logfile.reset()
+
+    steps = {s["step"]: s for s in map(json.loads, path.read_text().splitlines())}
+    offered, answered = steps["record.diagnosis_check.offered"], steps["record.diagnosis_check.answered"]
+    assert offered["patient_id"] == answered["patient_id"] == patient
+    assert offered["check"]["id"] == answered["check"]["id"] == check["id"]
+    assert answered["answer"] == {"answer": "not_sure"}
+    assert "Demo patient H" not in path.read_text()

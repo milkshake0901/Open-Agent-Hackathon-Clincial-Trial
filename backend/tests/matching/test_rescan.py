@@ -236,3 +236,25 @@ async def test_change_between_versions_names_the_criteria_whose_result_moved_and
     [moved] = change.criteria_changed
     assert "ECOG" in moved.text and (moved.outcome_from, moved.outcome_to) == ("unknown", "met")
     assert moved.citation.fact_id == v2.current()["daily activity"].id
+
+
+async def test_a_rescan_writes_its_start_each_trial_verdict_and_its_end_to_the_log_file(clean_db, tmp_path):
+    from app import logfile
+    ctx, fake, version = await _setup(clean_db)
+    script(fake, answer_all(await trials.criteria(ctx, NCT)))
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        report = await matching.rescan(ctx, version.id)
+    finally:
+        logfile.reset()
+
+    steps = [json.loads(x) for x in path.read_text().splitlines()]
+    names = [s["step"] for s in steps if s["step"].startswith("matching.")]
+    assert names == ["matching.rescan.started", "matching.trial_judged", "matching.rescan.finished"]
+    started, judged, finished = (next(s for s in steps if s["step"] == n) for n in names)
+    assert started["run_id"] == report.run_id and started["profile_version_id"] == version.id
+    assert started["to_judge"] == [NCT]
+    assert judged["nct_id"] == NCT and judged["outcome"] == "possible" and judged["run_id"] == report.run_id
+    assert finished["judged"] == [NCT] and finished["failed"] == []
+    assert any(s["step"] == "llm.complete" and s["run_id"] == report.run_id for s in steps)

@@ -18,7 +18,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
-from app.llm import Completion, Lane, LlmUnavailable, T
+from pydantic import ValidationError
+
+from app.llm import Completion, Lane, LlmUnavailable, T, UnparsedReply
 
 if TYPE_CHECKING:
     from langchain_openai import ChatOpenAI
@@ -173,7 +175,7 @@ class Nightshift:
 
     async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Completion[T]:
         """JSON-mode call through the lane's LangChain model, parsed into `out`. A reply that doesn't
-        parse raises pydantic.ValidationError; app.llm.complete owns the one retry."""
+        parse raises UnparsedReply (the ValidationError and the reply text); app.llm.complete owns the one retry."""
         from langchain_core.messages import HumanMessage, SystemMessage
 
         model = self.model_for(lane)
@@ -186,13 +188,17 @@ class Nightshift:
         except Exception as e:   # openai.* errors surface through LangChain
             raise LlmUnavailable(f"{lane} lane ({model}) failed: {type(e).__name__}: {str(e)[:200]}") from e
         latency_ms = int((time.monotonic() - started) * 1000)
-        value = out.model_validate_json(json_object(msg.content if isinstance(msg.content, str) else ""))
+        raw = msg.content if isinstance(msg.content, str) else ""
+        try:
+            value = out.model_validate_json(json_object(raw))
+        except ValidationError as e:
+            raise UnparsedReply(raw, e) from e
         usage = msg.usage_metadata or {}
         return Completion(
             value=value, model_requested=model,
             model_answered=msg.response_metadata.get("model_name") or model,
             prompt_tokens=usage.get("input_tokens", 0), completion_tokens=usage.get("output_tokens", 0),
-            latency_ms=latency_ms,
+            latency_ms=latency_ms, raw=raw,
         )
 
 
@@ -233,5 +239,11 @@ class FakeLLM:
         self.calls.append(FakeCall(lane, system, user))
         if self.responder is None:
             raise LookupError(f"FakeLLM has no response scripted for a {lane} call")
-        return Completion(value=out.model_validate(self.responder(lane, system, user)), model_requested="fake",
-                          model_answered="fake", prompt_tokens=0, completion_tokens=0, latency_ms=0)
+        answer = self.responder(lane, system, user)
+        raw = json.dumps(answer, default=str)
+        try:
+            value = out.model_validate(answer)
+        except ValidationError as e:
+            raise UnparsedReply(raw, e) from e
+        return Completion(value=value, model_requested="fake", model_answered="fake", prompt_tokens=0,
+                          completion_tokens=0, latency_ms=0, raw=raw)

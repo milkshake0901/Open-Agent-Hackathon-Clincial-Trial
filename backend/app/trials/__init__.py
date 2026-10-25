@@ -6,6 +6,7 @@ Hides: Zetaris REST table vs direct HTTP, paging, rate limits, hashing, criteria
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -14,6 +15,7 @@ from typing import NewType
 
 import httpx
 
+from app import logfile
 from app.ctx import Ctx
 
 NctId = NewType("NctId", str)
@@ -241,6 +243,8 @@ CLOSED_YEARS_KEPT = 15
 # Submodules import the types above; imported here (after them) so the `criteria` function below wins the name.
 from app.trials import criteria as splitting, ctgov, repo, summary as summaries  # noqa: E402
 
+log = logging.getLogger(__name__)
+
 # For other modules' SQL that joins the trial table (one SQL text per question, ctx.py): its columns, row mapping
 # and the active filter, so no module restates them.
 trial_columns = repo.trial_columns
@@ -259,10 +263,13 @@ async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
     Trial unchanged."""
     from app.worldmodel import timeline
 
+    name = "http" if isinstance(source, LivePages) else "saved_pages"
+    logfile.step(log, "trials.ingest.started", source=name,
+                 directory=None if isinstance(source, LivePages) else str(source.directory))
     if isinstance(source, LivePages):
-        pages, name = await ctgov.fetch_pages(source, ctx.now().isoformat()), "http"
+        pages = await ctgov.fetch_pages(source, ctx.now().isoformat())
     else:
-        pages, name = ctgov.read_pages(source), "saved_pages"
+        pages = ctgov.read_pages(source)
     cutoff = _years_before(ctx.now().date(), CLOSED_YEARS_KEPT).isoformat()
     kept, dropped, to_drop = [], [], []
     for raw, fetched_at in pages:
@@ -278,9 +285,13 @@ async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
             dropped.append(NctId(raw.nct_id))
     report = await _record(ctx, kept, name)
     await timeline.drop_trials(ctx.wm, to_drop, ctx.now().isoformat())
-    return IngestReport(**vars(report), closed=tuple(NctId(raw.nct_id) for raw, _ in kept
-                                                      if raw.status in CLOSED_STATUSES),
+    done = IngestReport(**vars(report), closed=tuple(NctId(raw.nct_id) for raw, _ in kept
+                                                     if raw.status in CLOSED_STATUSES),
                         dropped=tuple(dropped))
+    logfile.step(log, "trials.ingest.finished", source=name, fetched=done.fetched, new=list(done.new),
+                 changed=list(done.changed), unchanged=len(done.unchanged), closed=list(done.closed),
+                 dropped=list(done.dropped))
+    return done
 
 
 def _years_before(day, years: int):
@@ -422,6 +433,8 @@ async def outcome_summary(ctx: Ctx, nct_id: NctId) -> OutcomeSummary | None:
     written = await llm.complete(ctx, llm.Lane.FAST, system=summaries.SYSTEM, user=summaries.prompt(t, o),
                                  out=summaries.Written, run_id=None)
     summary = OutcomeSummary(text=written.value.summary.strip(), outcomes_hash=key)
+    logfile.step(log, "trials.outcome_summary.drafted", nct_id=nct_id, outcomes_hash=key,
+                 model_answered=written.model_answered)
     await timeline.record_outcome_summary(ctx.wm, t, summary, written.model_answered, ctx.now().isoformat())
     return summary
 

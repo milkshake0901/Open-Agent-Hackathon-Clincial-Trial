@@ -99,3 +99,21 @@ async def test_the_outcomes_the_model_is_given_are_read_through_the_agent_reader
     await trials.outcome_summary(replace(ctx, agent_reader=agent), NCT)
 
     assert {"trial", "trial_outcome", "trial_outcome_value", "trial_publication"} <= agent.tables
+
+
+async def test_a_written_summary_writes_a_draft_line_to_the_log_file(ctx, fake_llm, tmp_path):
+    import json
+
+    from app import logfile
+    summarising(fake_llm)
+    await trials.ingest(ctx, save_pages(tmp_path / "pages", [completed()]))
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        await trials.outcome_summary(ctx, NCT)
+        await trials.outcome_summary(ctx, NCT)   # cached: no second draft
+    finally:
+        logfile.reset()
+
+    drafts = [s for s in map(json.loads, path.read_text().splitlines()) if s["step"] == "trials.outcome_summary.drafted"]
+    assert len(drafts) == 1 and drafts[0]["nct_id"] == NCT and drafts[0]["model_answered"] == "fake"

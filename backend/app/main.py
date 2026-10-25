@@ -8,7 +8,7 @@ import asyncpg
 import httpx
 from fastapi import FastAPI
 
-from app import trials
+from app import logfile, trials
 from app.api import EXCEPTION_HANDLERS, router
 from app.config import Settings
 from app.ctx import Ctx
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
         yield
         return
     settings = Settings()
+    logfile.configure(settings.log_file, max_bytes=settings.log_max_bytes, backups=settings.log_backups)
     pool = await asyncpg.create_pool(settings.pg_dsn, min_size=1, max_size=8)
     writer = PgWriter(pool)
     reader = PgReader(pool)

@@ -18,6 +18,8 @@ from typing import Any, Mapping, Protocol, Sequence
 
 import httpx
 
+from app import logfile
+
 Row = dict[str, Any]
 
 
@@ -65,7 +67,18 @@ class ZetarisReader:
 
     async def fetch(self, sql: str, params: Sequence[Any] = ()) -> list[Row]:
         text = _PARAM.sub(lambda m: _literal(params[int(m.group(1)) - 1]), sql) if params else sql
-        log.info("zetaris sql: %s", text)
+        started = time.monotonic()
+        try:
+            rows = await self._run(text)
+        except ZetarisError as e:
+            logfile.step(log, "zetaris.sql", sql=text, rows=None, error=str(e),
+                         duration_ms=int((time.monotonic() - started) * 1000))
+            raise
+        logfile.step(log, "zetaris.sql", sql=text, rows=len(rows), error=None,
+                     duration_ms=int((time.monotonic() - started) * 1000))
+        return rows
+
+    async def _run(self, text: str) -> list[Row]:
         try:
             resp = await self._http.post(self._url, headers={**self._headers, "X-Request-ID": str(uuid.uuid4())},
                                          json={"queryId": str(uuid.uuid4()), "sql": text, "source": "SqlEditor",
