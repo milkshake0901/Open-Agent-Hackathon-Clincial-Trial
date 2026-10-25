@@ -5,10 +5,14 @@ Hides: Zetaris REST table vs direct HTTP, paging, rate limits, hashing, criteria
 """
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import NewType
+
+import httpx
 
 from app.ctx import Ctx
 
@@ -92,9 +96,26 @@ class SavedPages:
     directory: Path
 
 
+@dataclass(frozen=True)
+class LivePages:
+    """An ingest source: the live ClinicalTrials.gov v2 API, `GET /api/v2/studies` filtered to Australia and paged
+    by pageToken. Requests are spaced to stay under `requests_per_minute` (the API allows about 50) and a transient
+    failure (timeout, connection error, 429, 5xx) is retried up to `retries` times. `transport` and `sleep` are
+    for tests: recorded pages, and pacing that is observed rather than waited for."""
+    base_url: str = "https://clinicaltrials.gov/api/v2"
+    page_size: int = 1000
+    requests_per_minute: int = 40
+    retries: int = 4
+    timeout_s: float = 60.0
+    transport: httpx.AsyncBaseTransport | None = None
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+
+
 __all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "page_url", "active_trials",
-           "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind", "SavedPages",
+           "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
+           "SavedPages", "LivePages",
            "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES", "trial_columns", "trial_from_row", "active_filter"]
+
 
 def page_url(nct_id: str) -> str:
     """The Trial's page on ClinicalTrials.gov."""
@@ -143,14 +164,18 @@ async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30)
     raise NotImplementedError
 
 
-async def ingest(ctx: Ctx, source: SavedPages) -> SyncReport:
+async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> SyncReport:
     """Record every study the source holds that has an Australian Trial site (ADR 0004), keeping only its
     Australian sites and never a withdrawn study. Stores eligibility text and its hash only: no model call, and
     Criteria are split the first time they are asked for (`criteria`). Idempotent on NCT id and content: a second
     run over the same pages records nothing and reports every Trial unchanged."""
-    studies = [(ctgov.in_australia(raw), fetched_at) for raw, fetched_at in ctgov.read_pages(source)]
+    if isinstance(source, LivePages):
+        pages, name = await ctgov.fetch_pages(source, ctx.now().isoformat()), "http"
+    else:
+        pages, name = ctgov.read_pages(source), "saved_pages"
+    studies = [(ctgov.in_australia(raw), fetched_at) for raw, fetched_at in pages]
     return await _record(ctx, [(raw, fetched_at) for raw, fetched_at in studies
-                               if raw.sites and raw.status != WITHDRAWN], "saved_pages")
+                               if raw.sites and raw.status != WITHDRAWN], name)
 
 
 async def load_snapshot(ctx: Ctx, directory) -> SyncReport:

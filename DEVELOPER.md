@@ -162,6 +162,18 @@ What good looks like:
 - `illustrate` prints `stored data/media/<job>/<seq>-<file>.png` (gitignored). On a runtime without a media engine it prints `Images unavailable: <reason>` and exits 2. The Nightshift web build has no media engine, so seat an image lane (still-sdcpp and weights) first.
 - Media source jobs use `MEDIA_PRIVACY` (default `local-only`). That floor is never widened, so on a box whose only local lane is the in-browser device model, a `local-only` job waits until the Nightshift page is open.
 
+## Ingest Australian trials
+
+Postgres must be up (`docker compose up -d`). From the repo root:
+
+```bash
+backend/.venv/bin/python scripts/ingest_trials.py --live          # page the live ClinicalTrials.gov v2 API, Australia only
+backend/.venv/bin/python scripts/ingest_trials.py --pages <dir>   # or: saved GET /api/v2/studies pages, one per file
+backend/.venv/bin/pytest tests/trials                             # run from backend/: recorded pages, no network
+```
+
+`--live` requests `GET /api/v2/studies?query.locn=Australia&pageSize=1000` and follows `nextPageToken` to the last page (about 13 pages for 12,600 studies), spacing requests to 40 a minute under the API's limit of about 50 and retrying timeouts, 429s and 5xx with back-off. It keeps only studies with an Australian Trial site and drops withdrawn ones (ADR 0004). It prints `N Trials from http: … new, … changed, … unchanged`; a second run reports everything unchanged. If a page still fails after the retries, the run stops and records nothing, so just run it again. It makes no model call and starts no Re-scan.
+
 ## Where to start
 
 1. `backend/app/worldmodel/` until `tests/worldmodel/test_conformance.py` passes 8/8. Everything else writes through it.

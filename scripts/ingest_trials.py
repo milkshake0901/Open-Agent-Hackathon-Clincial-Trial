@@ -1,5 +1,6 @@
 """Run the Australia-wide ClinicalTrials.gov ingest (ADR 0004) into the Trial cache. Reads the repo's .env.
 
+    backend/.venv/bin/python scripts/ingest_trials.py --live          # page the live v2 API, Australia only
     backend/.venv/bin/python scripts/ingest_trials.py --pages <dir>   # saved GET /api/v2/studies pages, one per file
 
 Safe to re-run: unchanged studies record nothing. Makes no model call and starts no Re-scan.
@@ -39,7 +40,8 @@ async def main(args: argparse.Namespace) -> int:
     ctx = Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm, wm=wm, settings=s,
               now=lambda: datetime.now(timezone.utc))
     try:
-        report = await trials.ingest(ctx, trials.SavedPages(Path(args.pages)))
+        source = trials.LivePages() if args.live else trials.SavedPages(Path(args.pages))
+        report = await trials.ingest(ctx, source)
     finally:
         await llm.aclose()
         await pool.close()
@@ -50,5 +52,7 @@ async def main(args: argparse.Namespace) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--pages", required=True, help="directory of saved ClinicalTrials.gov v2 study pages")
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--live", action="store_true", help="page the live ClinicalTrials.gov v2 API (~40 req/min)")
+    which.add_argument("--pages", help="directory of saved ClinicalTrials.gov v2 study pages")
     sys.exit(asyncio.run(main(parser.parse_args())))
