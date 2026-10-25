@@ -185,6 +185,17 @@ backend/.venv/bin/pytest tests/trials                             # run from bac
 
 `--live` requests `GET /api/v2/studies?query.locn=Australia&pageSize=1000` and follows `nextPageToken` to the last page (about 13 pages for 12,600 studies), spacing requests to 40 a minute under the API's limit of about 50 and retrying timeouts, 429s and 5xx with back-off. It keeps only studies with an Australian Trial site and drops withdrawn ones (ADR 0004). It prints `N Trials from http: … new, … changed, … unchanged`; a second run reports everything unchanged. If a page still fails after the retries, the run stops and records nothing, so just run it again. It makes no model call and starts no Re-scan.
 
+## Agents read through Zetaris
+
+With `ZETARIS_API_KEY` set, the app's agent reader is `ZetarisReader` (ADR 0001): agent queries go to `{ZETARIS_REST_URL}/sql-editor/sqls/run` against our Postgres registered as datasource `trialmatch`, and each SQL is logged under `app.zetaris`. Without the key the app warns and agents read Postgres directly.
+
+After any migration that adds a table or column, refresh Zetaris's copy of the schema, or agent queries fail with `UNRESOLVED_COLUMN` or `TABLE_OR_VIEW_NOT_FOUND`:
+
+```bash
+python3 .scratch/ctgov-discovery/ref/run_sql.py --env-file .env -e "REGISTER DATASOURCE TABLES FROM trialmatch"
+backend/.venv/bin/pytest tests/sql                          # run from backend/: the live test compares both readers
+```
+
 ## Where to start
 
 1. `backend/app/worldmodel/` until `tests/worldmodel/test_conformance.py` passes 8/8. Everything else writes through it.
