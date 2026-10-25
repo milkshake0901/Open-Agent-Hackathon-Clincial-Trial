@@ -35,6 +35,7 @@ from app.record.types import (
     Fact,
     FactId,
     IngestOutcome,
+    Page,
     PatientId,
     ProfileVersion,
     ProfileVersionId,
@@ -55,7 +56,7 @@ __all__ = [
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
     "document", "Registered", "UnreadableDocument", "issue_return_link", "patient_for_return_link",
     "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
-    "check_diagnosis", "answer_diagnosis_check", "diagnosis", "DiagnosisCheck", "DiagnosisAnswer",
+    "deidentify_text", "check_diagnosis", "answer_diagnosis_check", "diagnosis", "DiagnosisCheck", "DiagnosisAnswer",
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
@@ -222,6 +223,13 @@ async def diagnosis(ctx: Ctx, patient_id: PatientId) -> DiagnosisCheck | None:
     """The check that holds for the patient: the latest one settled as confirmed (its `condition` drives Trial
     selection), not sure or unclear (`needs_gp`). None while nothing is settled, so every active Trial is judged."""
     return await repo.settled_diagnosis_check(ctx.ui_reader, patient_id)
+
+
+def deidentify_text(text: str) -> str:
+    """One piece of text with names, addresses, record numbers and contact details replaced by placeholders, by the
+    same rules a Document's pages go through (De-identification); for text built outside a Document, such as an
+    Enquiry's clinical details, before a model sees it."""
+    return deidentify((Page(number=1, text=text),))[0].text
 
 
 def questionnaire_definition() -> Questionnaire:

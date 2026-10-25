@@ -16,9 +16,14 @@ from app.record import ProfileVersionId
 from app.trials import NctId
 from app.trace import RunId
 
-__all__ = ["rescan", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
+__all__ = ["rescan", "km", "CLOSED_SITE", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
            "respondent_questions_for_version", "Verdict", "DoctorQuestion", "RespondentQuestion", "RescanReport",
            "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation", "TrialSiteDistance"]
+
+# Distance from a coarse location point to a Trial site, and the site statuses that will never take a patient; for
+# other modules that rank Trial sites the way matching does (an Enquiry's nearest site contact).
+km = distance.km
+CLOSED_SITE = distance.CLOSED_SITE
 
 DIAGNOSIS_QUESTION = "diagnosis"   # the questionnaire question (Q6) a Diagnosis check reads
 _RANK = {VerdictOutcome.ELIGIBLE: 0, VerdictOutcome.POSSIBLE: 1, VerdictOutcome.EXCLUDED: 2}
