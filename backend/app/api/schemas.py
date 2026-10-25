@@ -337,7 +337,7 @@ class ClinicalDetailOut(BaseModel):
 class RecipientOut(BaseModel):
     name: str
     email: str
-    kind: Literal["site", "central"]
+    kind: Literal["site", "central", "responsible_party", "official"]
     facility: str | None
 
 

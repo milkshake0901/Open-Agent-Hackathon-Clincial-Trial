@@ -68,7 +68,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   ├── __init__.py       public API: draft (nothing stored, nothing sent)
 │   │   │   ├── details.py        the de-identified clinical details offered, each untickable
 │   │   │   ├── recipient.py      nearest Australian site contact, else central contact, else blank
-│   │   │   └── templates.py      one prompt per kind of Trial (Open now; Closed with #29)
+│   │   │   └── templates.py      one prompt per kind of Trial: Open and Closed
 │   │   │
 │   │   ├── worldmodel/           METERLESS WORLD MODEL (our Python implementation)
 │   │   │   ├── __init__.py       public API: WorldModel, Provenance, timeline, ...
