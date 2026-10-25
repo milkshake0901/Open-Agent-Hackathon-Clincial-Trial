@@ -122,6 +122,18 @@ export type TrialDetail = {
   sites: { facility: string; city: string; status: string; contacts: ContactOut[] }[]; // Australian sites only
 };
 
+// An Enquiry (#28): an email body the Respondent edits, copies and sends themselves. Never stored or sent.
+export type ClinicalDetailOut = { id: string; label: string; text: string; included: boolean };
+export type EnquiryOut = {
+  nct_id: string;
+  template: "open" | "closed";
+  subject: string;
+  body: string; // name and contact are placeholders the Respondent fills in
+  recipient: { name: string; email: string; kind: "site" | "central"; facility: string | null } | null; // null: no email listed
+  sponsor: string;
+  details: ClinicalDetailOut[];
+};
+
 export type ReturnOpened = {
   patient_id: string;
   profile_version_id: string | null;
@@ -242,6 +254,12 @@ export const api = {
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
     ),
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
+  enquiry: (patientId: string, versionId: string, nctId: string, include?: string[]) =>
+    call<EnquiryOut>(
+      `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}` +
+        `/trials/${encodeURIComponent(nctId)}/enquiry`,
+      { method: "POST", body: JSON.stringify(include ? { include } : {}) },
+    ),
   checkDiagnosis: (patientId: string, text?: string) =>
     call<DiagnosisCheck>(`/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check`, {
       method: "POST",

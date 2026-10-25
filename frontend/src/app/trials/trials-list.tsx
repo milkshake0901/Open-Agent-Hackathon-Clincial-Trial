@@ -3,7 +3,7 @@
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
 // first, excluded; then nearest recruiting site). Trials with no recruiting site within the travel limit sit in a
 // collapsed "Further away" group under their outcome, never hidden. Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
-// questionnaire links back to that question. Questions for you (Respondent questions, answered inline) and
+// questionnaire links back to that question. Each Trial offers its contacts and an Enquiry to copy and send. Questions for you (Respondent questions, answered inline) and
 // Questions for your doctor are kept as two separate lists.
 
 import { useEffect, useState } from "react";
@@ -11,6 +11,7 @@ import {
   api, type CriterionResultOut, type DoctorQuestion, type RespondentQuestion, type SiteOut, type VerdictOut,
 } from "@/lib/api";
 import { QuestionsForYou } from "./questions-for-you";
+import { Enquiry } from "./enquiry";
 import { TrialContacts } from "./trial-contacts";
 
 type State =
@@ -57,7 +58,7 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
           <section key={g.outcome} aria-labelledby={`group-${g.outcome}`} className="flex flex-col gap-3">
             <h2 id={`group-${g.outcome}`} className="text-lg font-semibold">{g.title}</h2>
             <p className="text-muted">{g.blurb}</p>
-            {near.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
+            {near.map((v) => <VerdictCard key={v.nct_id} verdict={v} patientId={patientId} versionId={versionId} />)}
             {far.length > 0 && (
               <details className="flex flex-col gap-3">
                 <summary className="cursor-pointer min-h-11 flex items-center text-accent">
@@ -65,7 +66,7 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
                 </summary>
                 <p className="text-muted">No site is recruiting within the distance you said you would travel.</p>
                 <div className="flex flex-col gap-3 mt-2">
-                  {far.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
+                  {far.map((v) => <VerdictCard key={v.nct_id} verdict={v} patientId={patientId} versionId={versionId} />)}
                 </div>
               </details>
             )}
@@ -95,7 +96,7 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
   );
 }
 
-function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
+function VerdictCard({ verdict: v, patientId, versionId }: { verdict: VerdictOut; patientId: string; versionId: string }) {
   const unknown = v.results.filter((r) => r.outcome === "unknown").length;
   return (
     <article className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
@@ -120,6 +121,7 @@ function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
         </ul>
       </details>
       <TrialContacts nctId={v.nct_id} />
+      <Enquiry patientId={patientId} versionId={versionId} nctId={v.nct_id} />
     </article>
   );
 }
