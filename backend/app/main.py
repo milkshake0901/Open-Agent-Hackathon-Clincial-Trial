@@ -35,7 +35,8 @@ async def lifespan(app: FastAPI):
     # Until ZetarisReader lands, agents read Postgres directly.
     app.state.ctx = Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm, wm=wm,
                         settings=settings, now=lambda: datetime.now(timezone.utc))
-    # Trials come from the saved snapshot until live sync (Zetaris) lands; idempotent across restarts.
+    # Trials come from the saved snapshot until the Australia-wide ingest (scripts/ingest_trials.py) has run; idempotent
+    # across restarts.
     await trials.load_snapshot(app.state.ctx, settings.trials_snapshot_dir)
     try:
         yield

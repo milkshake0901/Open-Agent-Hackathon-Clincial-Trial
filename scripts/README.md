@@ -6,6 +6,4 @@
 
 To be written:
 
-
 - `seed_demo.py` registers the demo patient and uploads `data/demo/` Documents in story order.
-- `sync_trials.py` calls `trials.sync`; schedule it daily with cron or launchd.

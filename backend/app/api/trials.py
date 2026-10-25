@@ -23,12 +23,6 @@ async def closed_trials(pid: str, ctx: Ctx = Depends(get_ctx)):
         url=f"https://clinicaltrials.gov/study/{t.nct_id}") for t in found])
 
 
-@router.post("/trials/sync")
-async def sync(body: dict):
-    """trials.sync(condition, location); if Trials changed and a current version exists, start a narrowed Re-scan."""
-    raise NotImplementedError
-
-
 @router.get("/trials")
 async def list_trials(): raise NotImplementedError
 

@@ -35,7 +35,7 @@ async def rescan(ctx: Ctx, version_id: ProfileVersionId, *, only: set[NctId] | N
 
     Idempotent and cheap: the plan is a set difference computed in SQL; Trials already judged
     for this version with the current eligibility hash are skipped without a model call.
-    `only` narrows to Trials that trials.sync reported changed. Runs Trials with bounded
+    `only` narrows to the given Trials (e.g. those an ingest reported new or changed). Runs Trials with bounded
     concurrency; each Verdict commits in its own transaction, so a crash loses at most the
     in-flight Trials and the next rescan finishes the rest.
     The rescan run is traced under `correlation_id` (the ingest run that committed the version), if given.

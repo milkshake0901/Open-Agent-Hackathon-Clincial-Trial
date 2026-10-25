@@ -15,7 +15,7 @@ match outcome:
     case record.AwaitingPatient(conflicts=cs): ...          # UI asks the patient; record.confirm(...)
     case record.Rejected(reason=r): ...
 
-await trials.sync(ctx, condition="non-small cell lung cancer", location="Sydney")
+await trials.ingest(ctx, trials.LivePages())   # every Australian study (ADR 0004); no model call, no Re-scan
 change = await matching.change_between(ctx, "NCT0123", v3, v4)   # why did the Verdict move?
 log = await trace.read(ctx.ui_reader, run_id)                     # how the system reasoned
 ```

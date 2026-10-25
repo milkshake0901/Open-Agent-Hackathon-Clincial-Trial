@@ -421,4 +421,4 @@ class VersionDiffOut(BaseModel):
     verdicts_changed: list[VerdictChangeOut] = []   # Trials whose outcome or any Criterion result moved
 
 
-# TODO: SyncReportOut, RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.
+# TODO: RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.

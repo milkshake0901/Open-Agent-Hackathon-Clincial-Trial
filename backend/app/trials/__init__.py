@@ -196,7 +196,7 @@ class LivePages:
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
 
-__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
+__all__ = ["ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
            "active_trials", "closed_trials", "outcome_summary",
            "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
            "OutcomeMeasure", "Outcomes", "OutcomeSummary", "PostedResult", "ResultValue", "Publication",
@@ -235,7 +235,7 @@ def studies_condition(trial: Trial, condition_term: str) -> bool:
     """Does the Trial list this condition (#14: a confirmed diagnosis term selects which snapshot Trials are judged)?
     Word-set containment either way against each listed condition, ignoring case, punctuation and filler words:
     "lung cancer" and "non-small cell lung cancer stage iv" both match "Non-Small Cell Lung Cancer"; "breast cancer"
-    does not. No MeSH or synonym expansion yet (a live condition search is trials.sync)."""
+    does not. No MeSH or synonym expansion yet."""
     want = _words(condition_term)
     return bool(want) and any(want <= have or have <= want for have in map(_words, trial.conditions) if have)
 
@@ -248,15 +248,6 @@ from app.trials import criteria as splitting, ctgov, repo, summary as summaries 
 trial_columns = repo.trial_columns
 trial_from_row = repo.to_trial
 active_filter = repo.active_filter
-
-
-async def sync(ctx: Ctx, condition: str, location: str, *, max_trials: int = 30) -> SyncReport:
-    """Fetch from ClinicalTrials.gov (Zetaris REST table first, HTTP fallback), upsert trials, split Criteria
-    only for new/changed hashes. Idempotent: same upstream text → unchanged, no model calls.
-    # TODO: ctgov.fetch(...) → for each: hash; compare with repo.trial(); if new/changed: criteria.split (deterministic,
-    #       LLM fast lane only if <2 items) → timeline.record_trials(ctx.wm, ...) (World Model ingest keyed by NCT; changed_ids = new or edited Trials)
-    """
-    raise NotImplementedError
 
 
 async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
@@ -303,7 +294,7 @@ def _years_before(day, years: int):
 
 async def load_snapshot(ctx: Ctx, directory) -> SyncReport:
     """Record the Trials saved under `directory` (ClinicalTrials.gov v2 study JSON, one file per Trial; the
-    repo keeps data/trials_snapshot/) in place of a live sync. Like `ingest`, Criteria are split lazily.
+    repo keeps data/trials_snapshot/) in place of the Australia-wide `ingest`. Like `ingest`, Criteria are split lazily.
     Idempotent: loading the same files again records nothing and reports every Trial unchanged."""
     return await _record(ctx, ctgov.read_snapshot(directory), "snapshot")
 
