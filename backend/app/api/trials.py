@@ -20,7 +20,7 @@ async def closed_trials(pid: str, ctx: Ctx = Depends(get_ctx)):
     found = await trials.closed_trials(ctx, term) if term else []
     return ClosedTrialListOut(condition_term=term, trials=[ClosedTrialOut(
         nct_id=t.nct_id, title=t.title, status=t.status, conditions=list(t.conditions), closed_on=t.closed_on,
-        url=f"https://clinicaltrials.gov/study/{t.nct_id}") for t in found])
+        url=trials.page_url(t.nct_id)) for t in found])
 
 
 @router.get("/trials")

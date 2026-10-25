@@ -2,6 +2,10 @@
 The prompt holds only what the registry published about the Trial: no patient data reaches this model call."""
 from __future__ import annotations
 
+import hashlib
+import json
+from dataclasses import asdict
+
 from pydantic import BaseModel
 
 from app.trials import Outcomes, Trial
@@ -13,9 +17,6 @@ class Written(BaseModel):
 
 def outcomes_hash(o: Outcomes) -> str:
     """sha256 of the Outcomes' canonical JSON: any change to a measure, result value or publication changes it."""
-    import hashlib
-    import json
-    from dataclasses import asdict
     return hashlib.sha256(json.dumps(asdict(o), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 

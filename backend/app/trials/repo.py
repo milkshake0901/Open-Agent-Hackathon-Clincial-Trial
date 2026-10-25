@@ -1,4 +1,4 @@
-"""app/trials/repo.py — SQL for trial and criterion. Reads only."""
+"""app/trials/repo.py — SQL reads for trial, criterion, trial_site, trial_contact, Outcomes and outcome_summary."""
 from __future__ import annotations
 
 from app.sql.reader import SqlReader
@@ -122,4 +122,6 @@ async def outcome_summary(reader: SqlReader, nct_id: NctId, outcomes_hash: str) 
     return OutcomeSummary(text=rows[0]["summary"], outcomes_hash=outcomes_hash) if rows else None
 
 
-# Trials, Criteria, Sites, contacts, Outcomes and Outcome summaries are NOT written here: app.worldmodel.timeline.record_trials (World Model ingest → projector).
+# Nothing is written here. Trials (with their Sites, contacts and Outcomes) are written by
+# app.worldmodel.timeline.record_trials and drop_trials, lazily split Criteria by record_criteria, and Outcome summaries
+# by record_outcome_summary (World Model ingest → projector).

@@ -303,14 +303,14 @@ async def _record(ctx: Ctx, studies: list[tuple[ctgov.RawStudy, str]], source: s
     from app.worldmodel import timeline
 
     before = {s.nct_id: await repo.trial(ctx.ui_reader, NctId(s.nct_id)) for s, _ in studies}
-    loaded = [(ctgov.to_trial(raw, source, fetched_at), (), raw.sites, raw.contacts, raw.outcomes)
-              for raw, fetched_at in studies]
+    loaded = [timeline.LoadedTrial(trial=ctgov.to_trial(raw, source, fetched_at), sites=raw.sites,
+                                   contacts=raw.contacts, outcomes=raw.outcomes) for raw, fetched_at in studies]
     report = await timeline.record_trials(ctx.wm, loaded, None)
     changed = {i.split(":", 1)[1] for i in report.changed_ids}
-    return SyncReport(fetched=len(loaded),
-                      new=tuple(t.nct_id for t, *_ in loaded if before[t.nct_id] is None),
-                      changed=tuple(t.nct_id for t, *_ in loaded if before[t.nct_id] is not None and t.nct_id in changed),
-                      unchanged=tuple(t.nct_id for t, *_ in loaded if t.nct_id not in changed), source=source)
+    ids = [one.trial.nct_id for one in loaded]
+    return SyncReport(fetched=len(loaded), new=tuple(n for n in ids if before[n] is None),
+                      changed=tuple(n for n in ids if before[n] is not None and n in changed),
+                      unchanged=tuple(n for n in ids if n not in changed), source=source)
 
 
 async def trial(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> Trial | None:
