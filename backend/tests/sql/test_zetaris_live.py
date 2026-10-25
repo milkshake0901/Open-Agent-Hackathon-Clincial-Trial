@@ -69,6 +69,19 @@ async def test_the_open_trial_list_reads_the_same_through_zetaris(readers):
     assert via_zetaris == via_pg
 
 
+async def test_condition_labels_and_the_trials_they_select_read_the_same_through_zetaris(readers):
+    """Needs trial_condition (db/migrations/0007_trial_condition.sql) registered in Zetaris."""
+    pg, _ = readers
+    a, b = await both(readers, trials_repo.condition_spellings)
+    assert sorted(b) == sorted(a) and a
+    a, b = await both(readers, trials_repo.condition_spellings, ["cancer", "non small cell"])
+    assert sorted(b) == sorted(a)
+    keys = await sample(pg, "SELECT label_key FROM trial_condition GROUP BY label_key ORDER BY count(*) DESC LIMIT 3")
+    for fn in (trials_repo.listing_any, trials_repo.closed_trials_listing):
+        a, b = await both(readers, fn, keys)
+        assert b == a and a, fn.__name__
+
+
 async def test_profile_versions_and_verdicts_read_the_same_through_zetaris(readers):
     pg, _ = readers
     versions = await sample(pg, "SELECT id FROM profile_version ORDER BY id")

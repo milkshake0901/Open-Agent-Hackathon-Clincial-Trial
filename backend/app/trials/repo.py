@@ -1,4 +1,5 @@
-"""app/trials/repo.py — SQL reads for trial, criterion, trial_site, trial_contact, Outcomes and outcome_summary."""
+"""app/trials/repo.py — SQL reads for trial, trial_condition, criterion, trial_site, trial_contact, Outcomes and
+outcome_summary."""
 from __future__ import annotations
 
 from app.sql.reader import SqlReader
@@ -51,18 +52,46 @@ async def active_trials(reader: SqlReader) -> list[Trial]:
     return [to_trial(r) for r in rows]
 
 
-async def closed_trials(reader: SqlReader) -> list[Trial]:
-    statuses = ", ".join(repr(s) for s in CLOSED_STATUSES)
-    rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} "
-                              f"WHERE status IN ({statuses}) AND NOT dropped ORDER BY nct_id")
+def _keys(n: int, start: int = 1) -> str:
+    return ", ".join(f"${i}" for i in range(start, start + n))
+
+
+def _statuses(statuses: tuple[str, ...]) -> str:
+    return ", ".join(repr(s) for s in statuses)
+
+
+async def closed_trials_listing(reader: SqlReader, label_keys: list[str]) -> list[Trial]:
+    """The stored, non-dropped Closed trials listing a label with one of these keys (trial_condition), by NCT id."""
+    rows = await reader.fetch(
+        f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE status IN ({_statuses(CLOSED_STATUSES)}) "
+        f"AND NOT dropped AND nct_id IN (SELECT nct_id FROM {reader.table('trial_condition')} "
+        f"WHERE label_key IN ({_keys(len(label_keys))})) ORDER BY nct_id", label_keys)
     return [to_trial(r) for r in rows]
 
 
-async def conditions(reader: SqlReader) -> list[tuple[str, tuple[str, ...]]]:
-    """(status, conditions) of every stored, non-dropped Trial. The array is read whole and unnested by the caller:
-    Spark SQL behind Zetaris has no UNNEST."""
-    rows = await reader.fetch(f"SELECT status, conditions FROM {reader.table('trial')} WHERE NOT dropped ORDER BY nct_id")
-    return [(r["status"], tuple(r["conditions"] or ())) for r in rows]
+async def listing_any(reader: SqlReader, label_keys: list[str]) -> list[tuple[NctId, str]]:
+    """(nct_id, status) of every stored, non-dropped Trial listing a label with one of these keys, by NCT id."""
+    rows = await reader.fetch(
+        f"SELECT DISTINCT t.nct_id, t.status FROM {reader.table('trial')} t "
+        f"JOIN {reader.table('trial_condition')} c ON c.nct_id = t.nct_id "
+        f"WHERE NOT t.dropped AND c.label_key IN ({_keys(len(label_keys))}) ORDER BY t.nct_id", label_keys)
+    return [(NctId(r["nct_id"]), r["status"]) for r in rows]
+
+
+async def condition_spellings(reader: SqlReader, words: list[str] | None = None) -> list[tuple[str, str, int, int]]:
+    """(label_key, label, open, closed): how many stored, non-dropped Open and Closed trials list each spelling of a
+    Condition label. With `words` (label_words of search phrases), only labels whose words contain one of them as
+    whole, adjacent words. The sums are aliases, which Zetaris returns as strings."""
+    found = (" AND (" + " OR ".join(f"' ' || c.words || ' ' LIKE ${i}" for i in range(1, len(words) + 1)) + ")"
+             if words else "")
+    rows = await reader.fetch(
+        f"SELECT c.label_key, c.label, "
+        f"sum(CASE WHEN t.status IN ({_statuses(ACTIVE_STATUSES)}) THEN 1 ELSE 0 END) AS open_trials, "
+        f"sum(CASE WHEN t.status IN ({_statuses(CLOSED_STATUSES)}) THEN 1 ELSE 0 END) AS closed_trials "
+        f"FROM {reader.table('trial_condition')} c JOIN {reader.table('trial')} t ON t.nct_id = c.nct_id "
+        f"WHERE NOT t.dropped AND t.status IN ({_statuses(ACTIVE_STATUSES + CLOSED_STATUSES)}){found} "
+        "GROUP BY c.label_key, c.label", [f"% {w} %" for w in words or ()])
+    return [(r["label_key"], r["label"], int(r["open_trials"]), int(r["closed_trials"])) for r in rows]
 
 
 async def criteria(reader: SqlReader, nct_id: NctId, eligibility_hash: str) -> tuple[Criterion, ...]:
@@ -134,6 +163,6 @@ async def outcome_summary(reader: SqlReader, nct_id: NctId, outcomes_hash: str) 
     return OutcomeSummary(text=rows[0]["summary"], outcomes_hash=outcomes_hash) if rows else None
 
 
-# Nothing is written here. Trials (with their Sites, contacts and Outcomes) are written by
+# Nothing is written here. Trials (with their Condition labels, Sites, contacts and Outcomes) are written by
 # app.worldmodel.timeline.record_trials and drop_trials, lazily split Criteria by record_criteria, and Outcome summaries
 # by record_outcome_summary (World Model ingest → projector).

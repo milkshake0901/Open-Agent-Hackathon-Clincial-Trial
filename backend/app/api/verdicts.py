@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import matching, record, trials
-from app.api.deps import condition_term, get_ctx, patient_version
+from app.api.deps import get_ctx, patient_version
 from app.api.schemas import DoctorQuestionOut, RescanOut, RespondentQuestionOut, VerdictChangeOut, VerdictListOut, VerdictOut
 from app.ctx import Ctx
 
@@ -38,7 +38,7 @@ def change_out(ch: matching.VerdictChange) -> VerdictChangeOut:
 
 async def verdicts_changed(ctx: Ctx, from_version: str, to_version: str) -> list[VerdictChangeOut]:
     out = []
-    for v in await matching.verdicts_for_version(ctx, record.ProfileVersionId(to_version)):
+    for v in (await matching.verdicts_for_version(ctx, record.ProfileVersionId(to_version))).verdicts:
         ch = await matching.change_between(ctx, v.nct_id, record.ProfileVersionId(from_version), v.profile_version_id)
         if ch.outcome_from != ch.outcome_to or ch.criteria_changed:
             out.append(change_out(ch))
@@ -83,9 +83,9 @@ async def list_verdicts(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
     """Ranked: eligible, then possible (fewest unknowns first), then excluded. Only Trials the patient's Condition term
     selects; with none (the diagnosis step unfinished) `condition_term` is None and nothing is listed."""
     await patient_version(ctx, pid, vid)
-    verdicts = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
-    return VerdictListOut(profile_version_id=vid, condition_term=await condition_term(ctx, pid),
-                          verdicts=[await _verdict_out(ctx, v) for v in verdicts])
+    listed = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
+    return VerdictListOut(profile_version_id=vid, condition_term=listed.condition_term,
+                          verdicts=[await _verdict_out(ctx, v) for v in listed.verdicts])
 
 
 @router.get("/patients/{pid}/versions/{vid}/verdicts/{nct}", response_model=VerdictOut)

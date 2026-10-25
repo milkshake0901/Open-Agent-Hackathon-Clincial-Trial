@@ -244,7 +244,7 @@ async def test_a_stored_trial_later_found_withdrawn_or_without_an_australian_sit
     assert await trials.trial(ctx, trials.NctId("NCT00000051")) is None
     assert await trials.sites(ctx, trials.NctId("NCT00000052")) == ()
     assert await trials.active_trials(ctx) == []
-    assert await matching.verdicts_for_version(ctx, v1) == []
+    assert (await matching.verdicts_for_version(ctx, v1)).verdicts == ()
     kept = await matching.verdict(ctx, trials.NctId("NCT00000051"), v1)
     assert (kept.outcome, kept.results, kept.eligibility_hash) == (judged.outcome, judged.results,
                                                                    judged.eligibility_hash)

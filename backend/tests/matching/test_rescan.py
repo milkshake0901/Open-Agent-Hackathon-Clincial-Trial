@@ -124,7 +124,7 @@ async def test_a_rescan_is_idempotent_the_second_run_judges_nothing_and_calls_no
 
     assert again.judged == () and again.planned == () and again.skipped_existing == (NCT,)
     assert len(fake.calls) == calls
-    assert len(await matching.verdicts_for_version(ctx, version.id)) == 1
+    assert len((await matching.verdicts_for_version(ctx, version.id)).verdicts) == 1
 
 
 async def test_unknown_results_become_doctor_questions_naming_the_trials_they_would_unblock(clean_db):
@@ -189,7 +189,7 @@ async def test_verdicts_are_ranked_eligible_then_possible_by_fewest_unknowns_the
     report = await matching.rescan(ctx, version.id)
 
     assert "NCT00000004" not in report.planned
-    ranked = await matching.verdicts_for_version(ctx, version.id)
+    ranked = (await matching.verdicts_for_version(ctx, version.id)).verdicts
     assert [(v.nct_id, v.outcome) for v in ranked] == [
         ("NCT00000002", "eligible"), ("NCT00000003", "possible"), (NCT, "possible"), ("NCT00000001", "excluded")]
 

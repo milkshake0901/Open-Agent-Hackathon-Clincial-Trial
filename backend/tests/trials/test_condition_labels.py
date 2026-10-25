@@ -1,5 +1,5 @@
 """The trials facade's Condition labels (#32, ADR 0005): every label stored Trials use with Open and Closed counts, a
-search by phrases, and the Open and Closed trials listing any of a set of labels. Fed saved pages (test_ingest)."""
+search by phrases, and the Selection of Open and Closed trials listing any of a set of labels. Fed saved pages (test_ingest)."""
 from __future__ import annotations
 
 from app import trials
@@ -49,12 +49,22 @@ ACL = ["Anterior Cruciate Ligament Rupture", "anterior  cruciate ligament INJURY
 async def test_the_open_and_closed_trials_listing_any_label_are_selected_ignoring_case_and_spacing(ctx, tmp_path):
     await trials.ingest(ctx, save_pages(tmp_path, ACL_PAGES))
 
-    assert [t.nct_id for t in await trials.open_trials_with_labels(ctx, ACL)] == ["NCT00000101", "NCT00000102"]
+    assert await trials.selection(ctx, tuple(ACL)) == trials.Selection(
+        open=frozenset({"NCT00000101", "NCT00000102"}), closed=frozenset({"NCT00000103", "NCT00000104"}))
     assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, ACL)] == ["NCT00000103", "NCT00000104"]
-    assert [t.nct_id for t in await trials.open_trials_with_labels(ctx, ["knee osteoarthritis"])] == ["NCT00000102"]
+    assert await trials.selection(ctx, ("knee osteoarthritis",)) == trials.Selection(
+        open=frozenset({"NCT00000102"}), closed=frozenset())
     assert await trials.closed_trials_with_labels(ctx, ["Knee Osteoarthritis"]) == []
-    assert await trials.open_trials_with_labels(ctx, ["Anterior Cruciate Ligament"]) == []
-    assert await trials.open_trials_with_labels(ctx, []) == []
+    assert await trials.selection(ctx, ("Anterior Cruciate Ligament",)) == trials.Selection.EMPTY
+    assert await trials.selection(ctx, ()) == trials.Selection.EMPTY
+
+
+async def test_without_a_condition_term_nothing_is_selected(ctx, tmp_path):
+    await trials.ingest(ctx, save_pages(tmp_path, ACL_PAGES))
+
+    assert await trials.selection(ctx, None) == trials.Selection.EMPTY
+    assert trials.Selection.EMPTY.open == trials.Selection.EMPTY.closed == frozenset()
+    assert await trials.closed_trials_with_labels(ctx, None) == []
 
 
 async def test_a_dropped_trial_is_never_selected_nor_counted(ctx, tmp_path):
@@ -66,6 +76,26 @@ async def test_a_dropped_trial_is_never_selected_nor_counted(ctx, tmp_path):
               conditions=("anterior cruciate  ligament rupture",)),
         ACL_PAGES[4]]))
 
-    assert [t.nct_id for t in await trials.open_trials_with_labels(ctx, ACL)] == ["NCT00000102"]
+    assert await trials.selection(ctx, tuple(ACL)) == trials.Selection(open=frozenset({"NCT00000102"}),
+                                                                       closed=frozenset({"NCT00000103"}))
     assert [t.nct_id for t in await trials.closed_trials_with_labels(ctx, ACL)] == ["NCT00000103"]
     assert "Anterior Cruciate Ligament Rupture" not in [one.label for one in await trials.condition_labels(ctx)]
+
+
+async def test_migration_0007_fills_trial_condition_from_the_stored_trials_as_the_ingest_would(ctx, clean_db, tmp_path):
+    from pathlib import Path
+    await trials.ingest(ctx, save_pages(tmp_path, [
+        *ACL_PAGES,
+        study("NCT00000106", sites=[AU], conditions=("Knee  osteoarthritis", "  ", "Knee Osteoarthritis",
+                                                     "Lung Cancer (NSCLC), Stage IV"))]))
+    projected = await clean_db.fetch("SELECT * FROM trial_condition ORDER BY nct_id, label_key")
+    labels, selected = await trials.condition_labels(ctx), await trials.selection(ctx, tuple(ACL))
+
+    await clean_db.execute("DROP TABLE trial_condition")   # a database created before 0007
+    await clean_db.execute((Path(__file__).resolve().parents[3] / "db" / "migrations" / "0007_trial_condition.sql")
+                           .read_text())
+
+    assert await clean_db.fetch("SELECT * FROM trial_condition ORDER BY nct_id, label_key") == projected
+    assert await trials.condition_labels(ctx) == labels and await trials.selection(ctx, tuple(ACL)) == selected
+    assert [one.label for one in await trials.search_condition_labels(ctx, ["nsclc stage"], limit=5)] == [
+        "Lung Cancer (NSCLC), Stage IV"]

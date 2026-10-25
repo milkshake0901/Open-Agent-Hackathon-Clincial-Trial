@@ -74,7 +74,7 @@ async def test_verdicts_rank_by_outcome_then_nearest_recruiting_site_and_trials_
     script(fake, ecog_met_matcher(version.current()))
     await matching.rescan(ctx, version.id)
 
-    ranked = await matching.verdicts_for_version(ctx, version.id)
+    ranked = (await matching.verdicts_for_version(ctx, version.id)).verdicts
 
     assert [(v.nct_id, v.outcome, v.further_away) for v in ranked] == [
         ("NCT00000012", "eligible", False),       # recruiting site ~6 km
@@ -94,7 +94,7 @@ async def _ranked(clean_db, tmp_path, answers):
     ctx, fake, version = await _setup(clean_db, answers=answers, snapshot=write_snapshot(tmp_path, RANKING_SNAPSHOT))
     script(fake, ecog_met_matcher(version.current()))
     await matching.rescan(ctx, version.id)
-    return fake, await matching.verdicts_for_version(ctx, version.id)
+    return fake, (await matching.verdicts_for_version(ctx, version.id)).verdicts
 
 
 async def test_the_same_verdict_outcomes_result_with_and_without_a_postcode(clean_db, tmp_path):
@@ -103,7 +103,7 @@ async def test_the_same_verdict_outcomes_result_with_and_without_a_postcode(clea
                                       snapshot=write_snapshot(tmp_path, RANKING_SNAPSHOT))
     script(fake, ecog_met_matcher(version.current()))
     await matching.rescan(ctx, version.id)
-    outcomes = {v.nct_id: v.outcome for v in await matching.verdicts_for_version(ctx, version.id)}
+    outcomes = {v.nct_id: v.outcome for v in (await matching.verdicts_for_version(ctx, version.id)).verdicts}
     other = await record.create_patient(ctx, "Demo patient without a postcode")
     await tick_condition_term(ctx, other)
     no_postcode = {k: v for k, v in ANSWERS.items() if k != "postcode"}
@@ -113,7 +113,7 @@ async def test_the_same_verdict_outcomes_result_with_and_without_a_postcode(clea
     fake.calls.clear()
 
     await matching.rescan(ctx, v2.id)
-    without = await matching.verdicts_for_version(ctx, v2.id)
+    without = (await matching.verdicts_for_version(ctx, v2.id)).verdicts
 
     assert {v.nct_id: v.outcome for v in without} == outcomes
     assert all(sd.km is None for v in without for sd in v.sites)
@@ -136,7 +136,7 @@ async def test_the_snapshot_trials_nearest_recruiting_site_is_overseas_while_its
     script(fake, answer_all(await trials.criteria(ctx, NCT)))
     await matching.rescan(ctx, version.id)
 
-    [v] = await matching.verdicts_for_version(ctx, version.id)
+    [v] = (await matching.verdicts_for_version(ctx, version.id)).verdicts
 
     # Of its recruiting sites, Taichung (Taiwan) is nearest to Randwick: ~7,200 km.
     assert v.nearest_site == matching.TrialSiteDistance("China Medical University Hospital, Taichung, Taiwan",

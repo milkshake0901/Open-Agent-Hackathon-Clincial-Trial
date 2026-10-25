@@ -7,7 +7,8 @@ truncates the projected tables and replays wm_event through this, which proves t
 Mapping (see timeline.py for how domain operations become these events):
   assertFact  about=patient:*         → fact                     (append-only)
   snapshot    attrs.kind=profile      → profile_version + profile_version_fact
-  upsertEntity type=trial             → trial (upsert) + criterion rows from attrs.criteria (immutable per hash)
+  upsertEntity type=trial             → trial (upsert) + trial_condition rows from attrs.conditions (replaced)
+                                        + criterion rows from attrs.criteria (immutable per hash)
                                         + trial_site rows from attrs.sites (replaced)
                                         + trial_contact rows from attrs.contacts and each site's contacts (replaced)
                                         + trial_outcome, trial_outcome_value and trial_publication rows and
@@ -88,6 +89,7 @@ async def _trial(tx: "Tx", e) -> None:
         (a["external_id"], a["title"], list(a["conditions"]), a["status"], a["text"], a["eligibility_hash"],
          a["source"], _timestamp(a["observed_at"]), _date(a.get("primary_completion_date")),
          _date(a.get("completion_date")), _date(a.get("last_update_date"))))
+    await _conditions(tx, a["external_id"], a["conditions"])
     await _criteria(tx, a["external_id"], a["eligibility_hash"], a["criteria"])
     if "sites" in a:
         await tx.execute("DELETE FROM trial_site WHERE nct_id = $1", (a["external_id"],))
@@ -110,6 +112,15 @@ async def _trial(tx: "Tx", e) -> None:
         await _contacts(tx, a["external_id"], "official", c["officials"])
     if "outcomes" in a:
         await _outcomes(tx, a["external_id"], a["outcomes"])
+
+
+async def _conditions(tx: "Tx", nct_id: str, conditions) -> None:
+    from app import trials
+
+    await tx.execute("DELETE FROM trial_condition WHERE nct_id = $1", (nct_id,))
+    for key, label in {trials.label_key(c): c for c in conditions if c.strip()}.items():
+        await tx.execute("INSERT INTO trial_condition (nct_id, label_key, label, words) VALUES ($1, $2, $3, $4)",
+                         (nct_id, key, label, trials.label_words(label)))
 
 
 async def _outcomes(tx: "Tx", nct_id: str, o: dict) -> None:

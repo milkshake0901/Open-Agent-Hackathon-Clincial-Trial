@@ -52,7 +52,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │
 │   │   ├── trials/               TRIALS: Australian ClinicalTrials.gov studies, Open and Closed trials (ADR 0004)
 │   │   │   ├── __init__.py       public API: ingest, load_snapshot, trial, active_trials, condition_labels,
-│   │   │   │                     search_condition_labels, open_trials_with_labels, closed_trials_with_labels,
+│   │   │   │                     search_condition_labels, selection (Selection), closed_trials_with_labels,
 │   │   │   │                     criteria, sites, contacts, outcomes, outcome_summary, page_url
 │   │   │   ├── ctgov.py          study JSON → Trials: saved pages, or the live v2 API paged by pageToken (paced, retried)
 │   │   │   ├── criteria.py       eligibility text → Criteria (deterministic split, model fallback)
@@ -212,6 +212,10 @@ jq -c 'select(.run_id == "<run id>")' data/logs/trialmatch.jsonl                
 ## Agents read through Zetaris
 
 With `ZETARIS_API_KEY` set, the app's agent reader is `ZetarisReader` (ADR 0001): agent queries go to `{ZETARIS_REST_URL}/sql-editor/sqls/run` against our Postgres registered as datasource `trialmatch`, and each SQL is logged under `app.zetaris` (a `zetaris.sql` line in the log file). Without the key the app warns and agents read Postgres directly.
+
+Zetaris returns every value as a string; `ZetarisReader` restores Postgres types from the catalog (`pg_column_types`, read at startup) by the columns of the tables each query reads, so restart the app after a migration too.
+
+A Condition term's labels are matched through `trial_condition` (one row per Trial and label key, written by the projector with the trial row): the label counts, the label search and the Trials a Condition term selects (`trials.selection`) are SQL over it, and a Re-scan reads it through Zetaris.
 
 After any migration that adds a table or column, refresh Zetaris's copy of the schema, or agent queries fail with `UNRESOLVED_COLUMN` or `TABLE_OR_VIEW_NOT_FOUND`:
 

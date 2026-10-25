@@ -69,7 +69,8 @@ async def test_ticked_labels_select_the_trials_listing_them(clean_db, tmp_path):
     report = await matching.rescan(ctx, version.id)
 
     assert report.planned == (NCT,) and judged_trials(fake) == {NCT}
-    assert [v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)] == [NCT]
+    listed = await matching.verdicts_for_version(ctx, version.id)
+    assert listed.condition_term == tuple(LUNG) and [v.nct_id for v in listed.verdicts] == [NCT]
     assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {NCT}
 
 
@@ -81,7 +82,7 @@ async def test_verdicts_judged_under_an_earlier_choice_are_listed_only_for_trial
 
     await _tick(ctx, patient, HER2, "her2 breast cancer")
 
-    assert [v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)] == [BREAST]
+    assert [v.nct_id for v in (await matching.verdicts_for_version(ctx, version.id)).verdicts] == [BREAST]
     assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {BREAST}
 
 
@@ -89,13 +90,13 @@ async def test_changing_the_ticked_labels_hides_the_verdicts_the_new_choice_does
     ctx, fake, patient, version = await _setup(clean_db, tmp_path)
     await _tick(ctx, patient, LUNG)
     await matching.rescan(ctx, version.id)
-    assert [v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)] == [NCT]
+    assert [v.nct_id for v in (await matching.verdicts_for_version(ctx, version.id)).verdicts] == [NCT]
 
     await _tick(ctx, patient, HER2, "her2 breast cancer")
     report = await matching.rescan(ctx, version.id)
 
     assert report.planned == (BREAST,)
-    assert [v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)] == [BREAST]
+    assert [v.nct_id for v in (await matching.verdicts_for_version(ctx, version.id)).verdicts] == [BREAST]
     assert {q.nct_id for q in await matching.questions_for_version(ctx, version.id)} == {BREAST}
 
 
@@ -107,7 +108,8 @@ async def test_without_a_condition_term_a_rescan_judges_nothing_and_calls_no_mod
 
     assert report.planned == () and report.judged == () and report.skipped_existing == ()
     assert fake.calls[calls:] == []
-    assert await matching.verdicts_for_version(ctx, version.id) == []
+    assert await matching.verdicts_for_version(ctx, version.id) == matching.ListedVerdicts(condition_term=None,
+                                                                                          verdicts=())
     assert await matching.questions_for_version(ctx, version.id) == []
 
 
@@ -195,7 +197,8 @@ async def test_torn_acl_offers_the_acl_labels_and_ticking_them_selects_only_the_
 
     assert set(report.planned) == {"NCT00000101", "NCT00000102"}
     assert judged_trials(fake) == {"NCT00000101", "NCT00000102"}
-    assert {v.nct_id for v in await matching.verdicts_for_version(ctx, version.id)} == {"NCT00000101", "NCT00000102"}
+    listed = await matching.verdicts_for_version(ctx, version.id)
+    assert {v.nct_id for v in listed.verdicts} == {"NCT00000101", "NCT00000102"}
 
 
 async def test_when_the_diagnosis_goes_to_the_doctor_the_respondent_is_asked_nothing_until_it_is_settled(

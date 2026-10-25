@@ -6,8 +6,8 @@
 --   diagnosis_check                                     app.record.repo (Diagnosis checks and their answers)
 --   wm_event, wm_audit                                  app.worldmodel.store.PgEventStore (engine log)
 --   fact, profile_version, profile_version_fact         app.worldmodel.projector, inside the wm_event append
---   trial, criterion, trial_site, trial_contact,        transaction (projections of the World Model, ADR 0001)
---   trial_outcome, trial_outcome_value,
+--   trial, trial_condition, criterion, trial_site,      transaction (projections of the World Model, ADR 0001)
+--   trial_contact, trial_outcome, trial_outcome_value,
 --   trial_publication, outcome_summary
 --   verdict, criterion_result, doctor_question,
 --   respondent_question
@@ -119,6 +119,16 @@ CREATE TABLE trial (
   dropped          boolean NOT NULL DEFAULT false, -- a later ingest no longer keeps it (aged past 15 years, withdrawn, no Australian site)
   has_results      boolean NOT NULL DEFAULT false  -- the registry's has-results flag (#25)
 );
+
+CREATE TABLE trial_condition (             -- the Trial's Condition labels (ADR 0005), normalised once as the trial row is
+                                           -- written: what Condition label counts, searches and selection read
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  label_key        text NOT NULL,         -- the label casefolded, whitespace runs as one space: labels equal on it are one
+  label            text NOT NULL,         -- the Trial's spelling (its last one, when it lists the key twice)
+  words            text NOT NULL,         -- its words: runs of a-z0-9 of the casefolded label, one space apart (search)
+  PRIMARY KEY (nct_id, label_key)
+);
+CREATE INDEX trial_condition_by_key ON trial_condition (label_key);
 
 CREATE TABLE criterion (                   -- immutable per (nct, eligibility_hash); old rows kept so old Verdicts resolve
   id               text PRIMARY KEY,      -- "{nct}:{hash8}:{ordinal}"

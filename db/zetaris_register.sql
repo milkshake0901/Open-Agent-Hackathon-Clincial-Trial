@@ -12,8 +12,9 @@ CREATE DATASOURCE trialmatch DESCRIBE BY "TrialMatch Postgres (World Model proje
   fetchsize "1000"
 );
 -- Import table metadata; re-run after a schema change (each db/migrations/*.sql that adds a table says so).
--- Agents read: trial, criterion, trial_site, trial_contact, trial_outcome, trial_outcome_value, trial_publication,
--- fact, profile_version, profile_version_fact, verdict, criterion_result, doctor_question, respondent_question.
+-- Agents read: trial, trial_condition, criterion, trial_site, trial_contact, trial_outcome, trial_outcome_value,
+-- trial_publication, fact, profile_version, profile_version_fact, verdict, criterion_result, doctor_question,
+-- respondent_question.
 REGISTER DATASOURCE TABLES FROM trialmatch;
 
 -- 2. Register ClinicalTrials.gov API v2 as a REST table (same pattern as the PokéAPI starter in
