@@ -6,7 +6,7 @@
 --   diagnosis_check                                     app.record.repo (Diagnosis checks and their answers)
 --   wm_event, wm_audit                                  app.worldmodel.store.PgEventStore (engine log)
 --   fact, profile_version, profile_version_fact         app.worldmodel.projector, inside the wm_event append
---   trial, criterion, trial_site                        transaction (projections of the World Model, ADR 0001)
+--   trial, criterion, trial_site, trial_contact         transaction (projections of the World Model, ADR 0001)
 --   verdict, criterion_result, doctor_question,
 --   respondent_question
 --   trace_run, trace_event, llm_call                    app.trace
@@ -132,6 +132,20 @@ CREATE TABLE trial_site (                  -- the Trial's locations as last fetc
   lat              double precision,      -- ClinicalTrials.gov geoPoint; NULL when the registry has none
   lon              double precision,
   PRIMARY KEY (nct_id, ordinal)
+);
+
+CREATE TABLE trial_contact (               -- who to contact about a Trial (#27); replaced with the trial row
+  nct_id           text NOT NULL REFERENCES trial(nct_id),
+  kind             text NOT NULL CHECK (kind IN ('sponsor','responsible_party','central','official','site')),
+  site_ordinal     int  NOT NULL DEFAULT 0, -- trial_site.ordinal for kind 'site'; 0 otherwise
+  ordinal          int  NOT NULL,
+  name             text NOT NULL,
+  role             text NOT NULL,         -- registry role: CONTACT, PRINCIPAL_INVESTIGATOR, SPONSOR, ... ('' if none)
+  email            text NOT NULL,         -- '' when the registry gives none (likewise phone, affiliation, title)
+  phone            text NOT NULL,
+  affiliation      text NOT NULL,
+  title            text NOT NULL,
+  PRIMARY KEY (nct_id, kind, site_ordinal, ordinal)
 );
 
 -- ---------- matching ----------

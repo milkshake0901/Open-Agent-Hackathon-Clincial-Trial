@@ -44,6 +44,27 @@ class Criterion:
 
 
 @dataclass(frozen=True)
+class Contact:
+    """A person or desk ClinicalTrials.gov names for a Trial or Trial site; fields it does not give are ""."""
+    name: str
+    role: str                    # registry role, e.g. CONTACT, PRINCIPAL_INVESTIGATOR, STUDY_DIRECTOR, SPONSOR
+    email: str = ""
+    phone: str = ""
+    affiliation: str = ""
+    title: str = ""
+
+
+@dataclass(frozen=True)
+class TrialContacts:
+    """Who to contact about a Trial (#27), besides each Trial site's own contacts (TrialSite.contacts)."""
+    sponsor: str                         # lead sponsor's name; "" if not given
+    responsible_party: Contact | None    # a SPONSOR responsible party is named by the lead sponsor
+    central: tuple[Contact, ...]         # central contacts
+    officials: tuple[Contact, ...]       # overall officials
+    page_url: str                        # the Trial's ClinicalTrials.gov page
+
+
+@dataclass(frozen=True)
 class TrialSite:
     """One of a Trial's locations as ClinicalTrials.gov lists it. lat/lon is the registry's geoPoint (None if absent)."""
     facility: str
@@ -52,6 +73,7 @@ class TrialSite:
     status: str                  # per-site recruitment status, e.g. RECRUITING, NOT_YET_RECRUITING; "" if not given
     lat: float | None
     lon: float | None
+    contacts: tuple[Contact, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,9 +92,14 @@ class SavedPages:
     directory: Path
 
 
-__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "active_trials", "studies_condition",
-           "Trial", "Criterion", "TrialSite", "CriterionKind", "SavedPages",
+__all__ = ["sync", "ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "page_url", "active_trials",
+           "studies_condition", "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind", "SavedPages",
            "NctId", "CriterionId", "SyncReport", "ACTIVE_STATUSES", "trial_columns", "trial_from_row", "active_filter"]
+
+def page_url(nct_id: str) -> str:
+    """The Trial's page on ClinicalTrials.gov."""
+    return f"https://clinicaltrials.gov/study/{nct_id}"
+
 
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
 ACTIVE_STATUSES = ("RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION")
@@ -137,7 +164,7 @@ async def _record(ctx: Ctx, studies: list[tuple[ctgov.RawStudy, str]], source: s
     from app.worldmodel import timeline
 
     before = {s.nct_id: await repo.trial(ctx.ui_reader, NctId(s.nct_id)) for s, _ in studies}
-    loaded = [(ctgov.to_trial(raw, source, fetched_at), (), raw.sites) for raw, fetched_at in studies]
+    loaded = [(ctgov.to_trial(raw, source, fetched_at), (), raw.sites, raw.contacts) for raw, fetched_at in studies]
     report = await timeline.record_trials(ctx.wm, loaded, None)
     changed = {i.split(":", 1)[1] for i in report.changed_ids}
     return SyncReport(fetched=len(loaded),
@@ -157,6 +184,13 @@ async def active_trials(ctx: Ctx) -> list[Trial]:
 async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:
     """The Trial's locations as last loaded, in registry order (empty for an unknown Trial)."""
     return await repo.sites(ctx.ui_reader, nct_id)
+
+
+async def contacts(ctx: Ctx, nct_id: NctId) -> TrialContacts | None:
+    """Who to contact about the Trial as last loaded (None for an unknown Trial); its sites' contacts are on `sites`."""
+    if await repo.trial(ctx.ui_reader, nct_id) is None:
+        return None
+    return await repo.contacts(ctx.ui_reader, nct_id)
 
 
 async def criteria(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> tuple[Criterion, ...]:

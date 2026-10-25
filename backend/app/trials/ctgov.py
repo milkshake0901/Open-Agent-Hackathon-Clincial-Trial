@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.ctx import Ctx
-from app.trials import NctId, SavedPages, TrialSite, Trial
+from app.trials import Contact, NctId, SavedPages, TrialContacts, TrialSite, Trial, page_url
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class RawStudy:
     status: str
     eligibility_text: str
     sites: tuple[TrialSite, ...] = ()
+    contacts: TrialContacts | None = None
 
 
 async def fetch(ctx: Ctx, condition: str, location: str, max_trials: int) -> tuple[list[RawStudy], str]:
@@ -51,13 +52,36 @@ def parse_study(study: dict[str, Any]) -> RawStudy:
                     conditions=tuple(p.get("conditionsModule", {}).get("conditions", ())),
                     status=p["statusModule"]["overallStatus"],
                     eligibility_text=p.get("eligibilityModule", {}).get("eligibilityCriteria", ""),
-                    sites=tuple(_site(loc) for loc in p.get("contactsLocationsModule", {}).get("locations", ())))
+                    sites=tuple(_site(loc) for loc in p.get("contactsLocationsModule", {}).get("locations", ())),
+                    contacts=_contacts(p))
 
 
 def _site(loc: dict[str, Any]) -> TrialSite:
     geo = loc.get("geoPoint") or {}
     return TrialSite(facility=loc.get("facility", ""), city=loc.get("city", ""), country=loc.get("country", ""),
-                status=loc.get("status", ""), lat=geo.get("lat"), lon=geo.get("lon"))
+                status=loc.get("status", ""), lat=geo.get("lat"), lon=geo.get("lon"),
+                contacts=tuple(map(_contact, loc.get("contacts", ()))))
+
+
+def _contact(c: dict[str, Any]) -> Contact:
+    return Contact(name=c.get("name", ""), role=c.get("role", ""), email=c.get("email", ""),
+                   phone=c.get("phone", ""), affiliation=c.get("affiliation", ""))
+
+
+def _contacts(p: dict[str, Any]) -> TrialContacts:
+    """Central contacts, overall officials, lead sponsor and responsible party (#27). A responsible party of type
+    SPONSOR names no person, so it is named by the lead sponsor."""
+    cl = p.get("contactsLocationsModule", {})
+    sc = p.get("sponsorCollaboratorsModule", {})
+    sponsor = sc.get("leadSponsor", {}).get("name", "")
+    rp = sc.get("responsibleParty")
+    responsible = None if not rp else Contact(
+        name=sponsor if rp.get("type") == "SPONSOR" else rp.get("investigatorFullName", ""), role=rp.get("type", ""),
+        affiliation=rp.get("investigatorAffiliation", ""), title=rp.get("investigatorTitle", ""))
+    return TrialContacts(sponsor=sponsor, responsible_party=responsible,
+                         central=tuple(map(_contact, cl.get("centralContacts", ()))),
+                         officials=tuple(map(_contact, cl.get("overallOfficials", ()))),
+                         page_url=page_url(p["identificationModule"]["nctId"]))
 
 
 def read_snapshot(directory: Path) -> list[tuple[RawStudy, str]]:

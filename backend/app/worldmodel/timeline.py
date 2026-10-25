@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from app.matching import Verdict
     from app.record import Document, DraftFact, PatientId, ProfileVersion
     from app.trace import RunId
-    from app.trials import Criterion, TrialSite, Trial
+    from app.trials import Contact, Criterion, TrialContacts, TrialSite, Trial
     from app.worldmodel.engine import IngestReport, WorldModel
 
 
@@ -81,15 +81,17 @@ def trial_entity_id(nct_id: str) -> str:
     return f"trial:{nct_id}"
 
 
-async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Criterion, ...], *tuple[tuple[TrialSite, ...], ...]]]",
+async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Criterion, ...], *tuple[tuple[TrialSite, ...] | TrialContacts | None, ...]]]",
                         run_id: "RunId | None") -> "IngestReport":
-    """One ingest of (Trial, its Criteria[, its Sites]) tuples keyed by NCT id. Unchanged content appends nothing
+    """One ingest of (Trial, its Criteria[, its Sites[, its TrialContacts]]) tuples keyed by NCT id. Unchanged content appends nothing
     (the fetch time is the observation time, not content), so changed_ids are the new or edited Trials. Sites, when
-    given, replace the Trial's stored sites; a pair without them leaves the stored sites alone."""
+    given, replace the Trial's stored sites (with their contacts), and TrialContacts, when given, its other contacts;
+    a tuple without them leaves the stored ones alone."""
     from app.worldmodel.engine import IngestObservation, Provenance
 
     observations = []
-    for t, criteria, *sites in trials:
+    for t, criteria, *rest in trials:
+        sites, contacts = (rest + [None, None])[:2]
         source = Provenance(kind="api", at=t.fetched_at, by="trials",
                             url=f"https://clinicaltrials.gov/study/{t.nct_id}", run_id=run_id)
         observations.append(IngestObservation(
@@ -100,8 +102,19 @@ async def record_trials(wm: "WorldModel", trials: "list[tuple[Trial, tuple[Crite
                 "criteria": [{"id": c.id, "kind": str(c.kind), "ordinal": c.ordinal, "text": c.text}
                              for c in criteria],
                 **({"sites": [{"facility": s.facility, "city": s.city, "country": s.country, "status": s.status,
-                               "lat": s.lat, "lon": s.lon} for s in sites[0]]} if sites else {})}))
+                               "lat": s.lat, "lon": s.lon, "contacts": [_contact(c) for c in s.contacts]}
+                              for s in sites]} if sites is not None else {}),
+                **({"contacts": {
+                    "sponsor": contacts.sponsor,
+                    "responsible_party": _contact(contacts.responsible_party) if contacts.responsible_party else None,
+                    "central": [_contact(c) for c in contacts.central],
+                    "officials": [_contact(c) for c in contacts.officials]}} if contacts is not None else {})}))
     return await wm.ingest(observations, run_id=run_id)
+
+
+def _contact(c: "Contact") -> dict:
+    return {"name": c.name, "role": c.role, "email": c.email, "phone": c.phone, "affiliation": c.affiliation,
+            "title": c.title}
 
 
 async def record_criteria(wm: "WorldModel", trial: "Trial", criteria: "tuple[Criterion, ...]") -> None:
