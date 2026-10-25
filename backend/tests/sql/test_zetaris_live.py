@@ -77,9 +77,17 @@ async def test_condition_labels_and_the_trials_they_select_read_the_same_through
     a, b = await both(readers, trials_repo.condition_spellings, ["cancer", "non small cell"])
     assert sorted(b) == sorted(a)
     keys = await sample(pg, "SELECT label_key FROM trial_condition GROUP BY label_key ORDER BY count(*) DESC LIMIT 3")
-    for fn in (trials_repo.listing_any, trials_repo.closed_trials_listing):
-        a, b = await both(readers, fn, keys)
-        assert b == a and a, fn.__name__
+    a, b = await both(readers, trials_repo.listing_any, keys)
+    assert b == a and a
+    a, b = await both(readers, trials_repo.trials_by_id, [nct for nct, _ in a])
+    assert b == a and a
+
+
+async def top_label_keys(pg: PgReader) -> list[str]:
+    """Keys of the labels the most Open trials list, with a quote in one (as the reader inlines it) if any is."""
+    keys = await sample(pg, "SELECT c.label_key FROM trial_condition c JOIN trial t ON t.nct_id = c.nct_id "
+                            "WHERE t.status = 'RECRUITING' GROUP BY c.label_key ORDER BY count(*) DESC LIMIT 2")
+    return keys + await sample(pg, "SELECT label_key FROM trial_condition WHERE label_key LIKE '%''%' LIMIT 1")
 
 
 async def test_profile_versions_and_verdicts_read_the_same_through_zetaris(readers):
@@ -90,11 +98,15 @@ async def test_profile_versions_and_verdicts_read_the_same_through_zetaris(reade
     for vid in versions:
         a, b = await both(readers, record_repo.version, vid, with_facts=True)
         assert b == a, vid
-        a, b = await both(readers, matching_repo.trials_needing_verdict, vid, None)
-        assert b == a, vid
+        for keys in (await top_label_keys(pg), ["no such condition label"]):
+            a, b = await both(readers, matching_repo.trials_needing_verdict, vid, keys, None)
+            assert b == a, (vid, keys)
         for nct in await sample(pg, f"SELECT nct_id FROM verdict WHERE profile_version_id = '{vid}'"):
             a, b = await both(readers, matching_repo.verdict, NctId(nct), vid, with_results=True)
             assert b == a, (vid, nct)
+    keys = await top_label_keys(pg)
+    to_judge, skipped = await matching_repo.trials_needing_verdict(pg, versions[0], keys, None)
+    assert to_judge or skipped, keys
     for pid in await sample(pg, "SELECT id FROM patient"):
         a, b = await both(readers, record_repo.current_version, pid)
         assert b == a, pid

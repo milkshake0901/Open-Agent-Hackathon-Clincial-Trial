@@ -60,22 +60,29 @@ def _statuses(statuses: tuple[str, ...]) -> str:
     return ", ".join(repr(s) for s in statuses)
 
 
-async def closed_trials_listing(reader: SqlReader, label_keys: list[str]) -> list[Trial]:
-    """The stored, non-dropped Closed trials listing a label with one of these keys (trial_condition), by NCT id."""
-    rows = await reader.fetch(
-        f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE status IN ({_statuses(CLOSED_STATUSES)}) "
-        f"AND NOT dropped AND nct_id IN (SELECT nct_id FROM {reader.table('trial_condition')} "
-        f"WHERE label_key IN ({_keys(len(label_keys))})) ORDER BY nct_id", label_keys)
-    return [to_trial(r) for r in rows]
+def listing(reader: SqlReader, label_keys: list[str], *, alias: str = "", start: int = 1) -> str:
+    """SQL condition: the Trial lists a label with one of these keys (trial_condition). Its parameters are the keys,
+    numbered from $start."""
+    col = f"{alias}." if alias else ""
+    return (f"{col}nct_id IN (SELECT nct_id FROM {reader.table('trial_condition')} "
+            f"WHERE label_key IN ({_keys(len(label_keys), start)}))")
 
 
 async def listing_any(reader: SqlReader, label_keys: list[str]) -> list[tuple[NctId, str]]:
     """(nct_id, status) of every stored, non-dropped Trial listing a label with one of these keys, by NCT id."""
     rows = await reader.fetch(
-        f"SELECT DISTINCT t.nct_id, t.status FROM {reader.table('trial')} t "
-        f"JOIN {reader.table('trial_condition')} c ON c.nct_id = t.nct_id "
-        f"WHERE NOT t.dropped AND c.label_key IN ({_keys(len(label_keys))}) ORDER BY t.nct_id", label_keys)
+        f"SELECT nct_id, status FROM {reader.table('trial')} WHERE NOT dropped AND {listing(reader, label_keys)} "
+        "ORDER BY nct_id", label_keys)
     return [(NctId(r["nct_id"]), r["status"]) for r in rows]
+
+
+async def trials_by_id(reader: SqlReader, nct_ids: list[NctId]) -> list[Trial]:
+    """The stored, non-dropped Trials with these NCT ids, by NCT id."""
+    if not nct_ids:
+        return []
+    rows = await reader.fetch(f"SELECT {trial_columns()} FROM {reader.table('trial')} WHERE NOT dropped "
+                              f"AND nct_id IN ({_keys(len(nct_ids))}) ORDER BY nct_id", nct_ids)
+    return [to_trial(r) for r in rows]
 
 
 async def condition_spellings(reader: SqlReader, words: list[str] | None = None) -> list[tuple[str, str, int, int]]:

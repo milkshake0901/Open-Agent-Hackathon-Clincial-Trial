@@ -215,7 +215,7 @@ With `ZETARIS_API_KEY` set, the app's agent reader is `ZetarisReader` (ADR 0001)
 
 Zetaris returns every value as a string; `ZetarisReader` restores Postgres types from the catalog (`pg_column_types`, read at startup) by the columns of the tables each query reads, so restart the app after a migration too.
 
-A Condition term's labels are matched through `trial_condition` (one row per Trial and label key, written by the projector with the trial row): the label counts, the label search and the Trials a Condition term selects (`trials.selection`) are SQL over it, and a Re-scan reads it through Zetaris.
+A Condition term's labels are matched through `trial_condition` (one row per Trial and label key, written by the projector with the trial row): the label counts, the label search and the Trials a Condition term selects (`trials.selection`) are SQL over it, and a Re-scan's plan filters on it (`trials.listing_filter`) in its one query through Zetaris.
 
 After any migration that adds a table or column, refresh Zetaris's copy of the schema, or agent queries fail with `UNRESOLVED_COLUMN` or `TABLE_OR_VIEW_NOT_FOUND`:
 

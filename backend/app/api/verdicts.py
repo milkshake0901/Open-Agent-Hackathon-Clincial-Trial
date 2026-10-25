@@ -85,8 +85,7 @@ async def list_verdicts(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
     nothing is listed."""
     await patient_version(ctx, pid, vid)
     listed = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
-    diagnosis = "ticked" if listed.condition_term else "not_sure" if listed.needs_gp else "unfinished"
-    return VerdictListOut(profile_version_id=vid, condition_term=listed.condition_term, diagnosis=diagnosis,
+    return VerdictListOut(profile_version_id=vid, condition_term=listed.condition_term, diagnosis=listed.diagnosis,
                           verdicts=[await _verdict_out(ctx, v) for v in listed.verdicts])
 
 

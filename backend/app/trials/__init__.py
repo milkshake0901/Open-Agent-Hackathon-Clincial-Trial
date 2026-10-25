@@ -215,12 +215,12 @@ class LivePages:
 __all__ = ["ingest", "load_snapshot", "trial", "criteria", "sites", "contacts", "outcomes", "page_url",
            "active_trials", "outcome_summary",
            "condition_labels", "search_condition_labels", "ConditionLabel", "label_key", "label_words",
-           "selection", "Selection", "closed_trials_with_labels",
+           "selection", "Selection", "closed_trials_with_labels", "label_keys",
            "Trial", "Criterion", "TrialSite", "Contact", "TrialContacts", "CriterionKind",
            "OutcomeMeasure", "Outcomes", "OutcomeSummary", "PostedResult", "ResultValue", "Publication",
            "SavedPages", "LivePages",
            "NctId", "CriterionId", "SyncReport", "IngestReport", "ACTIVE_STATUSES", "CLOSED_STATUSES",
-           "trial_columns", "trial_from_row", "active_filter"]
+           "trial_columns", "trial_from_row", "active_filter", "listing_filter"]
 
 
 def page_url(nct_id: str) -> str:
@@ -246,11 +246,12 @@ from app.trials import criteria as splitting, ctgov, repo, summary as summaries 
 
 log = logging.getLogger(__name__)
 
-# For other modules' SQL that joins the trial table (one SQL text per question, ctx.py): its columns, row mapping
-# and the active filter, so no module restates them.
+# For other modules' SQL that joins the trial table (one SQL text per question, ctx.py): its columns, row mapping,
+# the active filter and the Condition label filter (keys from label_keys), so no module restates them.
 trial_columns = repo.trial_columns
 trial_from_row = repo.to_trial
 active_filter = repo.active_filter
+listing_filter = repo.listing
 
 
 async def ingest(ctx: Ctx, source: SavedPages | LivePages) -> IngestReport:
@@ -389,26 +390,25 @@ class Selection:
 Selection.EMPTY = Selection(open=frozenset(), closed=frozenset())
 
 
-async def selection(ctx: Ctx, condition_term: tuple[str, ...] | None, *, for_agent: bool = False) -> Selection:
-    """The Trials the Condition term selects; Selection.EMPTY (and no read) with none. for_agent reads through
-    Zetaris."""
+async def selection(ctx: Ctx, condition_term: tuple[str, ...] | None) -> Selection:
+    """The Trials the Condition term selects; Selection.EMPTY (and no read) with none."""
     if not condition_term:
         return Selection.EMPTY
-    found = await repo.listing_any(ctx.agent_reader if for_agent else ctx.ui_reader, _keys(condition_term))
+    found = await repo.listing_any(ctx.ui_reader, label_keys(condition_term))
     return Selection(open=frozenset(n for n, status in found if status in ACTIVE_STATUSES),
                      closed=frozenset(n for n, status in found if status in CLOSED_STATUSES))
 
 
-def _keys(labels) -> list[str]:
+def label_keys(labels: Sequence[str]) -> list[str]:
+    """The distinct label keys of a Condition term's labels, in order: the parameters of listing_filter."""
     return list(dict.fromkeys(label_key(label) for label in labels))
 
 
-async def closed_trials_with_labels(ctx: Ctx, condition_term: Sequence[str] | None) -> list[Trial]:
-    """The Closed trials listing any of the Condition term's labels, newest first by cutoff date (Trial.closed_on);
+async def closed_trials_with_labels(ctx: Ctx, condition_term: tuple[str, ...] | None) -> list[Trial]:
+    """The Closed trials the Condition term selects (Selection.closed), newest first by cutoff date (Trial.closed_on);
     none without a Condition term. Never judged: they have no Criterion results or Verdict (ADR 0004)."""
-    if not condition_term:
-        return []
-    return _newest_first(await repo.closed_trials_listing(ctx.ui_reader, _keys(condition_term)))
+    closed = (await selection(ctx, condition_term)).closed
+    return _newest_first(await repo.trials_by_id(ctx.ui_reader, sorted(closed)))
 
 
 async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:

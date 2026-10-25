@@ -36,8 +36,8 @@ async def rescan(ctx: Ctx, version_id: ProfileVersionId, *, only: set[NctId] | N
     trial.eligibility_hash). With no Condition term (no settled Diagnosis check, or not sure) nothing is judged and no
     model is called (ADR 0005).
 
-    Idempotent and cheap: the plan is one SQL query (Open trials without a Verdict for this version and their current
-    eligibility hash) intersected with the Trials the Condition term selects (a join on trial_condition); Trials
+    Idempotent and cheap: the plan is one SQL query over the Open trials listing one of the Condition term's labels
+    (trial_condition), each with whether it has a Verdict for this version and its current eligibility hash; Trials
     already judged for this version with the current eligibility hash are skipped without a model call.
     `only` narrows to the given Trials (e.g. those an ingest reported new or changed). Runs Trials with bounded
     concurrency; each Verdict commits in its own transaction, so a crash loses at most the
@@ -79,15 +79,14 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> Listed
     patient's Condition term labels are listed (ADR 0005), including Verdicts judged before it was chosen, and none
     while there is no Condition term; Verdicts for Trials an earlier choice selected stay stored but are not listed.
     A Trial that closed after it was judged keeps its Verdict (ADR 0002, 0004) and is listed after every Trial
-    still open, ranked the same way among the others that closed. Returned with the Condition term, and whether the
-    diagnosis waits on the GP."""
+    still open, ranked the same way among the others that closed. Returned with the Condition term and the diagnosis
+    step's state."""
     patient_id = (await record.profile_version(ctx, version_id)).patient_id
-    held, selected = await _selection(ctx, patient_id)
-    term, needs_gp = (held.condition_term, held.needs_gp) if held else (None, False)
+    step, selected = await _selection(ctx, patient_id)
     listed = selected.open | selected.closed
     stored = [vu for vu in await repo.verdicts_for_version(ctx.ui_reader, version_id) if vu[0].nct_id in listed]
     if not stored:
-        return ListedVerdicts(condition_term=term, verdicts=(), needs_gp=needs_gp)
+        return ListedVerdicts(condition_term=step.condition_term, verdicts=(), diagnosis=step.state)
     at = await distance.origin(ctx, patient_id)
     located = [(await _with_distances(ctx, v, at), unknowns) for v, unknowns in stored]
 
@@ -96,14 +95,14 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> Listed
         km = v.nearest_site.km if v.nearest_site and v.nearest_site.km is not None else float("inf")
         return (v.nct_id not in selected.open, _RANK[v.outcome],
                 unknowns if v.outcome == VerdictOutcome.POSSIBLE else 0, km, v.nct_id)
-    return ListedVerdicts(condition_term=term, verdicts=tuple(v for v, _ in sorted(located, key=key)),
-                          needs_gp=needs_gp)
+    return ListedVerdicts(condition_term=step.condition_term, verdicts=tuple(v for v, _ in sorted(located, key=key)),
+                          diagnosis=step.state)
 
 
-async def _selection(ctx: Ctx, patient_id: record.PatientId) -> tuple[record.DiagnosisCheck | None, trials.Selection]:
-    """The patient's settled Diagnosis check and the Trials its Condition term selects (Selection.EMPTY without)."""
-    held = await record.diagnosis(ctx, patient_id)
-    return held, await trials.selection(ctx, held.condition_term if held else None)
+async def _selection(ctx: Ctx, patient_id: record.PatientId) -> tuple[record.DiagnosisStep, trials.Selection]:
+    """The patient's diagnosis step and the Trials its Condition term selects (Selection.EMPTY without)."""
+    step = await record.diagnosis_step(ctx, patient_id)
+    return step, await trials.selection(ctx, step.condition_term)
 
 
 async def change_between(ctx: Ctx, nct_id: NctId, from_version: ProfileVersionId, to_version: ProfileVersionId) -> VerdictChange:
@@ -135,12 +134,12 @@ async def questions_for_version(ctx: Ctx, version_id: ProfileVersionId) -> list[
     from dataclasses import replace
 
     profile = await record.profile_version(ctx, version_id)
-    held, selected = await _selection(ctx, profile.patient_id)
+    step, selected = await _selection(ctx, profile.patient_id)
     first: dict[str, DoctorQuestion] = {}
-    if held is not None and held.needs_gp:
+    if step.state == "not_sure":
         first["\0diagnosis"] = DoctorQuestion(
             criterion_id=None, nct_id=None, subject="diagnosis",
-            text=f"Please confirm the patient's diagnosis and its exact name. In their own words: \"{held.text}\".")
+            text=f"Please confirm the patient's diagnosis and its exact name. In their own words: \"{step.text}\".")
     trials_by_subject: dict[str, list[NctId]] = {}
     for q in await repo.questions_for_version(ctx.ui_reader, version_id):
         if q.nct_id not in selected.open:
@@ -161,11 +160,11 @@ async def respondent_questions_for_version(ctx: Ctx, version_id: ProfileVersionI
     from dataclasses import replace
 
     profile = await record.profile_version(ctx, version_id)
-    held, selected = await _selection(ctx, profile.patient_id)
+    step, selected = await _selection(ctx, profile.patient_id)
     first: dict[str, RespondentQuestion] = {}
     trials_by_subject: dict[str, list[NctId]] = {}
     for q in await repo.respondent_questions_for_version(ctx.ui_reader, version_id):
-        if q.nct_id not in selected.open or (held is not None and held.needs_gp and q.question_id == DIAGNOSIS_QUESTION):
+        if q.nct_id not in selected.open or (step.state == "not_sure" and q.question_id == DIAGNOSIS_QUESTION):
             continue
         first.setdefault(q.question_id, q)
         if q.nct_id not in trials_by_subject.setdefault(q.question_id, []):

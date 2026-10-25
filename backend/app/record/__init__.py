@@ -29,6 +29,8 @@ from app.record.types import (
     DiagnosisAnswer,
     DiagnosisCheck,
     DiagnosisCheckId,
+    DiagnosisState,
+    DiagnosisStep,
     Document,
     DocumentHash,
     DraftFact,
@@ -60,7 +62,8 @@ __all__ = [
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
     "document", "Registered", "UnreadableDocument", "issue_return_link", "patient_for_return_link",
     "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
-    "deidentify_text", "check_diagnosis", "answer_diagnosis_check", "diagnosis", "DiagnosisCheck", "DiagnosisAnswer",
+    "deidentify_text", "check_diagnosis", "answer_diagnosis_check", "diagnosis", "diagnosis_step", "DiagnosisCheck",
+    "DiagnosisStep", "DiagnosisState", "DiagnosisAnswer",
     "Ticked", "NoneOfThese", "NotSure", "AlreadyAnswered",
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
@@ -252,8 +255,7 @@ async def answer_diagnosis_check(ctx: Ctx, patient_id: PatientId, check_id: Diag
         if again is not None:
             await repo.insert_diagnosis_check(tx, again, ctx.now())
     logfile.step(log, "record.diagnosis_check.answered", patient_id=patient_id,   # #35
-                 answer={"answer": answered.status, "labels": list(answer.labels) if isinstance(answer, Ticked) else [],
-                         "text": again.text if again else None},
+                 answer={"answer": answered.status, "labels": list(answered.ticked), "text": again.text if again else None},
                  check=_check_line(answered))
     if again is not None:
         _log_offered(again)
@@ -275,6 +277,13 @@ async def diagnosis(ctx: Ctx, patient_id: PatientId) -> DiagnosisCheck | None:
     """The check that holds for the patient: the latest one settled as ticked (its `condition_term` selects the Trials
     judged and shown) or not sure (`needs_gp`). None while nothing is settled."""
     return await repo.settled_diagnosis_check(ctx.ui_reader, patient_id)
+
+
+async def diagnosis_step(ctx: Ctx, patient_id: PatientId) -> DiagnosisStep:
+    """Where the patient's diagnosis step stands, from the check that holds (`diagnosis`): the one place the patient's
+    Condition term is read. Unfinished, with no Condition term, while nothing is settled."""
+    held = await diagnosis(ctx, patient_id)
+    return DiagnosisStep(held.state, held.condition_term, held.text) if held else DiagnosisStep()
 
 
 def deidentify_text(text: str) -> str:

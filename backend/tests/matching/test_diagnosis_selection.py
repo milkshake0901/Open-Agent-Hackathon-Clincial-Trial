@@ -109,7 +109,8 @@ async def test_without_a_condition_term_a_rescan_judges_nothing_and_calls_no_mod
     assert report.planned == () and report.judged == () and report.skipped_existing == ()
     assert fake.calls[calls:] == []
     assert await matching.verdicts_for_version(ctx, version.id) == matching.ListedVerdicts(condition_term=None,
-                                                                                          verdicts=())
+                                                                                          verdicts=(),
+                                                                                          diagnosis="unfinished")
     assert await matching.questions_for_version(ctx, version.id) == []
 
 

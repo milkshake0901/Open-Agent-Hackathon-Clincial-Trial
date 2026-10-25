@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import NewType
 
-from app.record import DocumentHash, FactId, ProfileVersionId
+from app.record import DiagnosisState, DocumentHash, FactId, ProfileVersionId
 from app.trials import CriterionId, NctId
 from app.trace import RunId
 
@@ -110,11 +110,11 @@ class Verdict:
 @dataclass(frozen=True)
 class ListedVerdicts:
     """The Verdicts listed for a Profile version (verdicts_for_version) and the Condition term that selected their
-    Trials: None, and no Verdicts, until the patient has one (ADR 0005). `needs_gp`: the diagnosis was answered not
-    sure, so it waits on the GP (and a Doctor question is raised for it)."""
+    Trials: None, and no Verdicts, until the patient has one (ADR 0005). `diagnosis`: where the diagnosis step stands
+    (record.DiagnosisStep.state)."""
     condition_term: tuple[str, ...] | None
     verdicts: tuple[Verdict, ...]
-    needs_gp: bool = False
+    diagnosis: DiagnosisState = "unfinished"
 
 
 @dataclass(frozen=True)

@@ -82,9 +82,12 @@ class NotSure:
 
 
 DiagnosisAnswer = Ticked | NoneOfThese | NotSure
-# "confirmed": a check confirmed under the single-term design, before Condition labels (db/migrations/0006); it has
-# no ticked labels, so it holds no Condition term (spec #31: the Respondent redoes the step).
+# "confirmed": a check confirmed under the single-term design, before Condition labels (db/migrations/0006). Invariant:
+# confirmed ⇒ ticked == (), so it holds no Condition term (spec #31: the Respondent redoes the step).
 DiagnosisStatus = Literal["proposed", "ticked", "none_of_these", "not_sure", "confirmed"]
+# Where the patient's diagnosis step stands: ticked (a Condition term selects Trials), not_sure (it waits on the GP),
+# or unfinished (nothing settled, or a check settled with no Condition term).
+DiagnosisState = Literal["ticked", "not_sure", "unfinished"]
 
 # The settling rule, in one place: which statuses settle the diagnosis (the latest settled check holds) and which of
 # those leave it to the GP. "proposed" awaits an answer; "none_of_these" settles nothing: a new check is offered.
@@ -129,6 +132,20 @@ class DiagnosisCheck:
     def needs_gp(self) -> bool:
         """Tell the Respondent to check with their GP; a Doctor question is raised for the diagnosis."""
         return self.status in NEEDS_GP
+
+    @property
+    def state(self) -> DiagnosisState:
+        """The diagnosis step's state while this check holds."""
+        return "ticked" if self.condition_term else "not_sure" if self.needs_gp else "unfinished"
+
+
+@dataclass(frozen=True)
+class DiagnosisStep:
+    """Where the patient's diagnosis step stands, from the check that holds (record.diagnosis): its state, the
+    Condition term that selects Trials (None unless ticked) and the Respondent's words for the diagnosis."""
+    state: DiagnosisState = "unfinished"
+    condition_term: tuple[str, ...] | None = None
+    text: str = ""
 
 
 @dataclass(frozen=True)
