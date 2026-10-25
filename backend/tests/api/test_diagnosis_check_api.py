@@ -40,8 +40,10 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         _, state = await submit(http, patient, {"diagnosis": DIAGNOSIS})
         vid = state["profile_version_id"]
         url = f"/api/patients/{patient}/questionnaire/diagnosis-check"
-        unchecked = (await http.get(f"/api/patients/{patient}/versions/{vid}/verdicts")).json()
+        verdicts = f"/api/patients/{patient}/versions/{vid}/verdicts"
+        unchecked = (await http.get(verdicts)).json()
         assert unchecked["condition_term"] is None and unchecked["verdicts"] == []
+        assert unchecked["diagnosis"] == "unfinished"
 
         proposed = await http.post(url, json={})
         assert proposed.status_code == 201
@@ -66,10 +68,13 @@ async def test_propose_answer_and_list_the_diagnosis_doctor_question(clean_db):
         assert ticked["status"] == "ticked" and ticked["ticked"] == ["Non-Small Cell Lung Cancer"]
         assert ticked["rescan"] == {"judged": 1, "failed": 0}
         assert "Non-Small Cell Lung Cancer" in ticked["message"]
+        assert (await http.get(verdicts)).json()["diagnosis"] == "ticked"
 
         third = (await http.post(url, json={})).json()
         unsure = (await http.post(f"{url}/{third['id']}", json={"answer": "not_sure"})).json()
         assert unsure["needs_gp"] is True and "GP" in unsure["message"] and unsure["rescan"] is None
+        listed = (await http.get(verdicts)).json()
+        assert listed["diagnosis"] == "not_sure" and listed["condition_term"] is None and listed["verdicts"] == []
 
         questions = (await http.get(f"/api/patients/{patient}/questions", params={"version": vid})).json()
         assert questions[0]["criterion_id"] is None and questions[0]["nct_id"] is None

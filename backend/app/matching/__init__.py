@@ -79,14 +79,15 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> Listed
     patient's Condition term labels are listed (ADR 0005), including Verdicts judged before it was chosen, and none
     while there is no Condition term; Verdicts for Trials an earlier choice selected stay stored but are not listed.
     A Trial that closed after it was judged keeps its Verdict (ADR 0002, 0004) and is listed after every Trial
-    still open, ranked the same way among the others that closed. Returned with the Condition term."""
+    still open, ranked the same way among the others that closed. Returned with the Condition term, and whether the
+    diagnosis waits on the GP."""
     patient_id = (await record.profile_version(ctx, version_id)).patient_id
     held, selected = await _selection(ctx, patient_id)
-    term = held.condition_term if held else None
+    term, needs_gp = (held.condition_term, held.needs_gp) if held else (None, False)
     listed = selected.open | selected.closed
     stored = [vu for vu in await repo.verdicts_for_version(ctx.ui_reader, version_id) if vu[0].nct_id in listed]
     if not stored:
-        return ListedVerdicts(condition_term=term, verdicts=())
+        return ListedVerdicts(condition_term=term, verdicts=(), needs_gp=needs_gp)
     at = await distance.origin(ctx, patient_id)
     located = [(await _with_distances(ctx, v, at), unknowns) for v, unknowns in stored]
 
@@ -95,7 +96,8 @@ async def verdicts_for_version(ctx: Ctx, version_id: ProfileVersionId) -> Listed
         km = v.nearest_site.km if v.nearest_site and v.nearest_site.km is not None else float("inf")
         return (v.nct_id not in selected.open, _RANK[v.outcome],
                 unknowns if v.outcome == VerdictOutcome.POSSIBLE else 0, km, v.nct_id)
-    return ListedVerdicts(condition_term=term, verdicts=tuple(v for v, _ in sorted(located, key=key)))
+    return ListedVerdicts(condition_term=term, verdicts=tuple(v for v, _ in sorted(located, key=key)),
+                          needs_gp=needs_gp)
 
 
 async def _selection(ctx: Ctx, patient_id: record.PatientId) -> tuple[record.DiagnosisCheck | None, trials.Selection]:

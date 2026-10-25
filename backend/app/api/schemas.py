@@ -391,6 +391,8 @@ class EnquiryOut(BaseModel):
 class VerdictListOut(BaseModel):
     profile_version_id: str
     condition_term: list[str] | None  # the ticked Condition labels; None (and `verdicts` empty) until some are ticked
+    diagnosis: Literal["ticked", "not_sure", "unfinished"]   # the diagnosis step: labels ticked (`condition_term`),
+                                                             # answered not sure (it waits on the GP), or neither yet
     verdicts: list[VerdictOut]  # ranked: outcome (possible: fewest unknowns first), then nearest recruiting site
 
 

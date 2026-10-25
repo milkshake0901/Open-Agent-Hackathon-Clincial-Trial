@@ -110,9 +110,11 @@ class Verdict:
 @dataclass(frozen=True)
 class ListedVerdicts:
     """The Verdicts listed for a Profile version (verdicts_for_version) and the Condition term that selected their
-    Trials: None, and no Verdicts, until the patient has one (ADR 0005)."""
+    Trials: None, and no Verdicts, until the patient has one (ADR 0005). `needs_gp`: the diagnosis was answered not
+    sure, so it waits on the GP (and a Doctor question is raised for it)."""
     condition_term: tuple[str, ...] | None
     verdicts: tuple[Verdict, ...]
+    needs_gp: bool = False
 
 
 @dataclass(frozen=True)

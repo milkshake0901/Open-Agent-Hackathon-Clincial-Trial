@@ -81,10 +81,12 @@ async def rescan(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
 @router.get("/patients/{pid}/versions/{vid}/verdicts", response_model=VerdictListOut)
 async def list_verdicts(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
     """Ranked: eligible, then possible (fewest unknowns first), then excluded. Only Trials the patient's Condition term
-    selects; with none (the diagnosis step unfinished) `condition_term` is None and nothing is listed."""
+    selects; with none (the diagnosis step unfinished, or answered not sure: `diagnosis`) `condition_term` is None and
+    nothing is listed."""
     await patient_version(ctx, pid, vid)
     listed = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
-    return VerdictListOut(profile_version_id=vid, condition_term=listed.condition_term,
+    diagnosis = "ticked" if listed.condition_term else "not_sure" if listed.needs_gp else "unfinished"
+    return VerdictListOut(profile_version_id=vid, condition_term=listed.condition_term, diagnosis=diagnosis,
                           verdicts=[await _verdict_out(ctx, v) for v in listed.verdicts])
 
 

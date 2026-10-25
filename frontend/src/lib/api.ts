@@ -68,6 +68,10 @@ export type DoctorQuestion = {
 // A Condition label as stored Trials list it, with how many Open and Closed trials list it (ADR 0005).
 export type ConditionLabel = { label: string; open: number; closed: number };
 
+// The diagnosis step, as the Trials page sees it: labels ticked (the Condition term), answered not sure (it waits on
+// the GP), or neither yet.
+export type Diagnosis = "ticked" | "not_sure" | "unfinished";
+
 export type DiagnosisAnswer =
   | { answer: "ticked"; labels: string[] }
   | { answer: "none_of_these"; text: string } // the diagnosis in other words: returns the new check
@@ -298,7 +302,7 @@ export const api = {
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
   verdicts: (patientId: string, versionId: string) =>
-    call<{ profile_version_id: string; condition_term: string[] | null; verdicts: VerdictOut[] }>(
+    call<{ profile_version_id: string; condition_term: string[] | null; diagnosis: Diagnosis; verdicts: VerdictOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
     ),
   closedTrials: (patientId: string) =>
