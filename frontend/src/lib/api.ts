@@ -159,14 +159,15 @@ export type TrialDetail = {
   outcomes: OutcomesOut;
 };
 
-// An Enquiry (#28): an email body the Respondent edits, copies and sends themselves. Never stored or sent.
+// An Enquiry (#28 Open trial, #29 Closed trial): an email body the Respondent edits, copies and sends themselves.
+// Never stored or sent.
 export type ClinicalDetailOut = { id: string; label: string; text: string; included: boolean };
 export type EnquiryOut = {
   nct_id: string;
   template: "open" | "closed";
   subject: string;
   body: string; // name and contact are placeholders the Respondent fills in
-  recipient: { name: string; email: string; kind: "site" | "central"; facility: string | null } | null; // null: no email listed
+  recipient: { name: string; email: string; kind: "site" | "central" | "responsible_party" | "official"; facility: string | null } | null; // null: no email listed
   sponsor: string;
   details: ClinicalDetailOut[];
 };

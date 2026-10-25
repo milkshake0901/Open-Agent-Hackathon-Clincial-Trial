@@ -13,14 +13,12 @@ router = APIRouter(tags=["enquiries"])
 
 @router.post("/patients/{pid}/versions/{vid}/trials/{nct}/enquiry", response_model=EnquiryOut)
 async def draft_enquiry(pid: str, vid: str, nct: str, body: EnquiryIn, ctx: Ctx = Depends(get_ctx)):
-    """404: unknown Trial, or an Open trial with no Verdict at this version; 409: no template for this kind of Trial
-    yet (Closed trials, #29); 503: model unavailable."""
+    """404: unknown Trial, or an Open trial with no Verdict at this version (a Closed trial needs none); 503: model
+    unavailable."""
     await patient_version(ctx, pid, vid)
     try:
         e = await enquiry.draft(ctx, trials.NctId(nct), record.ProfileVersionId(vid),
                                 include=None if body.include is None else frozenset(body.include))
-    except enquiry.NoTemplate as err:
-        raise HTTPException(409, str(err))
     except LookupError as err:
         raise HTTPException(404, str(err))
     except llm.LlmUnavailable as err:

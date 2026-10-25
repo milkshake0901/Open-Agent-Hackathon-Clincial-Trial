@@ -2,6 +2,8 @@
 recipient is left blank and the Enquiry names the sponsor."""
 from __future__ import annotations
 
+import re
+
 from app import matching, trials
 from app.enquiry.types import Recipient
 
@@ -23,4 +25,21 @@ def for_open(sites: tuple[trials.TrialSite, ...], contacts: trials.TrialContacts
             return Recipient(name=c.name, email=c.email, kind="site", facility=s.facility)
     if c := _emailed(contacts.central):
         return Recipient(name=c.name, email=c.email, kind="central", facility=None)
+    return None
+
+
+def _words(name: str) -> frozenset[str]:
+    return frozenset(re.findall(r"[a-z]+", name.lower()))
+
+
+def for_closed(sites: tuple[trials.TrialSite, ...], contacts: trials.TrialContacts) -> Recipient | None:
+    """Closed trial: the responsible party, else an overall official. The registry gives a responsible party no email,
+    so they are reached where the Trial lists the same person with one (an overall official, a central or a site
+    contact: every word of the responsible party's name in theirs, so "Jane Citizen" is "Dr Jane Citizen")."""
+    if (rp := contacts.responsible_party) and (want := _words(rp.name)):
+        listed = contacts.officials + contacts.central + tuple(c for s in sites for c in s.contacts)
+        if c := _emailed(tuple(c for c in listed if want <= _words(c.name))):
+            return Recipient(name=c.name, email=c.email, kind="responsible_party", facility=None)
+    if c := _emailed(contacts.officials):
+        return Recipient(name=c.name, email=c.email, kind="official", facility=None)
     return None

@@ -1,7 +1,8 @@
 "use client";
 
-// An Enquiry (#28): an email body asking the Trial's team about taking part, for the Respondent to edit, copy and
-// send themselves. Drafted when first opened, with every clinical detail ticked; unticking one and redrafting
+// An Enquiry: an email body for the Respondent to edit, copy and send themselves to the Trial's team. An Open trial's
+// asks about taking part (#28); a Closed trial's, including one that stopped recruiting after it was judged, asks about
+// its Outcomes or a follow-on study (#29). Drafted when first opened, with every clinical detail ticked; unticking one and redrafting
 // leaves it out of what the model sees. The draft lives only in this page: nothing is stored or sent.
 
 import { useState } from "react";
@@ -13,7 +14,13 @@ type State =
   | { kind: "error"; message: string }
   | { kind: "ready"; enquiry: EnquiryOut; body: string; ticked: Set<string> };
 
-export function Enquiry({ patientId, versionId, nctId }: { patientId: string; versionId: string; nctId: string }) {
+const RECIPIENT_KIND: Record<NonNullable<EnquiryOut["recipient"]>["kind"], string> = {
+  site: "", central: "central contact", responsible_party: "responsible for the trial", official: "trial official",
+};
+
+export function Enquiry({ patientId, versionId, nctId, open = true }: {
+  patientId: string; versionId: string; nctId: string; open?: boolean;   // open: the Trial is still recruiting
+}) {
   const [state, setState] = useState<State>({ kind: "closed" });
   const [copied, setCopied] = useState(false);
 
@@ -43,7 +50,9 @@ export function Enquiry({ patientId, versionId, nctId }: { patientId: string; ve
 
   return (
     <details onToggle={(e) => e.currentTarget.open && state.kind === "closed" && draft()}>
-      <summary className="cursor-pointer min-h-11 flex items-center text-accent">Ask about taking part</summary>
+      <summary className="cursor-pointer min-h-11 flex items-center text-accent">
+        {open ? "Ask about taking part" : "Ask about its results"}
+      </summary>
       {state.kind === "drafting" && <p className="text-muted">Drafting an email…</p>}
       {state.kind === "error" && (
         <div role="alert" className="flex flex-col gap-2">
@@ -71,7 +80,7 @@ export function Enquiry({ patientId, versionId, nctId }: { patientId: string; ve
                         {e.recipient.email}
                       </a>
                       <span className="text-muted">
-                        {e.recipient.kind === "site" ? ` (${e.recipient.facility})` : " (central contact)"}
+                        {` (${e.recipient.kind === "site" ? e.recipient.facility : RECIPIENT_KIND[e.recipient.kind]})`}
                       </span>
                     </>
                   ) : (

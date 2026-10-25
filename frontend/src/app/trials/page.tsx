@@ -30,7 +30,7 @@ async function ForVersion({ searchParams }: Pick<PageProps<"/trials">, "searchPa
   return (
     <>
       <TrialsList patientId={patient} versionId={version} />
-      <ClosedTrials patientId={patient} />
+      <ClosedTrials patientId={patient} versionId={version} />
     </>
   );
 }
