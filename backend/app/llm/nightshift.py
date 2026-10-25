@@ -235,6 +235,9 @@ class FakeLLM:
         self.responder = responder
         self.calls: list[FakeCall] = []
 
+    def model_for(self, lane: Lane | None) -> str:
+        return "fake"
+
     async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Completion[T]:
         self.calls.append(FakeCall(lane, system, user))
         if self.responder is None:

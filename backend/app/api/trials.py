@@ -3,8 +3,8 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app import llm, record, trials
-from app.api.deps import get_ctx
+from app import llm, trials
+from app.api.deps import condition_term, get_ctx
 from app.api.schemas import (ClosedTrialListOut, ClosedTrialOut, ContactOut, OutcomeSummaryOut, OutcomesOut,
                              PublicationOut, TrialDetailOut, TrialSiteOut)
 from app.ctx import Ctx
@@ -15,8 +15,7 @@ router = APIRouter(tags=["trials"])
 @router.get("/patients/{pid}/closed-trials", response_model=ClosedTrialListOut)
 async def closed_trials(pid: str, ctx: Ctx = Depends(get_ctx)):
     """Closed trials listing one of the patient's Condition term labels, newest first; none before some are ticked."""
-    held = await record.diagnosis(ctx, record.PatientId(pid))
-    term = list(held.condition_term) if held and held.condition_term else None
+    term = await condition_term(ctx, pid)
     found = await trials.closed_trials_with_labels(ctx, term) if term else []
     return ClosedTrialListOut(condition_term=term, trials=[ClosedTrialOut(
         nct_id=t.nct_id, title=t.title, status=t.status, conditions=list(t.conditions), closed_on=t.closed_on,

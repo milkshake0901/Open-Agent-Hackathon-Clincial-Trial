@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import matching, record, trials
-from app.api.deps import get_ctx, patient_version
+from app.api.deps import condition_term, get_ctx, patient_version
 from app.api.schemas import DoctorQuestionOut, RescanOut, RespondentQuestionOut, VerdictChangeOut, VerdictListOut, VerdictOut
 from app.ctx import Ctx
 
@@ -84,9 +84,7 @@ async def list_verdicts(pid: str, vid: str, ctx: Ctx = Depends(get_ctx)):
     selects; with none (the diagnosis step unfinished) `condition_term` is None and nothing is listed."""
     await patient_version(ctx, pid, vid)
     verdicts = await matching.verdicts_for_version(ctx, record.ProfileVersionId(vid))
-    held = await record.diagnosis(ctx, record.PatientId(pid))
-    term = list(held.condition_term) if held and held.condition_term else None
-    return VerdictListOut(profile_version_id=vid, condition_term=term,
+    return VerdictListOut(profile_version_id=vid, condition_term=await condition_term(ctx, pid),
                           verdicts=[await _verdict_out(ctx, v) for v in verdicts])
 
 

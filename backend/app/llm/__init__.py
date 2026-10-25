@@ -52,6 +52,9 @@ class UnparsedReply(Exception):
 
 class LLM(Protocol):
     async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Completion[T]: ...
+    def model_for(self, lane: Lane | None) -> str:
+        """The model a lane asks for; the log file names it when a call fails before any reply."""
+        ...
     def chat_model(self, lane: Lane | None = None) -> "BaseChatModel":
         """LangChain chat model on the lane's pinned model; agents are built on this."""
         ...
@@ -71,13 +74,14 @@ async def complete(ctx, lane: Lane, *, system: str, user: str, out: type[T], run
         try:
             completion = await asyncio.wait_for(ctx.llm.complete(lane, system, prompt, out), timeout=_TIMEOUT_S)
         except (ValidationError, UnparsedReply) as e:
-            raw, e = (e.raw, e.error) if isinstance(e, UnparsedReply) else (None, e)
-            _log_call(ctx, lane, system, prompt, run_id, started, raw=raw, error=str(e))
+            raw, invalid = (e.raw, e.error) if isinstance(e, UnparsedReply) else (None, e)
+            _log_call(ctx, lane, system, prompt, run_id, started, raw=raw, error=str(invalid))
             if run_id is not None:
                 await trace.record_llm_call(ctx.writer, run_id, _failed(lane))
             if attempt == 2:
-                raise LlmUnavailable(f"{lane} lane reply did not parse twice: {e.error_count()} errors") from e
-            prompt = f"{user}\n\nYour previous answer did not match the schema:\n{e}\nAnswer again with valid JSON."
+                raise LlmUnavailable(f"{lane} lane reply did not parse twice: {invalid.error_count()} errors") from invalid
+            prompt = (f"{user}\n\nYour previous answer did not match the schema:\n{invalid}\n"
+                      "Answer again with valid JSON.")
             continue
         except Exception as e:   # timeout, transport, provider: one place turns them into LlmUnavailable
             _log_call(ctx, lane, system, prompt, run_id, started, error=f"{type(e).__name__}: {e}")
@@ -105,7 +109,7 @@ def _log_call(ctx, lane: Lane, system: str, user: str, run_id: RunId | None, sta
               completion: Completion | None = None, raw: str | None = None, error: str | None = None) -> None:
     """The prompts are the de-identified text the model was sent; nothing else about the patient is added."""
     try:
-        requested = completion.model_requested if completion else getattr(ctx.llm, "model_for", lambda _: None)(lane)
+        requested = completion.model_requested if completion else ctx.llm.model_for(lane)
         logfile.step(log, "llm.complete", lane=str(lane), model_requested=requested,
                      model_answered=completion.model_answered if completion else None, system=system, user=user,
                      raw=completion.raw if completion else raw,
