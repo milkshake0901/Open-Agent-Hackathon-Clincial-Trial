@@ -40,6 +40,13 @@ class Trial:
     last_update_date: str | None = None
 
     @property
+    def is_open(self) -> bool:
+        """An Open trial (recruiting, not yet recruiting or enrolling by invitation): the only kind a Re-scan judges.
+        Any other stored Trial is a Closed trial, never judged; one that closed after it was judged keeps its Verdicts
+        and is shown as no longer recruiting (ADR 0004)."""
+        return self.status in ACTIVE_STATUSES
+
+    @property
     def closed_on(self) -> str | None:
         """A Closed trial's cutoff date (ADR 0004): primary completion, else completion, else last update."""
         return self.primary_completion_date or self.completion_date or self.last_update_date

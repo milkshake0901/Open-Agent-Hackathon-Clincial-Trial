@@ -133,6 +133,28 @@ async def test_a_trial_that_closes_between_runs_is_reported_changed_and_is_no_lo
     assert await trials.active_trials(ctx) == []
 
 
+
+async def test_a_trial_judged_while_open_keeps_its_verdict_once_closed_and_is_never_judged_again(ctx, fake_llm, tmp_path):
+    from app import matching, record
+    fake_llm.responder = lambda lane, system, user: {"results": [
+        {"criterion_id": line.split()[1], "outcome": "unknown", "fact_id": None, "rationale": "not in the record"}
+        for line in user.splitlines() if line.startswith("- NCT")]} if lane == "deep" else {"checks": []}
+    await trials.ingest(ctx, save_pages(tmp_path / "before", [study("NCT00000001", sites=[AU])]))
+    patient = await record.create_patient(ctx, "Demo patient")
+    v1 = (await record.submit_questionnaire(ctx, patient, {"sex": "female"}, respondent="other")).version.id
+    await matching.rescan(ctx, v1)
+    judged = await matching.verdict(ctx, trials.NctId("NCT00000001"), v1)
+    assert judged is not None
+
+    await trials.ingest(ctx, save_pages(tmp_path / "after", [study("NCT00000001", status="COMPLETED", sites=[AU])]))
+
+    assert await matching.verdict(ctx, trials.NctId("NCT00000001"), v1) == judged
+    assert [t.nct_id for t in await trials.closed_trials(ctx, "lung cancer")] == ["NCT00000001"]
+    calls = len(fake_llm.calls)
+    again = await matching.rescan(ctx, v1)
+    assert again.planned == () and again.judged == () and again.skipped_existing == ()
+    assert len(fake_llm.calls) == calls
+
 # The test clock (conftest NOW) is 2026-10-24, so the 15-year cutoff is 2011-10-24.
 
 async def test_closed_trials_finished_within_15_years_are_kept_and_older_ones_are_not_stored(ctx, tmp_path):

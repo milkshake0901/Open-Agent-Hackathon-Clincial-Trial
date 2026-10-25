@@ -50,6 +50,7 @@ async def _verdict_out(ctx: Ctx, v: matching.Verdict) -> VerdictOut:
     criteria = {c.id: c for c in await trials.criteria(ctx, v.nct_id)}
     return VerdictOut(
         nct_id=v.nct_id, title=trial.title if trial else v.nct_id, status=trial.status if trial else "",
+        no_longer_recruiting=trial is None or not trial.is_open,
         profile_version_id=v.profile_version_id, outcome=v.outcome, degraded=v.degraded, attempts=v.attempts,
         results=[{"criterion_id": r.criterion_id, "kind": criteria[r.criterion_id].kind,
                   "text": criteria[r.criterion_id].text, "outcome": r.outcome, "rationale": r.rationale,

@@ -240,6 +240,7 @@ class VerdictOut(BaseModel):
     nct_id: str
     title: str
     status: str
+    no_longer_recruiting: bool = False    # the Trial closed after this Verdict was judged; kept, never re-judged
     profile_version_id: str
     outcome: Literal["eligible", "possible", "excluded"]
     degraded: bool
@@ -320,6 +321,34 @@ class TrialDetailOut(BaseModel):
     overall_officials: list[ContactOut]
     sites: list[TrialSiteOut]             # Australian Trial sites only, in registry order
     outcomes: OutcomesOut                 # what it measured or found (#25)
+
+
+class EnquiryIn(BaseModel):
+    include: list[str] | None = None      # ids of the clinical details kept ticked; None: all offered
+
+
+class ClinicalDetailOut(BaseModel):
+    id: str
+    label: str
+    text: str                             # de-identified
+    included: bool                        # in this draft; an unticked one never reached the model
+
+
+class RecipientOut(BaseModel):
+    name: str
+    email: str
+    kind: Literal["site", "central"]
+    facility: str | None
+
+
+class EnquiryOut(BaseModel):
+    nct_id: str
+    template: Literal["open", "closed"]
+    subject: str
+    body: str                             # name and contact are placeholders the Respondent fills in
+    recipient: RecipientOut | None        # None: the Trial lists no email; see sponsor
+    sponsor: str
+    details: list[ClinicalDetailOut]
 
 
 class VerdictListOut(BaseModel):
