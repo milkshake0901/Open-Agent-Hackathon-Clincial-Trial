@@ -59,8 +59,20 @@ _Avoid_: Search term, diagnosis code
 ## Trials
 
 **Trial**:
-A study registered on ClinicalTrials.gov, identified by its NCT ID.
+A study registered on ClinicalTrials.gov with at least one Trial site in Australia, identified by its NCT ID; studies with no Australian site are out of scope.
 _Avoid_: Study, protocol
+
+**Open trial**:
+A Trial that is recruiting, not yet recruiting or enrolling by invitation; only Open trials are judged and get Verdicts.
+_Avoid_: Active trial, live trial
+
+**Closed trial**:
+A Trial that can no longer enrol (completed, terminated, suspended, active-not-recruiting or unknown) and finished within the last 15 years; shown to the patient for its outcomes and contacts, never judged. Withdrawn studies are not Trials.
+_Avoid_: Past study, old trial, inactive trial
+
+**Outcome**:
+What a Trial measured or found: its planned outcome measures, any posted results, and linked publications.
+_Avoid_: Result (unqualified), finding, endpoint
 
 **Criterion**:
 One inclusion or exclusion rule taken from a Trial's eligibility text.
@@ -71,7 +83,7 @@ A kind of patient information a Criterion asks about, such as performance status
 _Avoid_: Category, tag, bucket
 
 **Trial site**:
-One place a Trial runs, with its recruitment status and location; distance to it ranks Trials but never changes a Verdict.
+One Australian place a Trial runs, with its recruitment status and location (sites in other countries are not kept); distance to it ranks Trials but never changes a Verdict.
 _Avoid_: Location, centre, facility
 
 ## Matching
@@ -96,6 +108,10 @@ _Avoid_: Follow-up, gap, missing info
 A question sent back to the Respondent when a Criterion result turns on something they could plausibly know (a date, a medicine name) but answered too vaguely or not at all.
 _Avoid_: Follow-up, clarification, Doctor question
 
+**Enquiry**:
+An email body drafted for the Respondent to edit, copy and send themselves to a Trial's contact: for an Open trial it asks about taking part, for a Closed trial about its Outcomes or a follow-on study. The app never sends it, and it holds only the clinical details the Respondent kept ticked.
+_Avoid_: Message, contact request, email (unqualified)
+
 **Re-scan**:
-Re-running matching for every cached Trial against a new Profile version.
+Re-running matching for every Open trial against a Profile version, run when the Respondent or an operator asks; an ingest never triggers one.
 _Avoid_: Refresh, re-run, recheck
