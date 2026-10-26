@@ -65,9 +65,10 @@ export function LetterReview({ runId, onDone }: { runId: string; onDone: (outcom
   const shown = review.facts.find((f) => f.index === selected) ?? null;
   const checkedCount = review.facts.filter((f) => f.decision).length;
 
+  // On big screens the review is wider than the page column, so the letter is big enough to read.
   return (
     <section aria-labelledby={`review-${runId}`}
-             className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
+             className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4 md:relative md:left-1/2 md:w-[min(72rem,calc(100vw-2rem))] md:-translate-x-1/2">
       <h2 id={`review-${runId}`} className="text-lg font-semibold">Check what we read from {review.filename}</h2>
       <p className="text-muted">
         Each line is something we read from your letter. Compare it with the boxed part of the page. This step is
@@ -103,7 +104,8 @@ export function LetterReview({ runId, onDone }: { runId: string; onDone: (outcom
         )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* The letter gets the larger share so it can be read beside the lines. */}
+      <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <ol className="flex flex-col gap-3 min-w-0">
           {review.facts.map((f) => {
             const note = flagNote(f);

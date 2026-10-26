@@ -25,14 +25,15 @@ export function RegionPage({ documentHash, page, filename, boxes, active, onSele
             left: `${box.x0 * 100}%`, top: `${box.y0 * 100}%`,
             width: `${(box.x1 - box.x0) * 100}%`, height: `${(box.y1 - box.y0) * 100}%`,
           };
-          const shade = box.span_id === active ? "bg-accent/25" : "bg-accent/10";
+          // A thin outline drawn just outside the box, so it frames the words instead of sitting on them.
+          const shade = box.span_id === active ? "bg-accent/15" : "bg-accent/5";
           return onSelect ? (
             <button key={box.span_id} type="button" aria-label={`Cited region on page ${page}`}
                     onClick={() => onSelect(box.span_id)}
-                    className={`absolute border-2 border-accent ${shade}`} style={style} />
+                    className={`absolute outline-1 outline-offset-2 outline-accent ${shade}`} style={style} />
           ) : (
             <span key={box.span_id} aria-label={`Cited region on page ${page}`} role="img"
-                  className={`absolute border-2 border-accent ${shade}`} style={style} />
+                  className={`absolute outline-1 outline-offset-2 outline-accent ${shade}`} style={style} />
           );
         })}
       </div>
