@@ -1,6 +1,6 @@
 """Fetch recruiting trials and judge them against a parsed letter.
 
-    doppler run -- backend/.venv/bin/python scripts/screen_referral.py
+    doppler run -- backend/.venv/bin/python backend/scripts/screen_referral.py
 
 The search is the condition and the place. Prior drugs are not required search terms.
 Each decisive criterion names a region of the letter.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import asyncpg
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import Settings  # noqa: E402
 from app.ctx import Ctx  # noqa: E402

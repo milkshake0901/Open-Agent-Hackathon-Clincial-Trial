@@ -1,6 +1,6 @@
 """Parse a scanned referral and store each region so a trial reason can cite the box on the page.
 
-    doppler run -- backend/.venv/bin/python scripts/load_referral.py path/to/file.pdf
+    doppler run -- backend/.venv/bin/python backend/scripts/load_referral.py path/to/file.pdf
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import asyncpg
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import REPO_ROOT, Settings  # noqa: E402
 from app.extraction.parse import extract_pdf  # noqa: E402

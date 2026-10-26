@@ -1,11 +1,11 @@
 """Check the Meterless Nightshift connection by hand. Reads the repo's .env; never prints the token.
 
-    backend/.venv/bin/python scripts/meterless.py status              # online | unauthorized | offline, lane check
-    backend/.venv/bin/python scripts/meterless.py detect              # Auto Detect on the standard ports
-    backend/.venv/bin/python scripts/meterless.py chat "Say pong"     # plain text on METERLESS_MODEL
-    backend/.venv/bin/python scripts/meterless.py lane fast           # JSON through a lane's LangChain model
-    backend/.venv/bin/python scripts/meterless.py media               # which media kinds this box can make
-    backend/.venv/bin/python scripts/meterless.py illustrate "a calm hospital garden, watercolour" [--privacy cloud-ok]
+    backend/.venv/bin/python backend/scripts/meterless.py status              # online | unauthorized | offline, lane check
+    backend/.venv/bin/python backend/scripts/meterless.py detect              # Auto Detect on the standard ports
+    backend/.venv/bin/python backend/scripts/meterless.py chat "Say pong"     # plain text on METERLESS_MODEL
+    backend/.venv/bin/python backend/scripts/meterless.py lane fast           # JSON through a lane's LangChain model
+    backend/.venv/bin/python backend/scripts/meterless.py media               # which media kinds this box can make
+    backend/.venv/bin/python backend/scripts/meterless.py illustrate "a calm hospital garden, watercolour" [--privacy cloud-ok]
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pydantic import BaseModel  # noqa: E402
 

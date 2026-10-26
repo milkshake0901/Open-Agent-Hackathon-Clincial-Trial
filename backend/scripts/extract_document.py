@@ -1,13 +1,13 @@
 """Read a scanned PDF with Nemotron Parse.
 
-    doppler run -- backend/.venv/bin/python scripts/extract_document.py path/to/file.pdf
+    doppler run -- backend/.venv/bin/python backend/scripts/extract_document.py path/to/file.pdf
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.extraction import extract_pdf  # noqa: E402
 

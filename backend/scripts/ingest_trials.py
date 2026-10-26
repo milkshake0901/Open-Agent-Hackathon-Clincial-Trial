@@ -1,7 +1,7 @@
 """Run the Australia-wide ClinicalTrials.gov ingest (ADR 0004) into the Trial cache. Reads the repo's .env.
 
-    backend/.venv/bin/python scripts/ingest_trials.py --live          # page the live v2 API, Australia only
-    backend/.venv/bin/python scripts/ingest_trials.py --pages <dir>   # saved GET /api/v2/studies pages, one per file
+    backend/.venv/bin/python backend/scripts/ingest_trials.py --live          # page the live v2 API, Australia only
+    backend/.venv/bin/python backend/scripts/ingest_trials.py --pages <dir>   # saved GET /api/v2/studies pages, one per file
 
 Safe to re-run: unchanged studies record nothing, and Closed trials that have aged past 15 years are dropped. Makes no model call and starts no Re-scan.
 """
@@ -13,7 +13,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import asyncpg  # noqa: E402
 
