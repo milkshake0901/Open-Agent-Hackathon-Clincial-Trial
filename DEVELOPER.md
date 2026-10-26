@@ -19,7 +19,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 5. **Re-scan.** For a new Profile version, judge every active Trial that lacks a Verdict for (NCT, eligibility hash, version). Running it twice does nothing the second time.
 6. **Matcher ⇄ Evaluator** (max 3 attempts). The Matcher judges each Criterion against the patient's Facts, read through Zetaris, and sees each site as "name, status, km": code computes the distances from the postcode, which no model ever sees. The Evaluator rejects any claim without a valid citation. After 3 attempts, unsupported claims become `unknown`: a Doctor question when it needs clinical records, a Respondent question when it turns on something the Respondent could clarify (a vague date, a medicine name). An uncited "met" is never stored.
 7. **Verdicts + why.** Verdicts ranked by outcome, then nearest recruiting site (distance never changes a Verdict), with Citations back to the Document page, what changed since the last version, and the causal trace of how the system decided.
-8. **Trials** arrive separately: the Australia-wide ingest ([ADR 0004](docs/adr/0004-australia-wide-ingest-only-open-trials-judged.md), `scripts/ingest_trials.py`) records every ClinicalTrials.gov study with an Australian site through World Model `ingest`, keyed by NCT ID. It makes no model call and never starts a Re-scan; Criteria are split, and Closed trials' Outcome summaries written, the first time they are needed.
+8. **Trials** arrive separately: the Australia-wide ingest ([ADR 0004](docs/adr/0004-australia-wide-ingest-only-open-trials-judged.md), `backend/scripts/ingest_trials.py`) records every ClinicalTrials.gov study with an Australian site through World Model `ingest`, keyed by NCT ID. It makes no model call and never starts a Re-scan; Criteria are split, and Closed trials' Outcome summaries written, the first time they are needed.
 
 ## Folder structure
 
@@ -102,10 +102,12 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   └── api/                  thin HTTP routes under /api (see docs/api.md)
 │   │       └── documents.py · patients.py · runs.py · trials.py · verdicts.py · enquiries.py · health.py · schemas.py
 │   │
-│   └── tests/
-│       ├── test_boundaries.py    fails on imports of another module's internals
-│       └── worldmodel/
-│           └── test_conformance.py   Meterless's 8 conformance checks, ported
+│   ├── tests/
+│   │   ├── test_boundaries.py    fails on imports of another module's internals
+│   │   └── worldmodel/
+│   │       └── test_conformance.py   Meterless's 8 conformance checks, ported
+│   │
+│   └── scripts/                  ingest_trials, rebuild_projections; seed_demo (to write)
 │
 ├── db/
 │   ├── schema.sql                Postgres tables, with the owner of each one noted at the top
@@ -121,11 +123,10 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   └── setup/                    meterless-provider-prompt.md (Nightshift wiring, not yet applied)
 │
 ├── frontend/                     Next.js app (not created yet; see its README for pages)
-├── data/
-│   ├── demo/                     de-identified demo Documents (committed)
-│   ├── raw/                      real Documents (gitignored; never commit)
-│   └── trials_snapshot/          saved trial results for an offline demo
-└── scripts/                      ingest_trials, rebuild_projections; seed_demo (to write)
+└── data/
+    ├── demo/                     de-identified demo Documents (committed)
+    ├── raw/                      real Documents (gitignored; never commit)
+    └── trials_snapshot/          saved trial results for an offline demo
 ```
 
 ## Rules that keep it coherent
@@ -159,13 +160,13 @@ Zetaris and Meterless Nightshift run on your own machine (hackathon rule); insta
 Nightshift must be running (default `http://127.0.0.1:8088`), and `.env` at the repo root needs `METERLESS_RUNTIME_TOKEN`. Run these from the repo root. None of them prints the token.
 
 ```bash
-backend/.venv/bin/python scripts/meterless.py status       # online | unauthorized | offline, plus whether each lane's model is listed
-backend/.venv/bin/python scripts/meterless.py detect       # Auto Detect: ports 8088, 8090, 8787, 11434
-backend/.venv/bin/python scripts/meterless.py chat "Reply with exactly: pong"   # plain text on METERLESS_MODEL
-backend/.venv/bin/python scripts/meterless.py lane fast    # JSON reply through the fast lane's LangChain model (also: deep, judge)
-backend/.venv/bin/python scripts/meterless.py media        # which of image, speech, music, video this runtime can make, and why not
-backend/.venv/bin/python scripts/meterless.py illustrate "A calm watercolour of a hospital garden" --privacy cloud-ok
-backend/.venv/bin/pytest tests/llm                         # run from backend/: provider and media tests, mocked runtime, no network
+backend/.venv/bin/python backend/scripts/meterless.py status       # online | unauthorized | offline, plus whether each lane's model is listed
+backend/.venv/bin/python backend/scripts/meterless.py detect       # Auto Detect: ports 8088, 8090, 8787, 11434
+backend/.venv/bin/python backend/scripts/meterless.py chat "Reply with exactly: pong"   # plain text on METERLESS_MODEL
+backend/.venv/bin/python backend/scripts/meterless.py lane fast    # JSON reply through the fast lane's LangChain model (also: deep, judge)
+backend/.venv/bin/python backend/scripts/meterless.py media        # which of image, speech, music, video this runtime can make, and why not
+backend/.venv/bin/python backend/scripts/meterless.py illustrate "A calm watercolour of a hospital garden" --privacy cloud-ok
+backend/.venv/bin/pytest tests/llm                                 # run from backend/: provider and media tests, mocked runtime, no network
 ```
 
 What good looks like:
@@ -195,7 +196,7 @@ Lanes name a model, never a `meterless/*` routing mode. Checked on 2026-10-24 ag
 
 Lightning is a reasoning model and writes thousands of thinking tokens before answering, so every Evaluator attempt would take minutes. It was also stricter: it rejected "chemo ended around March 2025" as support for "no chemotherapy within 4 weeks", which Ultra through Nightshift accepted. Ultra called directly reasoned more and split on that claim, so how much Nightshift trims Ultra's reasoning (or answers from its cache) changes answers too. Untested: Lightning with reasoning turned off.
 
-**Lanes on NVIDIA's API.** `DIRECT_LANES` (default `{}`: none) names lanes that skip Nightshift and call NVIDIA's OpenAI-compatible API with `NVIDIA_API_KEY` (`app/llm/direct.py`), for example `{"judge": "nvidia/nemotron-3.5-lightning-30b-a3b"}`. Every other lane, and every plain-text or media call, stays on Nightshift. Without a key, every lane is on Nightshift whatever `DIRECT_LANES` says. `scripts/meterless.py status` says which lanes go to NVIDIA, and `lane judge` makes one call through whichever provider the app would use. A direct lane sends the same de-identified prompts it would send through Nightshift.
+**Lanes on NVIDIA's API.** `DIRECT_LANES` (default `{}`: none) names lanes that skip Nightshift and call NVIDIA's OpenAI-compatible API with `NVIDIA_API_KEY` (`app/llm/direct.py`), for example `{"judge": "nvidia/nemotron-3.5-lightning-30b-a3b"}`. Every other lane, and every plain-text or media call, stays on Nightshift. Without a key, every lane is on Nightshift whatever `DIRECT_LANES` says. `backend/scripts/meterless.py status` says which lanes go to NVIDIA, and `lane judge` makes one call through whichever provider the app would use. A direct lane sends the same de-identified prompts it would send through Nightshift.
 
 Not usable from this account or build: Nemotron 3 Super 120B and Llama 3.1 Nemotron Ultra 253B (NVIDIA 404), Llama 3.3 Nemotron Super 49B (410, retired), Nemotron 3 Embed 1B (the web build answers `/v1/embeddings` with 501).
 
@@ -206,16 +207,16 @@ Not usable from this account or build: Nemotron 3 Super 120B and Llama 3.1 Nemot
 Postgres must be up (`docker compose up -d`). From the repo root:
 
 ```bash
-backend/.venv/bin/python scripts/ingest_trials.py --live          # page the live ClinicalTrials.gov v2 API, Australia only
-backend/.venv/bin/python scripts/ingest_trials.py --pages <dir>   # or: saved GET /api/v2/studies pages, one per file
-backend/.venv/bin/pytest tests/trials                             # run from backend/: recorded pages, no network
+backend/.venv/bin/python backend/scripts/ingest_trials.py --live          # page the live ClinicalTrials.gov v2 API, Australia only
+backend/.venv/bin/python backend/scripts/ingest_trials.py --pages <dir>   # or: saved GET /api/v2/studies pages, one per file
+backend/.venv/bin/pytest tests/trials                                     # run from backend/: recorded pages, no network
 ```
 
 `--live` requests `GET /api/v2/studies?query.locn=Australia&pageSize=1000` and follows `nextPageToken` to the last page (about 13 pages for 12,600 studies), spacing requests to 40 a minute under the API's limit of about 50 and retrying timeouts, 429s and 5xx with back-off. It keeps only studies with an Australian Trial site and drops withdrawn ones (ADR 0004). It prints `N Trials from http: … new, … changed, … unchanged`; a second run reports everything unchanged. If a page still fails after the retries, the run stops and records nothing, so just run it again. It makes no model call and starts no Re-scan.
 
 ## Read the log file
 
-The app and `scripts/ingest_trials.py` write every step to one file, `data/logs/trialmatch.jsonl` (gitignored; set `LOG_FILE` to move it). It rotates at 10 MB (`LOG_MAX_BYTES`), keeping five old files (`trialmatch.jsonl.1` … `.5`, `LOG_BACKUPS`). One JSON object per line, each with `at`, `level`, `logger` and `step`:
+The app and `backend/scripts/ingest_trials.py` write every step to one file, `data/logs/trialmatch.jsonl` (gitignored; set `LOG_FILE` to move it). It rotates at 10 MB (`LOG_MAX_BYTES`), keeping five old files (`trialmatch.jsonl.1` … `.5`, `LOG_BACKUPS`). One JSON object per line, each with `at`, `level`, `logger` and `step`:
 
 | `step` | Written when | Fields |
 | --- | --- | --- |

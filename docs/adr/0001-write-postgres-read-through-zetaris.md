@@ -11,4 +11,4 @@ Zetaris is the required data layer, but it federates over other stores rather th
 - Owners: `wm_event`/`wm_audit` and the projected domain tables belong to `app.worldmodel`; `patient`/`document`/`document_page` to `app.record.repo`; `trace_*`/`llm_call` to `app.trace`.
 - There are two read paths to the same data (Postgres for the UI, Zetaris for agents). An agent that reads right after a write uses a bounded visibility wait because Zetaris may cache.
 - Our Postgres is separate from the `postgres` container inside the Zetaris bundle, which is Zetaris's internal store.
-- `scripts/rebuild_projections.py` must be able to rebuild every projected table from `wm_event` alone.
+- `backend/scripts/rebuild_projections.py` must be able to rebuild every projected table from `wm_event` alone.

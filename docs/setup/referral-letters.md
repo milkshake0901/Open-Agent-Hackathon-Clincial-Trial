@@ -50,7 +50,7 @@ To parse one PDF from the command line instead of the form:
 
 ```bash
 doppler run --project open-agent-hackathon --config dev_personal -- \
-  backend/.venv/bin/python scripts/load_referral.py path/to/referral.pdf
+  backend/.venv/bin/python backend/scripts/load_referral.py path/to/referral.pdf
 ```
 
 That script stores the letter on patient `pt_referral_20260209`. The form upload gives a new patient id from the file bytes. The PDF is kept under `data/raw/`, which is gitignored. Do not commit it.

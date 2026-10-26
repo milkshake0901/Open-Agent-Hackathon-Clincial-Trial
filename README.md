@@ -49,7 +49,7 @@ Zetaris and Meterless must run on your machine (hackathon rule). Hardware: Docke
    .venv/bin/pytest
    .venv/bin/uvicorn app.main:app --reload
    ```
-6. Trials: `backend/.venv/bin/python scripts/ingest_trials.py --live` from the repo root (Australia-wide, about 13 pages; until it runs, the app has one saved Trial).
+6. Trials: `backend/.venv/bin/python backend/scripts/ingest_trials.py --live` from the repo root (Australia-wide, about 13 pages; until it runs, the app has one saved Trial).
 7. Frontend: see [frontend/README.md](frontend/README.md).
 
 ## Data and privacy
@@ -59,11 +59,11 @@ Real patient documents go in `data/raw/`, which is gitignored and never committe
 ## Layout
 
 ```
-backend/app/   record · trials · matching · worldmodel · trace · llm · sql · api
-backend/tests/ boundary test, World Model conformance
-db/            Postgres schema, Zetaris registration SQL
-docs/          architecture, API, ADRs, setup prompts
-frontend/      Next.js: questionnaire, Diagnosis check, Trials page
-data/          demo (committed), raw (never committed), trials_snapshot
-scripts/       ingest trials, rebuild projections, check the Nightshift connection
+backend/app/     record · trials · matching · worldmodel · trace · llm · sql · api
+backend/tests/   boundary test, World Model conformance
+backend/scripts/ ingest trials, rebuild projections, check the Nightshift connection
+db/              Postgres schema, Zetaris registration SQL
+docs/            architecture, API, ADRs, setup prompts
+frontend/        Next.js: questionnaire, Diagnosis check, Trials page
+data/            demo (committed), raw (never committed), trials_snapshot
 ```

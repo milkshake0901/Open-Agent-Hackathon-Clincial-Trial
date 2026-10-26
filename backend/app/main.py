@@ -44,8 +44,8 @@ async def lifespan(app: FastAPI):
         agent_reader = reader
     app.state.ctx = Ctx(writer=writer, agent_reader=agent_reader, ui_reader=reader, llm=llm, wm=wm,
                         settings=settings, now=lambda: datetime.now(timezone.utc))
-    # Trials come from the saved snapshot until the Australia-wide ingest (scripts/ingest_trials.py) has run; idempotent
-    # across restarts.
+    # Trials come from the saved snapshot until the Australia-wide ingest (backend/scripts/ingest_trials.py) has
+    # run; idempotent across restarts.
     await trials.load_snapshot(app.state.ctx, settings.trials_snapshot_dir)
     try:
         yield

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-REPO_ROOT = Path(__file__).resolve().parents[2]   # holds .env, data/raw, data/media; scripts anchor to it
+REPO_ROOT = Path(__file__).resolve().parents[2]   # holds .env, data/raw, data/media; backend/scripts/ anchor to it
 NEMOTRON_LIGHTNING = "nvidia/nemotron-3.5-lightning-30b-a3b"   # listed by this box's GET /v1/models
 NEMOTRON_ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"
 

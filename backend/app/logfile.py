@@ -1,9 +1,9 @@
 """app/logfile.py — the operator's log file (#35): one JSON object per line, rotated by size.
 
-`configure(path)` is called once per process (app lifespan, scripts/ingest_trials.py); it puts a JSON-lines
-handler on the `app` logger, so any module's `logging.getLogger(__name__)` lands in the file. A pipeline step is
-written with `step(log, "matching.rescan.started", field=...)`: the line carries `step` and the fields at top
-level. Writing the log never fails the work it describes: a bad path or a full disk is reported on stderr by
+`configure(path)` is called once per process (app lifespan, backend/scripts/ingest_trials.py); it puts a
+JSON-lines handler on the `app` logger, so any module's `logging.getLogger(__name__)` lands in the file. A pipeline
+step is written with `step(log, "matching.rescan.started", field=...)`: the line carries `step` and the fields at
+top level. Writing the log never fails the work it describes: a bad path or a full disk is reported on stderr by
 logging itself, and `step` swallows its own errors.
 
 Only what the model already sees, or ids, goes in a line: never Search preferences, names or contact details."""

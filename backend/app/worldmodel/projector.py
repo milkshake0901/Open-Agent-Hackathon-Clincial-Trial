@@ -1,7 +1,7 @@
 """app/worldmodel/projector.py — World Model events → the relational tables Zetaris reads.
 
 Called by PgEventStore inside the append transaction. Pure mapping from one event to row
-writes; it never reads the World Model and never calls a model. `scripts/rebuild_projections.py`
+writes; it never reads the World Model and never calls a model. `backend/scripts/rebuild_projections.py`
 truncates the projected tables and replays wm_event through this, which proves they are derived.
 
 Mapping (see timeline.py for how domain operations become these events):
