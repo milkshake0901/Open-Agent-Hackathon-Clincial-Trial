@@ -16,8 +16,11 @@ from app.record import ProfileVersionId
 from app.trials import NctId
 from app.trace import RunId
 
+from app.matching.letter import CriterionScreen, TrialAsk, TrialScreen, ask_trial, screen_letter
+
 __all__ = ["rescan", "km", "CLOSED_SITE", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
-           "respondent_questions_for_version", "ListedVerdicts", "Verdict", "DoctorQuestion", "RespondentQuestion",
+           "respondent_questions_for_version", "screen_letter", "ask_trial", "TrialAsk", "TrialScreen", "CriterionScreen",
+           "ListedVerdicts", "Verdict", "DoctorQuestion", "RespondentQuestion",
            "RescanReport", "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation",
            "TrialSiteDistance"]
 

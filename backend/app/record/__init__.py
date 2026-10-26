@@ -17,6 +17,7 @@ from app.ctx import Ctx
 from app.record import diagnosis as shortlists, loop, questionnaire, repo, storage
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
+from app.record.ground import GroundedAnswer, GroundedCitation, LetterSpan, ask, letter_spans, page_png
 from app.record.pdf import UnreadableDocument, to_pages
 from app.record.questionnaire import (
     DEFINITION, Option, Question, Questionnaire, Section, SubmittedAnswers,
@@ -68,6 +69,8 @@ __all__ = [
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
     "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
+    "ask", "page_png", "letter_spans", "GroundedAnswer", "GroundedCitation", "LetterSpan",
+    "referral_letters", "prefill_letter", "load_letter", "LetterPrefill",
     "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId", "DiagnosisCheckId",
 ]
 
@@ -424,3 +427,65 @@ async def diff(ctx: Ctx, from_version: ProfileVersionId, to_version: ProfileVers
     return VersionDiff(from_version=before.id, to_version=after.id,
                        facts_added=tuple(f for f in after.facts if f.id not in before.fact_ids),
                        subjects_changed=changed)
+
+
+@dataclass(frozen=True)
+class LetterPrefill:
+    """Answers read off one parsed referral, and which letter they came from."""
+    patient_id: str
+    document_hash: str
+    filename: str
+    answers: dict[str, str]
+
+
+async def referral_letters(ctx: Ctx) -> list[LetterPrefill]:
+    """Letters that already have parsed regions, newest first. `answers` is empty until one is filled."""
+    rows = await ctx.ui_reader.fetch(
+        f"SELECT d.patient_id, d.hash, d.filename FROM {ctx.ui_reader.table('document')} d "
+        f"WHERE EXISTS (SELECT 1 FROM {ctx.ui_reader.table('document_span')} s WHERE s.document_hash = d.hash) "
+        "ORDER BY d.uploaded_at DESC")
+    return [LetterPrefill(r["patient_id"], r["hash"], r["filename"], {}) for r in rows]
+
+
+async def prefill_letter(ctx: Ctx, patient_id: PatientId) -> LetterPrefill:
+    """Fill Intake answers from the regions already stored for this patient's letter."""
+    from app.record.prefill import prefill_answers
+
+    rows = await repo.spans_for_patient(ctx.ui_reader, patient_id)
+    if not rows:
+        raise NotFound(f"patient {patient_id} has no parsed letter")
+    return LetterPrefill(str(patient_id), rows[0]["document_hash"], rows[0]["filename"],
+                         prefill_answers([(r["kind"], r["text"]) for r in rows]))
+
+
+async def load_letter(ctx: Ctx, filename_raw: str, content: bytes) -> LetterPrefill:
+    """Store a referral PDF and fill Intake answers from its parsed regions.
+
+    The same file again is not sent back to the parse model: its stored regions are reused.
+    """
+    import asyncio
+
+    from app.extraction import extract_pdf
+    from app.record.prefill import prefill_answers
+    from app.record.referral import save_referral
+
+    if not content:
+        raise UnreadableDocument("the file is empty")
+    if not filename_raw.lower().endswith(".pdf") and not content.startswith(b"%PDF"):
+        raise UnreadableDocument("the file is not a PDF")
+    stored = await ctx.ui_reader.fetch(
+        f"SELECT d.patient_id, d.hash FROM {ctx.ui_reader.table('document')} d "
+        f"WHERE EXISTS (SELECT 1 FROM {ctx.ui_reader.table('document_span')} s WHERE s.document_hash = d.hash)")
+    for row in stored:
+        if storage.document_hash(PatientId(row["patient_id"]), content) == row["hash"]:
+            return await prefill_letter(ctx, PatientId(row["patient_id"]))
+    parsed = await asyncio.to_thread(extract_pdf, content)
+    regions = [(block.kind, block.text) for page in parsed.pages for block in page.blocks]
+    if not any(kind == "Text" and text.strip() for kind, text in regions):
+        raise UnreadableDocument("the letter had no readable text")
+    patient_id = "pt_" + hashlib.sha256(content).hexdigest()[:16]
+    digest = await save_referral(
+        ctx.writer, patient_id=patient_id, label=storage.filename(filename_raw), filename_raw=filename_raw,
+        content=content, parsed=parsed, uploaded_at=ctx.now())
+    storage.keep_raw(ctx.settings.raw_documents_dir, DocumentHash(digest), content)
+    return LetterPrefill(patient_id, digest, storage.filename(filename_raw), prefill_answers(regions))

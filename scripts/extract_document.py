@@ -1,0 +1,27 @@
+"""Read a scanned PDF with Nemotron Parse.
+
+    doppler run -- backend/.venv/bin/python scripts/extract_document.py path/to/file.pdf
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
+
+from app.extraction import extract_pdf  # noqa: E402
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 1:
+        print("usage: extract_document.py FILE.pdf", file=sys.stderr)
+        return 2
+    path = Path(argv[0])
+    document = extract_pdf(path.read_bytes())
+    print(document.text)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

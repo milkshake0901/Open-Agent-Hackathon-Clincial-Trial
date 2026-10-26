@@ -4,7 +4,7 @@
 --    JDBC sources use CREATE DATASOURCE, not CREATE LIGHTNING DATABASE (getting-started
 --    docs/guides/zetaris-lightning-sql-commands.md §4.1); tables are then <datasource>.<table>, e.g. trialmatch.criterion.
 --    Credentials are the local docker-compose.yml defaults.
-CREATE DATASOURCE trialmatch DESCRIBE BY "TrialMatch Postgres (World Model projections)" OPTIONS (
+CREATE DATASOURCE trialmatch DESCRIBE BY "TrialMatch Postgres, World Model projections" OPTIONS (
   jdbcdriver "org.postgresql.Driver",
   jdbcurl "jdbc:postgresql://host.docker.internal:5433/trialmatch",
   username "trialmatch",
@@ -13,7 +13,7 @@ CREATE DATASOURCE trialmatch DESCRIBE BY "TrialMatch Postgres (World Model proje
 );
 -- Import table metadata; re-run after a schema change (each db/migrations/*.sql that adds a table says so).
 -- Agents read: trial, trial_condition, criterion, trial_site, trial_contact, trial_outcome, trial_outcome_value,
--- trial_publication, fact, profile_version, profile_version_fact, verdict, criterion_result, doctor_question,
+-- trial_publication, fact, document, document_span, profile_version, profile_version_fact, verdict, criterion_result, doctor_question,
 -- respondent_question.
 REGISTER DATASOURCE TABLES FROM trialmatch;
 

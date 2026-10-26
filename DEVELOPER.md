@@ -238,6 +238,12 @@ python3 .scratch/ctgov-discovery/ref/run_sql.py --env-file .env -e "REGISTER DAT
 backend/.venv/bin/pytest tests/sql                          # run from backend/: the live test compares both readers
 ```
 
+The description on `CREATE DATASOURCE` may contain letters, digits, spaces, and `_ . - ,` only. Parentheses are rejected.
+
+## Referral letters and trial questions
+
+A scanned referral can fill the questionnaire, and `/record` can ask one stored trial a question against that letter. The criteria and the letter regions are read through Zetaris; the model answers and must cite a real region. Setup, the two pages, and the Doppler secret names are in [docs/setup/referral-letters.md](docs/setup/referral-letters.md).
+
 ## Where to start
 
 1. `backend/app/worldmodel/` until `tests/worldmodel/test_conformance.py` passes 8/8. Everything else writes through it.

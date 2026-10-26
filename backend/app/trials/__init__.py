@@ -404,6 +404,15 @@ def label_keys(labels: Sequence[str]) -> list[str]:
     return list(dict.fromkeys(label_key(label) for label in labels))
 
 
+async def trials_for_labels(ctx: Ctx, labels: tuple[str, ...]) -> tuple[list[Trial], list[Trial]]:
+    """(open, closed) stored trials listing one of these Condition labels. Open trials are by NCT id. Closed trials
+    are newest first. Both are empty when `labels` is empty."""
+    picked = await selection(ctx, labels)
+    found = {t.nct_id: t for t in await repo.trials_by_id(ctx.ui_reader, sorted(picked.open | picked.closed))}
+    return ([found[i] for i in sorted(picked.open)],
+            _newest_first([found[i] for i in picked.closed]))
+
+
 async def closed_trials_with_labels(ctx: Ctx, condition_term: tuple[str, ...] | None) -> list[Trial]:
     """The Closed trials the Condition term selects (Selection.closed), newest first by cutoff date (Trial.closed_on);
     none without a Condition term. Never judged: they have no Criterion results or Verdict (ADR 0004)."""

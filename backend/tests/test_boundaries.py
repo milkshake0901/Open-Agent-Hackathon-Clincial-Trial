@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1] / "app"
-MODULES = {"record", "trials", "matching", "enquiry", "worldmodel", "trace", "llm", "sql", "api"}
+MODULES = {"record", "trials", "matching", "enquiry", "worldmodel", "trace", "llm", "sql", "api", "extraction"}
 # Shared plumbing that any module may import directly.
 ALLOWED = {"app.sql.reader", "app.sql.writer", "app.trace.events", "app.trace.state", "app.llm.nightshift"}
 IMPORT = re.compile(r"^\s*from\s+(app\.[\w.]+)\s+import", re.M)

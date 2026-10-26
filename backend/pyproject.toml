@@ -12,6 +12,8 @@ dependencies = [
   "openai>=1.40",
   "langchain-core>=0.3",
   "langchain-openai>=0.2",
+  "langchain-nvidia-ai-endpoints>=0.3",
+  "pypdfium2>=4",
   "pdfplumber>=0.11",
   "python-multipart>=0.0.9",
 ]

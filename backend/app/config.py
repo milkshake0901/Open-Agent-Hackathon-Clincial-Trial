@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     meterless_runtime_token: str = ""
     meterless_app_id: str = "trialmatch"
     meterless_model: str = NEMOTRON_LIGHTNING  # plain text calls outside a lane
+    # Nemotron Parse only. A separate Doppler secret from the Nightshift NVIDIA key. Never commit it.
+    nvidia_parse_api_key: str = ""
+    nvidia_parse_model: str = "nvidia/nemotron-parse"
     # lane → Nightshift model id, pinned rather than meterless/* so the model behind each agent is fixed (DEVELOPER.md).
     # All on Ultra: Lightning stops at ~60 s on the Intake prompt and is switched off in this box's Compute sources.
     # Once it is on, move judge to Lightning so a second model checks the Matcher. Override with LANE_MODELS='{...}'.
