@@ -83,7 +83,7 @@ class LLM(Protocol):
 async def complete(ctx, lane: Lane, *, system: str, user: str, out: type[T], run_id: RunId | None) -> Completion[T]:
     """JSON-mode call, parse the reply into `out`; ONE transport-level retry on parse failure with the validation error
     appended (this is not a domain loop and is not traced as one). Records an llm_call row and emits LlmCalled to the run when run_id given.
-    Timeout 180 s (model load). Raises LlmUnavailable after that; loops treat it as a failed Trial / Rejected run.
+    Timeout 10 min (model load, a long letter), retries included. Raises LlmUnavailable after that; loops treat it as a failed Trial / Rejected run.
     Every attempt writes one `llm.complete` line to the log file (app.logfile), run or not."""
     from app import trace
     from app.trace.events import LlmCalled
@@ -125,7 +125,7 @@ async def complete(ctx, lane: Lane, *, system: str, user: str, out: type[T], run
     raise AssertionError("unreachable")
 
 
-_TIMEOUT_S = 180
+_TIMEOUT_S = 600
 log = logging.getLogger(__name__)
 
 

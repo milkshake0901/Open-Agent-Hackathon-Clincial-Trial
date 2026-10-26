@@ -28,16 +28,21 @@ log = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "http://127.0.0.1:8088/v1"
 DETECT_PORTS = (8088, 8090, 8787, 11434)
 DETECT_HOSTS = ("127.0.0.1", "localhost", "[::1]")
-TIMEOUT_S = 180.0          # a model load can take minutes
-# NVIDIA's API answers 429 when Intake sends a letter's pages back to back; Nightshift relays it as a 502.
-RATE_LIMIT_BACKOFF_S = (2, 5, 10)
+TIMEOUT_S = 600.0          # a model load, or reading a long letter, can take minutes
+# NVIDIA's API answers 429 when Intake sends a letter's pages back to back, and a provider hiccup ("Load failed")
+# comes back as a 5xx; Nightshift relays both as a 502.
+TRANSIENT_BACKOFF_S = (2, 5, 10)
 
 Status = Literal["online", "unauthorized", "offline"]
 
 
-def _rate_limited(e: Exception) -> bool:
-    """A 429 from Nightshift itself, or one from the provider behind it relayed in a 502's body."""
-    return getattr(e, "status_code", None) == 429 or "429" in str(e)
+def _transient(e: Exception) -> bool:
+    """Worth another try: a 429 or 5xx from Nightshift (a provider's 429 relayed in a 502's body among them), or no
+    connection. A timeout is not: the call has already used its time."""
+    import openai
+    status = getattr(e, "status_code", None)
+    return (status == 429 or (status is not None and status >= 500) or "429" in str(e)
+            or (isinstance(e, openai.APIConnectionError) and not isinstance(e, openai.APITimeoutError)))
 
 
 def normalize_base_url(url: str) -> str:
@@ -173,13 +178,14 @@ class Nightshift:
         prompt = [SystemMessage(f"{system}\n\nReply with one JSON object only, matching this JSON Schema:\n{schema}"),
                   HumanMessage(user)]
         started = time.monotonic()
-        for wait_s in (*RATE_LIMIT_BACKOFF_S, None):
+        for wait_s in (*TRANSIENT_BACKOFF_S, None):
             try:
                 msg = await self.chat_model(lane).ainvoke(prompt, response_format={"type": "json_object"})
                 break
             except Exception as e:   # openai.* errors surface through LangChain
-                if wait_s is not None and _rate_limited(e):
-                    log.warning("%s lane (%s) rate limited; retrying in %ss", lane, model, wait_s)
+                if wait_s is not None and _transient(e):
+                    log.warning("%s lane (%s) failed (%s); retrying in %ss", lane, model,
+                                getattr(e, "status_code", type(e).__name__), wait_s)
                     await asyncio.sleep(wait_s)
                     continue
                 raise LlmUnavailable(f"{lane} lane ({model}) failed: {type(e).__name__}: {str(e)[:200]}") from e

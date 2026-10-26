@@ -146,7 +146,7 @@ async def test_gateway_retries_once_with_the_validation_error_then_gives_up():
 
 
 async def test_a_relayed_rate_limit_is_retried(monkeypatch):
-    monkeypatch.setattr("app.llm.nightshift.RATE_LIMIT_BACKOFF_S", (0, 0))
+    monkeypatch.setattr("app.llm.nightshift.TRANSIENT_BACKOFF_S", (0, 0))
     seen: list[httpx.Request] = []
     ok = runtime(seen, reply='{"answer": "pong"}')
 
@@ -167,8 +167,47 @@ async def test_a_relayed_rate_limit_is_retried(monkeypatch):
     assert len(seen) == 3
 
 
+async def test_a_provider_load_failure_is_retried(monkeypatch):
+    monkeypatch.setattr("app.llm.nightshift.TRANSIENT_BACKOFF_S", (0,))
+    seen: list[httpx.Request] = []
+    ok = runtime(seen, reply='{"answer": "pong"}')
+
+    def handle(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/v1/chat/completions" and not seen:
+            seen.append(req)
+            return httpx.Response(502, json={"error": {"message": "failed", "type": "api_error",
+                                                       "code": "provider_error"}, "meterless_detail": "Load failed"})
+        return ok.handle_request(req)
+
+    class Out(BaseModel):
+        answer: str
+
+    n = Nightshift("127.0.0.1:8088", TOKEN, "TrialMatch", {"fast": "m"}, transport=httpx.MockTransport(handle))
+    reply = await n.complete(Lane.FAST, "system", "user", Out)
+    assert reply.text == '{"answer": "pong"}'
+    assert len(seen) == 2
+
+
+async def test_a_bad_request_is_not_retried(monkeypatch):
+    monkeypatch.setattr("app.llm.nightshift.TRANSIENT_BACKOFF_S", (0, 0))
+    calls = 0
+
+    def handle(req: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, json={"error": {"message": "bad request"}})
+
+    class Out(BaseModel):
+        answer: str
+
+    n = Nightshift("127.0.0.1:8088", TOKEN, "TrialMatch", {"fast": "m"}, transport=httpx.MockTransport(handle))
+    with pytest.raises(LlmUnavailable, match="400"):
+        await n.complete(Lane.FAST, "system", "user", Out)
+    assert calls == 1
+
+
 async def test_a_rate_limit_that_persists_is_unavailable(monkeypatch):
-    monkeypatch.setattr("app.llm.nightshift.RATE_LIMIT_BACKOFF_S", (0,))
+    monkeypatch.setattr("app.llm.nightshift.TRANSIENT_BACKOFF_S", (0,))
     calls = 0
 
     def handle(req: httpx.Request) -> httpx.Response:
