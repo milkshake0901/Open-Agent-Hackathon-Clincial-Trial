@@ -1,5 +1,5 @@
-"""Every uploaded PDF is read into Regions (#45): the documents upload and the letter upload both read through the
-Parser on Ctx, de-identify the whole Document, and store its pages and Regions with their boxes.
+"""Every uploaded PDF is read into Regions (#45): the documents upload reads through the Parser on Ctx,
+de-identifies the whole Document, and stores its pages and Regions with their boxes.
 
 Nemotron Parse is replaced on Ctx by recorded Regions (tests/fixtures/letters.py); the Intake model by a scripted
 reply. Every identity is invented.
@@ -99,17 +99,16 @@ LETTERHEAD_ONLY = recording((("Page-header", "Lakeshore Imaging"), ("Page-footer
 
 
 @pytest.mark.parametrize("found", [BLANK, LETTERHEAD_ONLY], ids=["blank", "letterhead-only"])
-async def test_a_pdf_whose_parse_finds_no_readable_text_is_refused_by_both_uploads_and_nothing_is_stored(
+async def test_a_pdf_whose_parse_finds_no_readable_text_is_refused_and_nothing_is_stored(
         clean_db, tmp_path, found):
     app.state.ctx = documents_ctx(clean_db, tmp_path, RecordedParse(found))
     content = letter_pdf(found)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         patient = await new_patient(http)
         added = await http.post(f"/api/patients/{patient}/documents", files={"file": ("scan.pdf", content)})
-        letter = await http.post("/api/referrals", files={"file": ("scan.pdf", content)})
 
-    assert (added.status_code, letter.status_code) == (422, 422)
-    assert "no readable text" in added.json()["detail"] and "no readable text" in letter.json()["detail"]
+    assert added.status_code == 422
+    assert "no readable text" in added.json()["detail"]
     assert await clean_db.fetch("SELECT hash FROM document") == []
 
 
@@ -119,24 +118,6 @@ async def test_a_file_that_is_not_a_pdf_is_refused_without_being_read(clean_db, 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         patient = await new_patient(http)
         added = await http.post(f"/api/patients/{patient}/documents", files={"file": ("a.pdf", b"GIF89a not a pdf")})
-        letter = await http.post("/api/referrals", files={"file": ("a.pdf", b"GIF89a not a pdf")})
 
-    assert (added.status_code, letter.status_code) == (422, 422)
+    assert added.status_code == 422
     assert parser.reads == []
-
-
-async def test_an_uploaded_letter_stores_the_same_deidentified_regions_as_an_added_document(clean_db, tmp_path):
-    app.state.ctx = documents_ctx(clean_db, tmp_path, RecordedParse(NARRATIVE_LETTER))
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        patient = await new_patient(http)
-        added = (await http.post(f"/api/patients/{patient}/documents",
-                                 files={"file": ("letter.pdf", letter_pdf(NARRATIVE_LETTER, "added"))})).json()
-        letter = (await http.post("/api/referrals",
-                                  files={"file": ("letter.pdf", letter_pdf(NARRATIVE_LETTER, "uploaded"))})).json()
-        from_added = (await http.get(f"/api/documents/{added['document_hash']}/regions")).json()["regions"]
-        from_letter = (await http.get(f"/api/documents/{letter['document_hash']}/regions")).json()["regions"]
-
-    def without_ids(regions):
-        return [{k: v for k, v in r.items() if k != "span_id"} for r in regions]
-    assert without_ids(from_letter) == without_ids(from_added)
-    assert_no_identifier(str(from_letter), NARRATIVE_LETTER_IDENTITY)

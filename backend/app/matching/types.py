@@ -55,6 +55,8 @@ class CriterionResult:
     rationale: str                  # one sentence from the Matcher; shown in UI
     ask: str | None = None          # unknown only: the questionnaire question ("Q8") the Respondent could answer
                                     # more exactly; set → a Respondent question, None → a Doctor question
+    context_facts: tuple[Citation, ...] = ()   # unknown only: Context Facts, Facts of the Profile version it considered
+                                    # that don't settle it (the Evaluator keeps only real ones); never a Citation
 
 
 @dataclass(frozen=True)

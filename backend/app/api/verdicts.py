@@ -58,7 +58,8 @@ async def _verdict_out(ctx: Ctx, v: matching.Verdict) -> VerdictOut:
         profile_version_id=v.profile_version_id, outcome=v.outcome, degraded=v.degraded, attempts=v.attempts,
         results=[{"criterion_id": r.criterion_id, "kind": criteria[r.criterion_id].kind,
                   "text": criteria[r.criterion_id].text, "outcome": r.outcome, "rationale": r.rationale,
-                  "citation": citation_out(r.citation)}
+                  "citation": citation_out(r.citation),
+                  "context_facts": [citation_out(c) for c in r.context_facts]}
                  for r in v.results],
         questions=[question_out(q) for q in v.questions],
         respondent_questions=[respondent_question_out(q) for q in v.respondent_questions],

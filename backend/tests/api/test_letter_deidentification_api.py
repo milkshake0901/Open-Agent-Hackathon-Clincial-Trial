@@ -69,9 +69,11 @@ def ask_reply(lane, system, user):
 
 
 async def upload(http, filename=FILENAME, content=CONTENT) -> dict:
-    loaded = await http.post("/api/referrals", files={"file": (filename, content, "application/pdf")})
-    assert loaded.status_code == 200, loaded.text
-    return loaded.json()
+    """The letter added to a new Respondent's own patient: the upload's reply, with that patient's id."""
+    patient = (await http.post("/api/patients", json={"label": "Web respondent"})).json()["patient_id"]
+    loaded = await http.post(f"/api/patients/{patient}/documents", files={"file": (filename, content, "application/pdf")})
+    assert loaded.status_code == 202, loaded.text
+    return {**loaded.json(), "patient_id": patient}
 
 
 async def stored_texts(pool) -> list[str]:
@@ -104,10 +106,10 @@ async def test_an_uploaded_letter_stores_no_name_hospital_number_or_birth_date_a
     app.state.ctx = letter_ctx(clean_db, tmp_path)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         letter = await upload(http)
-        listed = (await http.get("/api/referrals")).json()
+        regions = (await http.get(f"/api/documents/{letter['document_hash']}/regions")).json()
 
     assert_no_identifier(str(letter))
-    assert_no_identifier(str(listed))
+    assert_no_identifier(str(regions))
     for text in await stored_texts(clean_db):
         assert_no_identifier(text)
     spans = await clean_db.fetch("SELECT page, ordinal, kind, text, x0, y0, x1, y1 FROM document_span "
@@ -136,6 +138,6 @@ async def test_the_trial_question_shows_the_model_no_identity_and_cites_the_stor
         assert_no_identifier(call.system + call.user)
     stored = {r["id"]: r["text"] for r in await clean_db.fetch("SELECT id, text FROM document_span")}
     citations = asked.json()["citations"]
-    assert len(citations) == 3
+    assert len(citations) == 4, "the Title and the three Text Regions; never a Page-header or Page-footer"
     assert all(c["quote"] == stored[c["span_id"]] for c in citations)
     assert_no_identifier(str(asked.json()))

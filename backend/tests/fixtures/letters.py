@@ -5,7 +5,7 @@ documents (a narrative oncology letter, a structured MRI report), never their co
 in the gitignored raw folder.
 
     ctx = replace(make_ctx(pool), parser=RecordedParse(NARRATIVE_LETTER))
-    POST /api/referrals with letter_pdf(NARRATIVE_LETTER)
+    POST /api/patients/{pid}/documents with letter_pdf(NARRATIVE_LETTER)
 
 Hand-made recordings for added-Document tests: `recording(...)` per page, `letter_pdf(read, "name")` for its bytes,
 and `recorded((bytes, read), ...)` as the parser replaying them.

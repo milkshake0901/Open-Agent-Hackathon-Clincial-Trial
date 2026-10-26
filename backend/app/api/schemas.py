@@ -301,6 +301,7 @@ class CriterionResultOut(BaseModel):
     outcome: Literal["met", "not_met", "unknown"]
     rationale: str
     citation: VerdictCitationOut | None
+    context_facts: list[VerdictCitationOut] = []   # unknown only: Facts it considered that don't settle it
 
 
 class DoctorQuestionOut(BaseModel):
@@ -483,17 +484,6 @@ class LetterOut(BaseModel):
     answers: dict[str, str] = {}
 
 
-class LetterListOut(BaseModel):
-    letters: list[LetterOut]
-
-
-class MatchingTrialsOut(BaseModel):
-    """Stored trials whose Condition labels contain one of the search phrases, open first."""
-    labels: list[str]
-    open: list[ClosedTrialOut]
-    closed: list[ClosedTrialOut]
-
-
 class RescanOut(BaseModel):
     run_id: str
     planned: list[str]
@@ -531,10 +521,6 @@ class VersionDiffOut(BaseModel):
     verdicts_changed: list[VerdictChangeOut] = []   # Trials whose outcome or any Criterion result moved
 
 
-class AskIn(BaseModel):
-    question: str
-
-
 class RegionOut(BaseModel):
     span_id: str
     page: int
@@ -554,29 +540,6 @@ class DocumentRegionsOut(BaseModel):
     regions: list[RegionOut]
     document_date: date | None = None   # the Document date read from its first page (GLOSSARY); None if it gives none
     date_order: Literal["day_first", "month_first"] | None = None   # how it writes numeric dates; None: not settled
-
-
-class GroundedCitationOut(BaseModel):
-    span_id: str
-    document_hash: str
-    filename: str
-    page: int
-    quote: str
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-
-
-class AskOut(BaseModel):
-    answer: Literal["yes", "no", "unknown"]
-    reasoning: str
-    as_of: date
-    patient_label: str
-    document_hash: str
-    filename: str
-    page_count: int
-    citations: list[GroundedCitationOut]
 
 
 class ScreenIn(BaseModel):

@@ -18,7 +18,7 @@ from app.ctx import Ctx
 from app.record import dates, diagnosis as shortlists, loop, questionnaire, repo, storage
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
-from app.record.ground import GroundedAnswer, GroundedCitation, LetterSpan, ask, letter_spans, page_png
+from app.record.ground import LetterSpan, letter_spans, page_png
 from app.record.pdf import UnreadableDocument
 from app.record.questionnaire import (
     DEFINITION, Option, Question, Questionnaire, Section, SubmittedAnswers, cited_answer,
@@ -39,6 +39,7 @@ from app.record.types import (
     DocumentHash,
     DraftFact,
     Fact,
+    INTAKE_KINDS,
     FactId,
     IngestOutcome,
     InvalidAnswers,
@@ -75,8 +76,8 @@ __all__ = [
     "IngestOutcome", "Committed", "AwaitingPatient", "AwaitingReview", "Rejected",
     "letter_review", "answer_review", "correct_document_date", "commit_review", "LetterReview", "ReviewItem",
     "ReviewCommitted", "NotAwaitingReview", "InvalidReview",
-    "ask", "page_png", "letter_spans", "GroundedAnswer", "GroundedCitation", "LetterSpan",
-    "referral_letters", "prefill_letter", "load_letter", "LetterPrefill",
+    "page_png", "letter_spans", "LetterSpan", "INTAKE_KINDS",
+    "prefill_letter", "LetterPrefill",
     "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId", "DiagnosisCheckId",
 ]
 
@@ -597,15 +598,6 @@ class LetterPrefill:
     answers: dict[str, str]
 
 
-async def referral_letters(ctx: Ctx) -> list[LetterPrefill]:
-    """Letters that already have parsed regions, newest first. `answers` is empty until one is filled."""
-    rows = await ctx.ui_reader.fetch(
-        f"SELECT d.patient_id, d.hash, d.filename FROM {ctx.ui_reader.table('document')} d "
-        f"WHERE EXISTS (SELECT 1 FROM {ctx.ui_reader.table('document_span')} s WHERE s.document_hash = d.hash) "
-        "ORDER BY d.uploaded_at DESC")
-    return [LetterPrefill(r["patient_id"], r["hash"], r["filename"], {}) for r in rows]
-
-
 async def prefill_letter(ctx: Ctx, patient_id: PatientId) -> LetterPrefill:
     """Fill Intake answers from the regions already stored for this patient's letter."""
     from app.record.prefill import prefill_answers
@@ -616,31 +608,3 @@ async def prefill_letter(ctx: Ctx, patient_id: PatientId) -> LetterPrefill:
     return LetterPrefill(str(patient_id), rows[0]["document_hash"], rows[0]["filename"],
                          prefill_answers([(r["kind"], r["text"]) for r in rows]))
 
-
-async def load_letter(ctx: Ctx, filename_raw: str, content: bytes) -> LetterPrefill:
-    """Store a referral PDF and fill Intake answers from its parsed regions.
-
-    The same file again is not sent back to the parse model: its stored regions are reused.
-    """
-    import asyncio
-
-    from app.record.prefill import prefill_answers
-    from app.record.referral import as_document, read_pdf, store_document
-
-    stored = await ctx.ui_reader.fetch(
-        f"SELECT d.patient_id, d.hash FROM {ctx.ui_reader.table('document')} d "
-        f"WHERE EXISTS (SELECT 1 FROM {ctx.ui_reader.table('document_span')} s WHERE s.document_hash = d.hash)")
-    for row in stored:
-        if storage.document_hash(PatientId(row["patient_id"]), content) == row["hash"]:
-            return await prefill_letter(ctx, PatientId(row["patient_id"]))
-    parsed, safe_filename = await asyncio.to_thread(read_pdf, ctx.parser, filename_raw, content)
-    patient_id = PatientId("pt_" + hashlib.sha256(content).hexdigest()[:16])
-    now = ctx.now()
-    doc = as_document(patient_id, content, safe_filename, parsed, now)
-    async with ctx.writer.transaction() as tx:
-        await tx.execute("INSERT INTO patient (id, label) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
-                         (patient_id, f"Letter uploaded {now.date().isoformat()}"))
-        await store_document(tx, doc, parsed, now)
-    storage.keep_raw(ctx.settings.raw_documents_dir, doc.hash, content)
-    return LetterPrefill(patient_id, doc.hash, safe_filename,
-                         prefill_answers([(block.kind, block.text) for page in parsed.pages for block in page.blocks]))

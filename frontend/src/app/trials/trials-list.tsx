@@ -3,7 +3,9 @@
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
 // first, excluded; then nearest recruiting site). Trials with no recruiting site within the travel limit sit in a
 // collapsed "Further away" group under their outcome, never hidden. Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
-// questionnaire opens a side panel with the question and the answer, the quote highlighted, and one from a letter opens it with the page and its Region boxed. Each Trial offers its contacts and an Enquiry to copy and send (about
+// questionnaire opens a side panel with the question and the answer, the quote highlighted, and one from a letter opens it with the page and its Region boxed
+// (as does each Context Fact listed under an unknown reason). Each recruiting Trial takes a free-form question, whose
+// cited Regions open in the same kind of side panel. Each Trial offers its contacts and an Enquiry to copy and send (about
 // taking part, or about its results once it is no longer recruiting). Questions for you (Respondent questions, answered inline) and
 // Questions for your doctor are kept as two separate lists. A Trial that stopped recruiting after it was judged keeps
 // its Verdict, shown in its own "No longer recruiting" section after the open ones (ADR 0004). Only Trials listing a
@@ -19,6 +21,7 @@ import { checkedLabel, CitationSource, hasSource, sourceLabel } from "@/app/cita
 import { QuestionsForYou } from "./questions-for-you";
 import { Enquiry } from "./enquiry";
 import { TrialContacts } from "./trial-contacts";
+import { TrialQuestion } from "./trial-question";
 
 type State =
   | { kind: "loading" }
@@ -181,6 +184,7 @@ function VerdictCard({ verdict: v, patientId, versionId }: { verdict: VerdictOut
           {v.results.map((r) => <ResultItem key={r.criterion_id} result={r} />)}
         </ul>
       </details>
+      {!v.no_longer_recruiting && <TrialQuestion patientId={patientId} nctId={v.nct_id} />}
       <TrialContacts nctId={v.nct_id} />
       <Enquiry patientId={patientId} versionId={versionId} nctId={v.nct_id} open={!v.no_longer_recruiting} />
     </article>
@@ -232,7 +236,34 @@ function ResultItem({ result: r }: { result: CriterionResultOut }) {
       {r.citation && hasSource(r.citation) && open && (
         <CitationPanel result={r} citation={r.citation} onClose={() => setOpen(false)} />
       )}
+      {r.context_facts.length > 0 && <ContextFacts result={r} />}
     </li>
+  );
+}
+
+// Under an unknown reason: the Context Facts it considered, each opening its source in the side panel.
+function ContextFacts({ result: r }: { result: CriterionResultOut }) {
+  const [opened, setOpened] = useState<VerdictCitation | null>(null);
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      <p className="text-sm font-medium">What we looked at, which doesn't settle it:</p>
+      <ul className="flex flex-col gap-2">
+        {r.context_facts.map((c) => (
+          <li key={c.fact_id} className="text-sm flex flex-col gap-1">
+            <p>
+              <span className="text-muted">{c.filename ? `${c.filename}, ` : ""}{c.label}</span>: “{c.quote}”
+            </p>
+            {hasSource(c) && (
+              <button type="button" onClick={() => setOpened(c)}
+                      className="min-h-11 self-start rounded-lg border border-border px-4 text-sm font-semibold text-accent">
+                {sourceLabel(c)}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {opened && <CitationPanel result={r} citation={opened} onClose={() => setOpened(null)} />}
+    </div>
   );
 }
 

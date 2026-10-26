@@ -1,4 +1,5 @@
-"""app/matching/repo.py — SQL for verdict, criterion_result, doctor_question, respondent_question. Reads only."""
+"""app/matching/repo.py — SQL for verdict, criterion_result (and its Context Facts), doctor_question,
+respondent_question. Reads only."""
 from __future__ import annotations
 
 from app.matching.types import (
@@ -38,6 +39,25 @@ def _citation(r: dict) -> Citation | None:
                     answer=answer, checked=bool(r["checked"]) if r["span_id"] else None)
 
 
+async def _context_facts(reader: SqlReader, key: tuple) -> dict[str, tuple[Citation, ...]]:
+    """Each result's Context Facts, in the Matcher's order, shaped like its Citation (_citation)."""
+    rows = await reader.fetch(
+        f"SELECT x.criterion_id, f.id AS fact_id, f.document_hash, f.page, f.quote, f.question, f.span_id, f.checked, "
+        f"d.filename, "
+        f"s.x0, s.y0, s.x1, s.y1, p.text AS page_text FROM {reader.table('criterion_result_context')} x "
+        f"JOIN {reader.table('fact')} f ON f.id = x.fact_id "
+        f"LEFT JOIN {reader.table('document')} d ON d.hash = f.document_hash "
+        f"LEFT JOIN {reader.table('document_span')} s ON s.id = f.span_id "
+        f"LEFT JOIN {reader.table('document_page')} p ON f.question IS NOT NULL "
+        "AND p.document_hash = f.document_hash AND p.number = f.page "
+        "WHERE x.nct_id = $1 AND x.eligibility_hash = $2 AND x.profile_version_id = $3 "
+        "ORDER BY x.criterion_id, x.ordinal", key)
+    out: dict[str, tuple[Citation, ...]] = {}
+    for r in rows:
+        out[r["criterion_id"]] = out.get(r["criterion_id"], ()) + (_citation(r),)
+    return out
+
+
 async def _results(reader: SqlReader, key: tuple) -> ValidatedResults:
     rows = await reader.fetch(
         f"SELECT cr.criterion_id, cr.outcome, cr.rationale, cr.ask, f.id AS fact_id, f.document_hash, f.page, f.quote, "
@@ -49,9 +69,10 @@ async def _results(reader: SqlReader, key: tuple) -> ValidatedResults:
         f"LEFT JOIN {reader.table('document_page')} p ON f.question IS NOT NULL "
         "AND p.document_hash = f.document_hash AND p.number = f.page "
         "WHERE cr.nct_id = $1 AND cr.eligibility_hash = $2 AND cr.profile_version_id = $3 ORDER BY c.ordinal", key)
+    context = await _context_facts(reader, key)
     return ValidatedResults(CriterionResult(
         criterion_id=CriterionId(r["criterion_id"]), outcome=Outcome(r["outcome"]), rationale=r["rationale"], ask=r["ask"],
-        citation=_citation(r)) for r in rows)
+        citation=_citation(r), context_facts=context.get(r["criterion_id"], ())) for r in rows)
 
 
 _DQ_COLS = "q.criterion_id, q.nct_id, q.subject, q.text"
