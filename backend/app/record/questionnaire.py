@@ -21,7 +21,7 @@ from typing import Any, Literal
 
 from app.record import postcodes
 from app.record.types import (
-    Document, DocumentHash, DraftFact, FactResource, InvalidAnswers, Page, PatientId, Respondent,
+    CitedAnswer, Document, DocumentHash, DraftFact, FactResource, InvalidAnswers, Page, PatientId, Respondent,
 )
 
 DEFINITION_VERSION = "1"
@@ -332,6 +332,22 @@ def answers_from_pages(pages: tuple[Page, ...]) -> dict[str, Any]:
             else:
                 answers[q.id] = text
     return answers
+
+
+def cited_answer(page_text: str, ref: str, quote: str) -> CitedAnswer | None:
+    """The answer to question `ref` on a rendered questionnaire page, with where `quote` sits in it (matched ignoring
+    case). The wording is read from the page, so it is the one the Respondent was shown. None when the page does not
+    have that question answered."""
+    lines = page_text.split("\n")
+    for line, nxt in zip(lines, lines[1:]):
+        number, _, wording = line.partition(". ")
+        if number != ref or not nxt.startswith("Answer: ") or nxt == f"Answer: {_NOT_ANSWERED}":
+            continue
+        text = nxt.removeprefix("Answer: ")
+        start = text.lower().find(quote.strip().lower()) if quote.strip() else -1
+        return CitedAnswer(wording=wording, text=text, quote_start=start if start >= 0 else None,
+                           quote_end=start + len(quote.strip()) if start >= 0 else None)
+    return None
 
 
 def document_hash(patient_id: PatientId, pages: tuple[Page, ...], respondent: Respondent,

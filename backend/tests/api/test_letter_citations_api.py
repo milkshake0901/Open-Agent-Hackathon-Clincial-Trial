@@ -157,6 +157,7 @@ async def test_a_criterion_result_citing_a_letter_fact_opens_its_document_page_a
             {"span_id": region["span_id"], "x0": region["x0"], "y0": region["y0"], "x1": region["x1"],
              "y1": region["y1"]})
         assert citation["label"] == f"page {page}"
+        assert citation["question"] is None and citation["answer"] is None
     assert met["region"] == pytest.approx({"span_id": met["region"]["span_id"], "x0": 0.08, "y0": 0.44, "x1": 0.92,
                                            "y1": 0.52}), "the recorded box of the ECOG sentence"
     assert page_image.status_code == 200 and page_image.headers["content-type"] == "image/png"

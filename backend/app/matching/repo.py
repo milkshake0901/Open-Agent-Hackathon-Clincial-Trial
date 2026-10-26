@@ -4,7 +4,7 @@ from __future__ import annotations
 from app.matching.types import (
     Citation, CitedRegion, CriterionResult, DoctorQuestion, Outcome, RespondentQuestion, ValidatedResults, Verdict, VerdictOutcome,
 )
-from app.record import DocumentHash, FactId, ProfileVersionId
+from app.record import DocumentHash, FactId, ProfileVersionId, cited_answer
 from app.sql.reader import SqlReader
 from app.trace import RunId
 from app.trials import CriterionId, NctId, Trial, active_filter, listing_filter, trial_columns, trial_from_row
@@ -25,23 +25,28 @@ async def trials_needing_verdict(reader: SqlReader, version_id: ProfileVersionId
 
 
 def _citation(r: dict) -> Citation | None:
-    """A stored result's Citation: the Fact, its Document's filename, and for a letter Fact its Region's box."""
+    """A stored result's Citation: the Fact, its Document's filename, for a letter Fact its Region's box, and for a
+    Patient-reported Fact the question and the answer it quotes, read from the questionnaire page."""
     if not r["fact_id"]:
         return None
     region = (CitedRegion(r["span_id"], r["x0"], r["y0"], r["x1"], r["y1"]) if r["span_id"] and r["x0"] is not None
               else None)
+    answer = cited_answer(r["page_text"], r["question"], r["quote"]) if r["question"] and r["page_text"] else None
     return Citation(fact_id=FactId(r["fact_id"]), document_hash=DocumentHash(r["document_hash"]), page=r["page"],
-                    quote=r["quote"], question=r["question"], filename=r["filename"], region=region)
+                    quote=r["quote"], question=r["question"], filename=r["filename"], region=region,
+                    answer=answer)
 
 
 async def _results(reader: SqlReader, key: tuple) -> ValidatedResults:
     rows = await reader.fetch(
         f"SELECT cr.criterion_id, cr.outcome, cr.rationale, cr.ask, f.id AS fact_id, f.document_hash, f.page, f.quote, "
-        f"f.question, f.span_id, d.filename, s.x0, s.y0, s.x1, s.y1 FROM {reader.table('criterion_result')} cr "
+        f"f.question, f.span_id, d.filename, s.x0, s.y0, s.x1, s.y1, p.text AS page_text FROM {reader.table('criterion_result')} cr "
         f"JOIN {reader.table('criterion')} c ON c.id = cr.criterion_id "
         f"LEFT JOIN {reader.table('fact')} f ON f.id = cr.fact_id "
         f"LEFT JOIN {reader.table('document')} d ON d.hash = f.document_hash "
         f"LEFT JOIN {reader.table('document_span')} s ON s.id = f.span_id "
+        f"LEFT JOIN {reader.table('document_page')} p ON f.question IS NOT NULL "
+        "AND p.document_hash = f.document_hash AND p.number = f.page "
         "WHERE cr.nct_id = $1 AND cr.eligibility_hash = $2 AND cr.profile_version_id = $3 ORDER BY c.ordinal", key)
     return ValidatedResults(CriterionResult(
         criterion_id=CriterionId(r["criterion_id"]), outcome=Outcome(r["outcome"]), rationale=r["rationale"], ask=r["ask"],
