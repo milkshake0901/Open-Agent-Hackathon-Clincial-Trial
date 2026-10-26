@@ -177,11 +177,14 @@ export type TrialAsk = {
   via: "zetaris" | "postgres";
 };
 
-export type LetterOut = {
-  patient_id: string;
-  document_hash: string;
-  filename: string;
-  answers: Record<string, string>;
+// Where the patient's letters and questionnaire stand: what the short questionnaire skips, and when the Diagnosis
+// check and Trials can go ahead (every Document's Facts committed).
+export type IntakeStatus = {
+  letters: { document_hash: string; filename: string; run_id: string; phase: IngestPhase }[];
+  skip: string[]; // question ids the letters' Facts answer
+  ready: boolean;
+  profile_version_id: string | null; // the latest Profile version, the one Trials are listed for
+  version_number: number | null;
 };
 
 export type ClosedTrialOut = {
@@ -350,8 +353,7 @@ export const api = {
   definition: () => call<Questionnaire>("/questionnaire/definition"),
   createPatient: (label: string) =>
     call<{ patient_id: string }>("/patients", { method: "POST", body: JSON.stringify({ label }) }),
-  prefillReferral: (patientId: string) =>
-    call<LetterOut>(`/patients/${encodeURIComponent(patientId)}/referral/prefill`, { method: "POST" }),
+  intake: (patientId: string) => call<IntakeStatus>(`/patients/${encodeURIComponent(patientId)}/intake`),
   submit: (patientId: string, body: { definition_version: string; respondent: Respondent; answers: Answers }) =>
     call<QuestionnaireAccepted>(`/patients/${encodeURIComponent(patientId)}/questionnaire`, {
       method: "POST",

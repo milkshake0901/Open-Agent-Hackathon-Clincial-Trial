@@ -168,3 +168,12 @@ async def latest_for_document(reader: "SqlReader", document_hash: str) -> RunId 
     rows = await reader.fetch(f"SELECT id FROM {reader.table('trace_run')} WHERE document_hash = $1 "
                               "ORDER BY created_at DESC, id DESC LIMIT 1", (document_hash,))
     return RunId(rows[0]["id"]) if rows else None
+
+
+async def latest_ingests(reader: "SqlReader", patient_id: str) -> list[tuple[RunId, str]]:
+    """The latest ingest run of each of the patient's Documents: (run id, document hash), oldest Document first."""
+    rows = await reader.fetch(
+        f"SELECT id, document_hash FROM (SELECT DISTINCT ON (document_hash) id, document_hash, created_at "
+        f"FROM {reader.table('trace_run')} WHERE patient_id = $1 AND kind = 'ingest' AND document_hash IS NOT NULL "
+        "ORDER BY document_hash, created_at DESC, id DESC) latest ORDER BY created_at, id", (patient_id,))
+    return [(RunId(r["id"]), r["document_hash"]) for r in rows]

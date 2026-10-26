@@ -156,6 +156,26 @@ DEFINITION = Questionnaire(DEFINITION_VERSION, (
 ))
 CORRECTIONS = "letter_corrections"   # the review-only question Letter review's corrections are answers to
 
+# The questions a letter's Facts of a resource answer, so the short questionnaire skips them. Birth month, postcode,
+# travel, allergies and contact are always asked.
+_LETTER_ANSWERS: dict[FactResource, tuple[str, ...]] = {
+    FactResource.CONDITION: ("diagnosis", "diagnosis_when"),
+    FactResource.MEDICATION_STATEMENT: ("medicines",),
+}
+
+
+def answered_by_letter(resources: set[FactResource]) -> frozenset[str]:
+    """The question ids a letter's Facts of these resources answer: the short questionnaire skips them."""
+    return frozenset(qid for r in resources for qid in _LETTER_ANSWERS.get(r, ()))
+
+
+def kept_from(previous: dict[str, Any], answers: dict[str, Any], hidden: frozenset[str]) -> dict[str, Any]:
+    """`answers` with each hidden question it leaves blank answered as before: a question the form did not show (the
+    letter answers it, or it is review-only) keeps its earlier answer, so a save never withdraws it."""
+    blank = {qid for qid in hidden | {q.id for q in DEFINITION.questions() if q.review_only}
+             if answers.get(qid) is None or (isinstance(answers[qid], str) and not answers[qid].strip())}
+    return {**answers, **{qid: previous[qid] for qid in blank if qid in previous}}
+
 # Structured question → (resource, subject). Options listed here are answered but make no Fact.
 _FACTS: dict[str, tuple[FactResource, str]] = {
     "birth_month": (FactResource.PATIENT, "birth month"),

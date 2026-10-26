@@ -8,7 +8,13 @@ The answer is not saved and never changes a Verdict. The Matcher still judges Fa
 
 The frontend is `http://localhost:3001`. The API is `http://127.0.0.1:8000`.
 
-**Home (`/`).** "Start from a referral letter" takes a PDF and adds it to the Respondent's own record, like "Add documents": it is read page by page into Regions, and the Intake agent drafts its Facts in the background, each citing the Region it quotes. Until the short questionnaire lands (#49) it also fills who is answering, sex, when diagnosed, the diagnosis, treatments and medicines now from the letter. Check the fields, then save.
+**Home (`/`).** One journey, in five steps:
+
+1. **Start from a letter (optional).** A PDF is added to the Respondent's own record and read in the background: page by page into Regions, then the Intake agent drafts its Facts, each citing the Region it quotes. "I don't have a letter" goes straight on.
+2. **The short questionnaire.** It skips what the letter's Facts answer (the diagnosis, when diagnosed, medicines now) once the letter is read; birth month, postcode, travel, allergies and contact are always asked. "Answer anyway" shows the skipped ones. Saving doesn't wait for the letter. A skipped question, and the Letter review corrections (Q16), keep their earlier answers when a later save leaves them blank.
+3. **Letter review**, when the letter is ready: keep or drop each drafted Fact beside its Region, or use them all as read.
+4. **Diagnosis check**, once the letter's and the questionnaire's Facts are committed. It reads the questionnaire's diagnosis answer, otherwise the letter's Condition Fact quotes. The Respondent still ticks the Condition labels.
+5. **Trials.**
 
 **Trials (`/trials?patient=<id>&version=<id>`).** Opened from the home page once the answers are saved and the diagnosis step is done. Under each recruiting trial, **Ask a question of this trial** opens the question:
 
@@ -94,6 +100,6 @@ Re-run that after any new table or column. `document_span` has to be visible or 
 |---|---|
 | Parse a PDF into regions | `backend/app/extraction/parse.py` |
 | Store the letter and its regions | `backend/app/record/referral.py` |
-| Fill questionnaire fields from regions (until #49) | `backend/app/record/prefill.py`, `POST /api/patients/{id}/referral/prefill` |
+| What the short questionnaire skips, and when the letter is ready | `backend/app/record/__init__.py` `intake_status`, `GET /api/patients/{id}/intake` |
 | One question about one trial | `backend/app/matching/letter.py` `ask_trial`, `POST /api/patients/{id}/trials/{nct}/ask`, `frontend/src/app/trials/trial-question.tsx` |
 | Page image and boxes | `GET /api/documents/{hash}/pages/{n}/image`, `GET /api/documents/{hash}/regions`, `frontend/src/app/region-page.tsx` |

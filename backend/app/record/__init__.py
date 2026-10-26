@@ -39,6 +39,7 @@ from app.record.types import (
     DocumentHash,
     DraftFact,
     Fact,
+    FactResource,
     INTAKE_KINDS,
     FactId,
     IngestOutcome,
@@ -77,7 +78,7 @@ __all__ = [
     "letter_review", "answer_review", "correct_document_date", "commit_review", "LetterReview", "ReviewItem",
     "ReviewCommitted", "NotAwaitingReview", "InvalidReview",
     "page_png", "letter_spans", "LetterSpan", "INTAKE_KINDS",
-    "prefill_letter", "LetterPrefill",
+    "intake_status", "IntakeStatus", "LetterStatus", "NotReady",
     "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId", "DiagnosisCheckId",
 ]
 
@@ -90,6 +91,11 @@ class NotFound(LookupError):
 
 class AlreadyAnswered(InvalidAnswers):
     """The Diagnosis check was answered already: it is not awaiting an answer."""
+
+
+class NotReady(Exception):
+    """A Document of the patient's (a letter, or a questionnaire submission) is still being read, or waits for Letter
+    review or the Respondent's answer to a Conflict: the Diagnosis check waits until its Facts are committed."""
 
 
 async def _require_patient(ctx: Ctx, patient_id: PatientId) -> None:
@@ -141,13 +147,19 @@ async def register_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[
     """A completed Intake questionnaire becomes a Document (one page per section, each answer under its question
     number; Respondent stored with the Document; ADR 0003) and its Search preferences are stored. Ingest it with
     ingest(), as an added Document. Raises InvalidAnswers and NotFound before anything is stored. Answers identical
-    to the latest accepted submission are that submission's Document (deduplicated)."""
+    to the latest accepted submission are that submission's Document (deduplicated). A question the short form did not
+    show (one the letters answer, intake_status skip, or a review-only one) keeps its earlier answer when left blank,
+    so a save never withdraws it."""
     if respondent not in ("patient", "other"):
         raise InvalidAnswers(f"respondent must be 'patient' or 'other', got {respondent!r}")
-    pages = questionnaire.render(answers, respondent)
+    questionnaire.render(answers, respondent)   # InvalidAnswers before anything is read
     preferences = questionnaire.search_preferences(answers)
     await _require_patient(ctx, patient_id)
     previous = await repo.latest_questionnaire(ctx.ui_reader, patient_id)
+    if previous is not None:
+        hidden = (await intake_status(ctx, patient_id)).skip
+        answers = questionnaire.kept_from(questionnaire.answers_from_pages(previous.pages), answers, hidden)
+    pages = questionnaire.render(answers, respondent)
     h = questionnaire.document_hash(patient_id, pages, respondent, previous)
     existing = await repo.document(ctx.ui_reader, h)
     now = ctx.now()
@@ -158,6 +170,52 @@ async def register_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[
         if existing is None:
             await repo.insert_document(tx, doc, uploaded_at=now)
     return Registered(doc, deduplicated=existing is not None)
+
+
+@dataclass(frozen=True)
+class LetterStatus:
+    """One of the patient's letters (a Document read into Regions) and where its latest ingest run stands."""
+    document_hash: DocumentHash
+    filename: str
+    run_id: RunId
+    phase: str     # the run's phase: started, drafting, awaiting_patient, awaiting_review, committed, rejected
+
+
+@dataclass(frozen=True)
+class IntakeStatus:
+    """Where the patient's letters and questionnaire stand. `skip`: the question ids the letters' Facts answer
+    (committed, or drafted and waiting for Letter review without being marked Not right), which the short
+    questionnaire skips. `ready`: no Document of the patient's is still being read or waiting on the Respondent, so
+    every Fact is committed and the Diagnosis check and Trials can go ahead. `current`: the latest Profile version
+    (without its Facts), the one Trials are listed for; None before the first."""
+    letters: tuple[LetterStatus, ...]
+    skip: frozenset[str]
+    ready: bool
+    current: ProfileVersion | None = None
+
+
+_UNSETTLED = ("started", "drafting", "awaiting_patient", "awaiting_review")
+
+
+async def intake_status(ctx: Ctx, patient_id: PatientId) -> IntakeStatus:
+    """The patient's letters with their runs, the questions they answer, and whether every Document is committed (or
+    rejected). Raises NotFound."""
+    await _require_patient(ctx, patient_id)
+    letters, resources, ready = [], set(), True
+    for run_id, h in await trace.latest_ingests(ctx.ui_reader, patient_id):
+        state = await trace.project_ingest(ctx.ui_reader, run_id)
+        committed = await repo.version_for_document(ctx.ui_reader, DocumentHash(h)) is not None
+        ready = ready and (committed or state.phase not in _UNSETTLED)
+        doc = await repo.document(ctx.ui_reader, DocumentHash(h))
+        if doc is None or not loop.needs_review(doc):
+            continue
+        letters.append(LetterStatus(doc.hash, doc.filename, run_id, "committed" if committed else state.phase))
+        if state.phase == "awaiting_review":
+            resources |= {loop._draft_from(r["draft"]).resource for r in state.review if r["decision"] != "drop"}
+    current = await repo.current_version(ctx.ui_reader, patient_id)
+    resources |= {f.resource for f in (current.facts if current else ()) if f.question is None}
+    return IntakeStatus(tuple(letters), questionnaire.answered_by_letter(resources), ready,
+                        current and replace(current, facts=()))
 
 
 async def submit_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[str, Any],
@@ -204,21 +262,35 @@ async def set_search_preferences(ctx: Ctx, patient_id: PatientId, answers: dict[
 
 async def check_diagnosis(ctx: Ctx, patient_id: PatientId) -> DiagnosisCheck:
     """A shortlist of Condition labels stored Trials use, for the diagnosis in the Respondent's words: the latest accepted
-    questionnaire's diagnosis answer (ADR 0005; new words come with a none of these answer). The words are de-identified
+    questionnaire's diagnosis answer, otherwise the quotes of the letters' Condition Facts (ADR 0005, ADR 0006; new
+    words come with a none of these answer). It waits until every Document's Facts are committed (intake_status ready;
+    NotReady before). The words are de-identified
     (deidentify_text) before the model sees them, the check stores them or the log file records them; the model sees
     only those words and the candidate labels. The check comes back `proposed` for the Respondent to answer; its
     shortlist is empty when no label fits (they can only re-word or answer not sure). What to say for each status is
-    the HTTP shell's. Raises NotFound (unknown patient, or no diagnosis to check) and llm.LlmUnavailable (nothing
-    stored)."""
-    await _require_patient(ctx, patient_id)
+    the HTTP shell's. Raises NotFound (unknown patient, or no diagnosis to check), NotReady and llm.LlmUnavailable
+    (nothing stored)."""
+    if not (await intake_status(ctx, patient_id)).ready:
+        raise NotReady(f"patient {patient_id} has a Document whose Facts are not committed yet")
     answered = await latest_answers(ctx, patient_id)
-    check = await _new_check(ctx, patient_id, answered.answers.get("diagnosis") if answered else None)
+    check = await _new_check(ctx, patient_id, (answered.answers.get("diagnosis") if answered else None)
+                             or await _letter_diagnosis(ctx, patient_id))
     if check is None:
         raise NotFound(f"no diagnosis answer for patient {patient_id}")
     async with ctx.writer.transaction() as tx:
         await repo.insert_diagnosis_check(tx, check, ctx.now())
     _log_offered(check)
     return check
+
+
+async def _letter_diagnosis(ctx: Ctx, patient_id: PatientId) -> str | None:
+    """The quotes of the letters' Condition Facts in the current version (and of any Letter review correction made
+    a Condition), in order, each once; None without any."""
+    current = await repo.current_version(ctx.ui_reader, patient_id)
+    corrections = next(q.ref for q in DEFINITION.questions() if q.id == questionnaire.CORRECTIONS)
+    quotes = dict.fromkeys(f.quote for f in (current.facts if current else ())
+                           if f.resource == FactResource.CONDITION and f.question in (None, corrections))
+    return "; ".join(quotes) or None
 
 
 async def _new_check(ctx: Ctx, patient_id: PatientId, text: str | None) -> DiagnosisCheck | None:
@@ -587,24 +659,3 @@ async def diff(ctx: Ctx, from_version: ProfileVersionId, to_version: ProfileVers
     return VersionDiff(from_version=before.id, to_version=after.id,
                        facts_added=tuple(f for f in after.facts if f.id not in before.fact_ids),
                        subjects_changed=changed)
-
-
-@dataclass(frozen=True)
-class LetterPrefill:
-    """Answers read off one parsed referral, and which letter they came from."""
-    patient_id: str
-    document_hash: str
-    filename: str
-    answers: dict[str, str]
-
-
-async def prefill_letter(ctx: Ctx, patient_id: PatientId) -> LetterPrefill:
-    """Fill Intake answers from the regions already stored for this patient's letter."""
-    from app.record.prefill import prefill_answers
-
-    rows = await repo.spans_for_patient(ctx.ui_reader, patient_id)
-    if not rows:
-        raise NotFound(f"patient {patient_id} has no parsed letter")
-    return LetterPrefill(str(patient_id), rows[0]["document_hash"], rows[0]["filename"],
-                         prefill_answers([(r["kind"], r["text"]) for r in rows]))
-

@@ -477,11 +477,20 @@ class ClosedTrialListOut(BaseModel):
     trials: list[ClosedTrialOut]  # newest first by closed_on
 
 
-class LetterOut(BaseModel):
-    patient_id: str
+class LetterStatusOut(BaseModel):
     document_hash: str
     filename: str
-    answers: dict[str, str] = {}
+    run_id: str
+    phase: str      # its latest ingest run's: started, drafting, awaiting_patient, awaiting_review, committed, rejected
+
+
+class IntakeStatusOut(BaseModel):
+    """Where the patient's letters and questionnaire stand (GET /patients/{pid}/intake)."""
+    letters: list[LetterStatusOut]
+    skip: list[str]     # question ids the letters' Facts answer; the short questionnaire does not ask them
+    ready: bool         # every Document's Facts committed: the Diagnosis check and Trials can go ahead
+    profile_version_id: str | None = None   # the latest Profile version (Trials are listed for it); None before one
+    version_number: int | None = None
 
 
 class RescanOut(BaseModel):
