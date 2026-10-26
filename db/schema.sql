@@ -61,7 +61,8 @@ CREATE TABLE document (
   filename      text NOT NULL,
   page_count    int  NOT NULL,
   respondent    text CHECK (respondent IN ('patient','other')),   -- set only on an Intake questionnaire (ADR 0003)
-  uploaded_at   timestamptz NOT NULL DEFAULT now()
+  uploaded_at   timestamptz NOT NULL DEFAULT now(),
+  document_date date                      -- the Document date as corrected in Letter review; NULL: as read from page 1
 );
 
 CREATE TABLE document_page (               -- de-identified text only; raw bytes stay on disk
@@ -101,6 +102,7 @@ CREATE TABLE fact (                        -- FHIR-lite, one table with resource
   span_id       text REFERENCES document_span(id),  -- the box on the page this quote was read from; NULL for a questionnaire
   question      text,                     -- "Q3" for a Patient-reported Fact from an Intake questionnaire
   flags         text[] NOT NULL DEFAULT '{}',  -- how observed_on was settled: ambiguous_date, estimated_date, document_date
+  checked       boolean NOT NULL DEFAULT false, -- a letter Fact the Respondent checked in Letter review ("Looks right")
   created_at    timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (document_hash, page) REFERENCES document_page(document_hash, number)
 );

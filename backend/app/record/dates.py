@@ -155,9 +155,25 @@ class Dating:
 
 
 def dating(doc: "Document") -> Dating:
-    """A Document's date order from the de-identified text of all its pages, and its Document date from its first."""
+    """A Document's date order from the de-identified text of all its pages, and its Document date from its first,
+    unless the Respondent corrected it in Letter review (doc.document_date), which is then the Document date."""
     order = date_order(p.text for p in doc.pages)
+    if doc.document_date is not None:
+        return Dating(order, DateRead(doc.document_date.isoformat(), 0, doc.document_date))
     return Dating(order, document_date([doc.pages[0].text] if doc.pages else [], order))
+
+
+def redated(on: date | None, flags: tuple[str, ...], quote: str, corrected: date) -> tuple[date | None, tuple[str, ...]]:
+    """A drafted Fact's observed-on date and flags once the Respondent corrects its Document's date: a Fact dated by
+    the Document date takes the corrected one, a relative date is counted back from it again, and neither is ambiguous
+    any more (that came from the Document date). A Fact with a date of its own keeps it."""
+    if "document_date" in flags:
+        on = corrected
+    elif "estimated_date" in flags:
+        on = relative_date(quote, corrected) or on
+    else:
+        return on, flags
+    return on, tuple(f for f in flags if f != "ambiguous_date")
 
 
 def observed_on(drafted: date | None, quote: str, dating: Dating) -> tuple[date | None, tuple[DateFlag, ...]]:

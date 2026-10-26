@@ -76,6 +76,8 @@ async def commit_profile_version(wm: "WorldModel", patient_id: "PatientId", doc:
             value["span_id"] = d.span_id
         if d.flags:                 # likewise
             value["flags"] = list(d.flags)
+        if d.checked:               # likewise: only a letter Fact the Respondent checked in Letter review
+            value["checked"] = True
         fact = await wm.assert_fact(about=about, predicate=d.subject, source=source, context=f"doc:{doc.hash}",
                                     value=value)
         new_ids.append(fact.id)

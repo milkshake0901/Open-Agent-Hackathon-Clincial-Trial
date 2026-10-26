@@ -33,6 +33,7 @@ class Citation:
     filename: str | None = None     # the Document's de-identified filename, when read back from the store
     region: CitedRegion | None = None   # the letter Region the Fact was read from, with its box
     answer: CitedAnswer | None = None   # a Patient-reported Fact's question wording and the answer it quotes
+    checked: bool | None = None     # a letter Fact: whether the Respondent checked it in Letter review; None otherwise
 
 
 @dataclass(frozen=True)

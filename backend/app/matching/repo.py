@@ -26,7 +26,8 @@ async def trials_needing_verdict(reader: SqlReader, version_id: ProfileVersionId
 
 def _citation(r: dict) -> Citation | None:
     """A stored result's Citation: the Fact, its Document's filename, for a letter Fact its Region's box, and for a
-    Patient-reported Fact the question and the answer it quotes, read from the questionnaire page."""
+    Patient-reported Fact the question and the answer it quotes, read from the questionnaire page. A letter Fact's
+    Citation says whether the Respondent checked it in Letter review."""
     if not r["fact_id"]:
         return None
     region = (CitedRegion(r["span_id"], r["x0"], r["y0"], r["x1"], r["y1"]) if r["span_id"] and r["x0"] is not None
@@ -34,13 +35,13 @@ def _citation(r: dict) -> Citation | None:
     answer = cited_answer(r["page_text"], r["question"], r["quote"]) if r["question"] and r["page_text"] else None
     return Citation(fact_id=FactId(r["fact_id"]), document_hash=DocumentHash(r["document_hash"]), page=r["page"],
                     quote=r["quote"], question=r["question"], filename=r["filename"], region=region,
-                    answer=answer)
+                    answer=answer, checked=bool(r["checked"]) if r["span_id"] else None)
 
 
 async def _results(reader: SqlReader, key: tuple) -> ValidatedResults:
     rows = await reader.fetch(
         f"SELECT cr.criterion_id, cr.outcome, cr.rationale, cr.ask, f.id AS fact_id, f.document_hash, f.page, f.quote, "
-        f"f.question, f.span_id, d.filename, s.x0, s.y0, s.x1, s.y1, p.text AS page_text FROM {reader.table('criterion_result')} cr "
+        f"f.question, f.span_id, f.checked, d.filename, s.x0, s.y0, s.x1, s.y1, p.text AS page_text FROM {reader.table('criterion_result')} cr "
         f"JOIN {reader.table('criterion')} c ON c.id = cr.criterion_id "
         f"LEFT JOIN {reader.table('fact')} f ON f.id = cr.fact_id "
         f"LEFT JOIN {reader.table('document')} d ON d.hash = f.document_hash "

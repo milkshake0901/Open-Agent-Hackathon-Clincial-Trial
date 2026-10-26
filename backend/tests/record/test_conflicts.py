@@ -13,6 +13,7 @@ from app.config import Settings
 from tests.conftest import ADMIN_DSN, make_ctx
 from tests.fixtures.letters import letter_pdf, recorded, recording
 from tests.record.test_adding_documents import by_document
+from tests.review import confirm_as_read, ingest_as_read
 
 REFERRAL_READ = recording(
     "Oncology referral letter\nDear colleague,",
@@ -62,7 +63,7 @@ async def _fully_active_patient(ctx):
 
 async def _add(ctx, patient, name, content):
     registered = await record.register_document(ctx, patient, name, content)
-    return registered.document.hash, await record.ingest(ctx, registered.document.hash)
+    return registered.document.hash, await ingest_as_read(ctx, registered.document.hash)
 
 
 async def test_a_letter_contradicting_the_questionnaire_waits_on_the_patient_with_both_sides(conflict_ctx):
@@ -98,7 +99,7 @@ async def test_ingesting_a_parked_document_again_returns_the_same_conflict_witho
     letter, parked = await _add(ctx, patient, "referral.pdf", REFERRAL)
     calls = len(ctx.llm.calls)
 
-    again = await record.ingest(ctx, letter)
+    again = await ingest_as_read(ctx, letter)
 
     assert again == parked
     assert len(ctx.llm.calls) == calls
@@ -110,7 +111,7 @@ async def test_accepting_the_letter_commits_its_value_as_the_next_version(confli
     letter, parked = await _add(ctx, patient, "referral.pdf", REFERRAL)
     [conflict] = parked.conflicts
 
-    outcome = await record.confirm(ctx, parked.run_id, [record.Resolution(conflict.id, "accept_draft")])
+    outcome = await confirm_as_read(ctx, parked.run_id, [record.Resolution(conflict.id, "accept_draft")])
 
     assert isinstance(outcome, record.Committed) and outcome.run_id == parked.run_id
     v2 = await record.profile_version(ctx, outcome.version.id)
@@ -127,7 +128,7 @@ async def test_keeping_the_answer_drops_the_letters_value_but_commits_the_rest_o
     patient, _ = await _fully_active_patient(ctx)
     _, parked = await _add(ctx, patient, "referral.pdf", REFERRAL)
 
-    outcome = await record.confirm(ctx, parked.run_id, [record.Resolution(parked.conflicts[0].id, "keep_accepted")])
+    outcome = await confirm_as_read(ctx, parked.run_id, [record.Resolution(parked.conflicts[0].id, "keep_accepted")])
 
     v2 = await record.profile_version(ctx, outcome.version.id)
     subjects = {f.subject: f.value for f in v2.facts}
@@ -140,7 +141,7 @@ async def test_discarding_both_leaves_neither_value_in_the_next_version(conflict
     patient, _ = await _fully_active_patient(ctx)
     _, parked = await _add(ctx, patient, "referral.pdf", REFERRAL)
 
-    outcome = await record.confirm(ctx, parked.run_id, [record.Resolution(parked.conflicts[0].id, "discard_both")])
+    outcome = await confirm_as_read(ctx, parked.run_id, [record.Resolution(parked.conflicts[0].id, "discard_both")])
 
     subjects = {f.subject for f in (await record.profile_version(ctx, outcome.version.id)).facts}
     assert {"daily activity", "ecog performance status"}.isdisjoint(subjects) and "breast cancer" in subjects
@@ -163,14 +164,14 @@ async def test_a_partial_answer_keeps_waiting_on_the_rest_and_a_finished_run_can
     _, parked = await _add(ctx, patient, "discharge.pdf", TWO_CONFLICTS)
     sex, ecog = sorted(parked.conflicts, key=lambda c: c.draft.subject != "sex assigned at birth")
 
-    first = await record.confirm(ctx, parked.run_id, [record.Resolution(sex.id, "keep_accepted")])
+    first = await confirm_as_read(ctx, parked.run_id, [record.Resolution(sex.id, "keep_accepted")])
     with pytest.raises(record.InvalidResolution):
-        await record.confirm(ctx, parked.run_id, [record.Resolution(sex.id, "accept_draft")])
-    done = await record.confirm(ctx, parked.run_id, [record.Resolution(ecog.id, "accept_draft")])
+        await confirm_as_read(ctx, parked.run_id, [record.Resolution(sex.id, "accept_draft")])
+    done = await confirm_as_read(ctx, parked.run_id, [record.Resolution(ecog.id, "accept_draft")])
 
     assert isinstance(first, record.AwaitingPatient) and [c.id for c in first.conflicts] == [ecog.id]
     assert isinstance(done, record.Committed) and done.version.number == 2
     values = {f.subject: f.value for f in (await record.profile_version(ctx, done.version.id)).facts}
     assert (values["sex assigned at birth"], values["ecog"]) == ("female", "2") and "daily activity" not in values
     with pytest.raises(record.NotAwaitingPatient):
-        await record.confirm(ctx, parked.run_id, [])
+        await confirm_as_read(ctx, parked.run_id, [])

@@ -20,6 +20,7 @@ from app.llm.nightshift import FakeLLM
 from app.main import app
 from tests.condition_term import tick_condition_term
 from tests.conftest import ADMIN_DSN, make_ctx
+from tests.review import use_all_as_read
 from tests.fixtures.letters import NARRATIVE_LETTER, NARRATIVE_LETTER_IDENTITY, RecordedParse, intake_reading, letter_pdf
 
 SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "trials_snapshot"
@@ -47,12 +48,13 @@ def letter_ctx(clean_db, tmp_path, responder):
 
 
 async def add_letter(http) -> tuple[str, str, dict]:
-    """A Respondent's own patient with the narrative letter added: (patient id, document hash, the run)."""
+    """A Respondent's own patient with the narrative letter added and its Letter review skipped (all as read):
+    (patient id, document hash, the run)."""
     patient = (await http.post("/api/patients", json={"label": "Web respondent"})).json()["patient_id"]
     added = await http.post(f"/api/patients/{patient}/documents",
                             files={"file": ("letter.pdf", letter_pdf(NARRATIVE_LETTER), "application/pdf")})
     assert added.status_code == 202
-    run = (await http.get(f"/api/runs/{added.json()['run_id']}")).json()
+    run = await use_all_as_read(http, added.json()["run_id"])
     return patient, added.json()["document_hash"], run
 
 

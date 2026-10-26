@@ -21,7 +21,8 @@ async def definition():
     return {"version": d.version, "sections": [
         {"id": s.id, "title": s.title, "questions": [
             {"id": q.id, "number": q.number, "label": q.label, "label_other": q.label_other, "kind": q.kind,
-             "options": [asdict(o) for o in q.options], "required": q.required, "help": q.help}
+             "options": [asdict(o) for o in q.options], "required": q.required, "help": q.help,
+             "review_only": q.review_only}
             for q in s.questions]}
         for s in d.sections]}
 

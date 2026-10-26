@@ -11,6 +11,7 @@ from app.main import app
 from tests.api.questionnaire_http import submit
 from tests.condition_term import tick_condition_term
 from app.llm.nightshift import FakeLLM
+from tests.review import use_all_as_read
 
 SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "trials_snapshot"
 
@@ -88,7 +89,7 @@ async def test_an_added_document_that_commits_a_new_version_rescans_it(clean_db,
 
         added = await http.post(f"/api/patients/{patient}/documents",
                                  files={"file": ("referral.pdf", REFERRAL, "application/pdf")})
-        run = (await http.get(f"/api/runs/{added.json()['run_id']}")).json()
+        run = await use_all_as_read(http, added.json()["run_id"])
         assert run["state"]["version_number"] == 2
         v2 = run["state"]["profile_version_id"]
 

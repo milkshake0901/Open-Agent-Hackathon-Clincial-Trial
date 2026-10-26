@@ -54,6 +54,21 @@ class PatientResolved(_Base):
     kind: Literal["patient.resolved"] = "patient.resolved"
     resolutions: list[dict]
 
+class RunAwaitingReview(_Base):
+    """A letter's drafted Facts park here, uncommitted, for Letter review. `withdrawn`: accepted Fact ids a resolved
+    Conflict left out of the next version, applied when the review commits."""
+    kind: Literal["run.awaiting_review"] = "run.awaiting_review"
+    drafts: list[dict]
+    withdrawn: list[str] = []
+
+class ReviewAnswered(_Base):
+    """The Respondent's word on one parked draft (its index in RunAwaitingReview.drafts): keep ("Looks right") or
+    drop ("Not right", with what it should be, if they said)."""
+    kind: Literal["review.answered"] = "review.answered"
+    index: int
+    decision: Literal["keep", "drop"]
+    correction: str | None = None
+
 class ProfileCommitted(_Base):
     kind: Literal["profile.committed"] = "profile.committed"
     profile_version_id: str
@@ -127,7 +142,7 @@ class LlmCalled(_Base):
 RunEvent = Annotated[
     Union[
         IngestStarted, IntakeDrafted, CriticReviewed, IngestRetried, RunAwaitingPatient, PatientResolved,
-        ProfileCommitted, RunRejected, RescanPlanned, MatcherProposed, EvaluatorRejected, EvaluatorApproved,
+        RunAwaitingReview, ReviewAnswered, ProfileCommitted, RunRejected, RescanPlanned, MatcherProposed, EvaluatorRejected, EvaluatorApproved,
         MatcherRetried, TrialJudged, RescanFinished, LlmCalled,
     ],
     Field(discriminator="kind"),

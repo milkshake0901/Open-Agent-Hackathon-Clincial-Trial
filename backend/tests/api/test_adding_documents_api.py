@@ -10,6 +10,7 @@ from app import record
 from app.config import Settings
 from app.main import app
 from tests.conftest import ADMIN_DSN, make_ctx
+from tests.review import use_all_as_read
 from tests.fixtures.letters import recorded
 from tests.record.test_adding_documents import (BLANK, BLOODS, BLOODS_FACTS, PARSE, REFERRAL, REFERRAL_FACTS,
                                                 by_document)
@@ -30,7 +31,7 @@ async def test_several_added_documents_each_get_a_run_that_ends_in_its_own_profi
         assert [u.status_code for u in added] == [202, 202]
         assert [u.json()["deduplicated"] for u in added] == [False, False]
 
-        runs = [(await http.get(f"/api/runs/{u.json()['run_id']}")).json() for u in added]
+        runs = [await use_all_as_read(http, u.json()["run_id"]) for u in added]
         assert [(r["kind"], r["state"]["phase"], r["state"]["version_number"]) for r in runs] == [
             ("ingest", "committed", 2), ("ingest", "committed", 3)]
         assert runs[0]["events"][0]["kind"] == "ingest.started"

@@ -12,6 +12,7 @@ export type Question = {
   options: Option[];
   required: boolean;
   help: string | null;
+  review_only: boolean; // answered in Letter review, not on the form: keep its answer when the form is saved
 };
 
 export type Section = { id: string; title: string; questions: Question[] };
@@ -27,15 +28,44 @@ export type QuestionnaireAccepted = {
   return_token: string | null; // first submission only
 };
 
-// The outcome of answering a Conflict (POST /runs/{id}/confirm).
+// The outcome of answering a Conflict (POST /runs/{id}/confirm) or committing a Letter review.
 export type IngestOutcome = {
   run_id: string;
-  outcome: "committed" | "awaiting_patient" | "rejected";
+  outcome: "committed" | "awaiting_patient" | "awaiting_review" | "rejected";
   document_hash: string | null;
   profile_version_id: string | null;
   version_number: number | null;
   reason: string | null;
   rescan: { judged: number; failed: number } | null;
+  correction_run_id?: string | null; // a Letter review's commit: the run saving its corrections as your answers
+};
+
+// Letter review (GET /runs/{id}/review): a letter's drafted Facts, uncommitted, flagged ones first.
+export type ReviewFact = {
+  index: number;
+  resource: string;
+  subject: string;
+  value: string;
+  unit: string | null;
+  observed_on: string | null;
+  page: number;
+  quote: string;
+  region: { span_id: string; kind: string; text: string; x0: number; y0: number; x1: number; y1: number } | null;
+  flags: string[]; // ambiguous_date, estimated_date, document_date
+  flagged: boolean;
+  decision: "keep" | "drop" | null;
+  correction: string | null;
+};
+
+export type LetterReview = {
+  run_id: string;
+  document_hash: string;
+  filename: string;
+  page_count: number;
+  document_date: string | null;
+  document_date_corrected: boolean;
+  date_order: "day_first" | "month_first" | null;
+  facts: ReviewFact[];
 };
 
 export type VerdictCitation = {
@@ -51,6 +81,7 @@ export type VerdictCitation = {
   // A Patient-reported Fact's answer: the question's wording, the whole answer, and the quote at
   // text.slice(quote_start, quote_end) (both null when the quote isn't verbatim in it).
   answer: { wording: string; text: string; quote_start: number | null; quote_end: number | null } | null;
+  checked?: boolean | null; // a letter Fact: true "checked by you", false "not checked"; null for any other Fact
 };
 
 export type CriterionResultOut = {
@@ -246,7 +277,7 @@ export type VersionOut = {
 
 export type DocumentAccepted = { document_hash: string; run_id: string; deduplicated: boolean };
 
-export type IngestPhase = "started" | "drafting" | "awaiting_patient" | "committed" | "rejected";
+export type IngestPhase = "started" | "drafting" | "awaiting_patient" | "awaiting_review" | "committed" | "rejected";
 
 export type RunOut = {
   run_id: string;
@@ -360,6 +391,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ resolutions }),
     }),
+  review: (runId: string) => call<LetterReview>(`/runs/${encodeURIComponent(runId)}/review`),
+  answerReview: (runId: string, index: number, decision: "keep" | "drop", correction?: string) =>
+    call<LetterReview>(`/runs/${encodeURIComponent(runId)}/review/facts/${index}`, {
+      method: "POST",
+      body: JSON.stringify({ decision, correction: correction || null }),
+    }),
+  correctDocumentDate: (runId: string, documentDate: string) =>
+    call<LetterReview>(`/runs/${encodeURIComponent(runId)}/review/document-date`, {
+      method: "PUT",
+      body: JSON.stringify({ document_date: documentDate }),
+    }),
+  commitReview: (runId: string) =>
+    call<IngestOutcome>(`/runs/${encodeURIComponent(runId)}/review/commit`, { method: "POST" }),
+  useAllAsRead: (runId: string) =>
+    call<IngestOutcome>(`/runs/${encodeURIComponent(runId)}/review/use-all-as-read`, { method: "POST" }),
   latestAnswers: (patientId: string) =>
     call<LatestAnswers>(`/patients/${encodeURIComponent(patientId)}/questionnaire`),
   diff: (patientId: string, versionId: string, fromVersionId: string) =>
@@ -422,7 +468,7 @@ export const trialsHref = (patientId: string, versionId: string) =>
   `/trials?patient=${encodeURIComponent(patientId)}&version=${encodeURIComponent(versionId)}`;
 
 const POLL_MS = 1000;
-const ENDED = new Set<IngestPhase>(["committed", "rejected", "awaiting_patient"]);
+const ENDED = new Set<IngestPhase>(["committed", "rejected", "awaiting_patient", "awaiting_review"]);
 
 // Ingest runs in the background after an added Document or a questionnaire submission; poll it until it ends.
 export async function followRun(runId: string): Promise<RunOut> {

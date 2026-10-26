@@ -1,11 +1,14 @@
 """Runs and traces: how the system reasoned, and the patient's answer to a Conflict."""
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from app import matching, record, trace
 from app.api.deps import get_ctx
-from app.api.schemas import ConfirmIn, ConflictOut, ConflictSideOut, ConflictsOut, RescanSummary, IngestOutcomeOut
+from app.api.schemas import (
+    ConfirmIn, ConflictOut, ConflictSideOut, ConflictsOut, DocumentDateIn, IngestOutcomeOut, LetterReviewOut,
+    RescanSummary, ReviewAnswerIn, ReviewFactOut, ReviewRegionOut,
+)
 from app.ctx import Ctx
 from app.trace.state import IngestRunState, reduce_ingest
 
@@ -24,7 +27,7 @@ def _events(log: trace.RunLog) -> list[dict]:
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str, ctx: Ctx = Depends(get_ctx)):
     """{run_id, kind, head, state, events}. An ingest run's state.phase is started | drafting | awaiting_patient |
-    committed | rejected; the page adding Documents polls this until every run it started has ended."""
+    awaiting_review | committed | rejected; the page adding Documents polls this until every run it started has ended."""
     log = await _read(ctx, run_id)
     state = None
     if log.kind == "ingest":
@@ -73,6 +76,8 @@ def outcome_out(outcome: record.IngestOutcome) -> IngestOutcomeOut:
                                       profile_version_id=v.id, version_number=v.number)
         case record.AwaitingPatient(run_id=run_id):
             return IngestOutcomeOut(run_id=run_id, outcome="awaiting_patient")
+        case record.AwaitingReview(run_id=run_id):
+            return IngestOutcomeOut(run_id=run_id, outcome="awaiting_review")
         case record.Rejected(run_id=run_id, reason=reason):
             return IngestOutcomeOut(run_id=run_id, outcome="rejected", reason=reason)
 
@@ -92,6 +97,80 @@ async def confirm(run_id: str, body: ConfirmIn, ctx: Ctx = Depends(get_ctx)):
     if isinstance(outcome, record.Committed):
         accepted.rescan = RescanSummary.of(await matching.rescan(ctx, outcome.version.id, correlation_id=outcome.run_id))
     return accepted
+
+
+def _review_out(r: record.LetterReview) -> LetterReviewOut:
+    def fact(it: record.ReviewItem) -> ReviewFactOut:
+        d, g = it.draft, it.region
+        return ReviewFactOut(
+            index=it.index, resource=d.resource, subject=d.subject, value=d.value, unit=d.unit,
+            observed_on=d.observed_on, page=d.page, quote=d.quote,
+            region=g and ReviewRegionOut(span_id=g.span_id, kind=g.kind, text=g.text, x0=g.x0, y0=g.y0, x1=g.x1,
+                                         y1=g.y1),
+            flags=list(d.flags), flagged=d.flagged, decision=it.decision, correction=it.correction)
+    return LetterReviewOut(run_id=r.run_id, document_hash=r.document.hash, filename=r.document.filename,
+                           page_count=len(r.document.pages), document_date=r.document_date,
+                           document_date_corrected=r.document_date_corrected, date_order=r.date_order,
+                           facts=[fact(it) for it in r.items])
+
+
+async def _reviewing(call) -> LetterReviewOut:
+    try:
+        return _review_out(await call)
+    except record.NotAwaitingReview as e:
+        raise HTTPException(409, str(e))
+    except record.InvalidReview as e:
+        raise HTTPException(422, str(e))
+
+
+@router.get("/runs/{run_id}/review", response_model=LetterReviewOut)
+async def letter_review(run_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Letter review: the drafted Facts a letter's run waits on, each with its Region (page image box), flags and
+    the Respondent's answer so far; flagged first. 404 unknown run, 409 not awaiting review."""
+    return await _reviewing(record.letter_review(ctx, trace.RunId(run_id)))
+
+
+@router.post("/runs/{run_id}/review/facts/{index}", response_model=LetterReviewOut)
+async def answer_review(run_id: str, index: int, body: ReviewAnswerIn, ctx: Ctx = Depends(get_ctx)):
+    """Keep ("Looks right") or drop ("Not right", with an optional correction) one drafted Fact. 422: no such Fact, or a
+    correction on a kept one."""
+    return await _reviewing(record.answer_review(ctx, trace.RunId(run_id), index, body.decision, body.correction))
+
+
+@router.put("/runs/{run_id}/review/document-date", response_model=LetterReviewOut)
+async def correct_document_date(run_id: str, body: DocumentDateIn, ctx: Ctx = Depends(get_ctx)):
+    """Correct the letter's Document date; the drafts it dated follow it. 422: a date after today."""
+    return await _reviewing(record.correct_document_date(ctx, trace.RunId(run_id), body.document_date))
+
+
+async def _commit_review(ctx: Ctx, background: BackgroundTasks, run_id: str, use_all_as_read: bool) -> IngestOutcomeOut:
+    from app.api.documents import start_ingest
+
+    try:
+        reviewed = await record.commit_review(ctx, trace.RunId(run_id), use_all_as_read=use_all_as_read)
+    except record.NotAwaitingReview as e:
+        raise HTTPException(409, str(e))
+    out = outcome_out(reviewed.committed)
+    version = reviewed.committed.version
+    if reviewed.corrections is None:
+        background.add_task(matching.rescan, ctx, version.id, correlation_id=reviewed.committed.run_id)
+    else:   # the corrections' version is re-scanned when it commits; the letter's, if they do not
+        out.correction_run_id = await start_ingest(ctx, background, reviewed.corrections, otherwise=version.id)
+    return out
+
+
+@router.post("/runs/{run_id}/review/commit", status_code=202, response_model=IngestOutcomeOut)
+async def commit_review(run_id: str, background: BackgroundTasks, ctx: Ctx = Depends(get_ctx)):
+    """Commit the reviewed letter: kept Facts checked, unanswered ones not checked, dropped ones never. The
+    corrections become an answer in the Respondent's questionnaire, ingested in the background (correction_run_id);
+    the Re-scan follows the last commit. 404 unknown run, 409 not awaiting review."""
+    return await _commit_review(ctx, background, run_id, use_all_as_read=False)
+
+
+@router.post("/runs/{run_id}/review/use-all-as-read", status_code=202, response_model=IngestOutcomeOut)
+async def use_all_as_read(run_id: str, background: BackgroundTasks, ctx: Ctx = Depends(get_ctx)):
+    """Skip the review: commit every drafted Fact as read, none checked; then Re-scan in the background."""
+    return await _commit_review(ctx, background, run_id, use_all_as_read=True)
 
 
 @router.get("/traces/{correlation_id}")

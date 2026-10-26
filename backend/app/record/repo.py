@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timezone
 from typing import Sequence
 
 from app.record.types import (
@@ -67,7 +67,8 @@ async def patient_for_token_hash(reader: SqlReader, token_hash: ReturnTokenHash)
 
 async def document(reader: SqlReader, h: DocumentHash) -> Document | None:
     rows = await reader.fetch(
-        f"SELECT hash, patient_id, filename, respondent, uploaded_at FROM {reader.table('document')} WHERE hash = $1",
+        f"SELECT hash, patient_id, filename, respondent, uploaded_at, document_date FROM {reader.table('document')} "
+        "WHERE hash = $1",
         (h,))
     if not rows:
         return None
@@ -80,7 +81,13 @@ async def document(reader: SqlReader, h: DocumentHash) -> Document | None:
         for s in await spans_for_document(reader, h))
     return Document(hash=DocumentHash(r["hash"]), patient_id=PatientId(r["patient_id"]), filename=r["filename"],
                     pages=tuple(Page(number=p["number"], text=p["text"], tables=_tables(p["tables_json"])) for p in pages),
-                    uploaded_at=r["uploaded_at"].date(), respondent=r["respondent"], regions=regions)
+                    uploaded_at=r["uploaded_at"].date(), respondent=r["respondent"], regions=regions,
+                    document_date=r["document_date"])
+
+
+async def set_document_date(tx: Tx, h: DocumentHash, on: date) -> None:
+    """The Document date as the Respondent corrected it in Letter review."""
+    await tx.execute("UPDATE document SET document_date = $2 WHERE hash = $1", (h, on))
 
 
 def _tables(raw) -> tuple[tuple[tuple[str, ...], ...], ...]:
@@ -94,14 +101,14 @@ _VERSION_COLS = "id, patient_id, number, document_hash"
 async def _build(reader: SqlReader, row: dict, with_facts: bool) -> ProfileVersion:
     facts = await reader.fetch(
         f"SELECT f.id, f.document_hash, f.page, f.resource, f.subject, f.value, f.unit, f.observed_on, f.quote, "
-        f"f.question, f.span_id, f.flags FROM {reader.table('profile_version_fact')} pvf "
+        f"f.question, f.span_id, f.flags, f.checked FROM {reader.table('profile_version_fact')} pvf "
         f"JOIN {reader.table('fact')} f ON f.id = pvf.fact_id "
         f"JOIN {reader.table('profile_version')} accepted ON accepted.document_hash = f.document_hash "
         f"WHERE pvf.profile_version_id = $1 ORDER BY accepted.number, f.page, f.id", (row["id"],))
     loaded = tuple(Fact(id=FactId(f["id"]), document_hash=DocumentHash(f["document_hash"]), page=f["page"],
                         resource=FactResource(f["resource"]), subject=f["subject"], value=f["value"], unit=f["unit"],
                         observed_on=f["observed_on"], quote=f["quote"], question=f["question"],
-                        span_id=f["span_id"], flags=tuple(f["flags"] or ())) for f in facts)
+                        span_id=f["span_id"], flags=tuple(f["flags"] or ()), checked=bool(f["checked"])) for f in facts)
     return ProfileVersion(id=ProfileVersionId(row["id"]), patient_id=PatientId(row["patient_id"]),
                           number=row["number"], document_hash=DocumentHash(row["document_hash"]),
                           fact_ids=frozenset(f.id for f in loaded), facts=loaded if with_facts else ())

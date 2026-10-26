@@ -15,6 +15,7 @@ from app.config import Settings
 from app.llm.nightshift import FakeLLM
 from app.main import app
 from tests.conftest import ADMIN_DSN, make_ctx
+from tests.review import use_all_as_read
 from tests.fixtures.letters import (NARRATIVE_LETTER, NARRATIVE_LETTER_IDENTITY, STRUCTURED_REPORT,
                                     STRUCTURED_REPORT_IDENTITY, RecordedParse, intake_reading, letter_pdf,
                                     recording)
@@ -82,7 +83,7 @@ async def test_adding_the_same_document_again_answers_with_the_same_run_and_read
         patient = await new_patient(http)
         first = await http.post(f"/api/patients/{patient}/documents", files={"file": ("mri.pdf", content)})
         again = await http.post(f"/api/patients/{patient}/documents", files={"file": ("mri (1).pdf", content)})
-        run = (await http.get(f"/api/runs/{first.json()['run_id']}")).json()
+        run = await use_all_as_read(http, first.json()["run_id"])
         regions = (await http.get(f"/api/documents/{first.json()['document_hash']}/regions")).json()
 
     assert run["state"]["phase"] == "committed"

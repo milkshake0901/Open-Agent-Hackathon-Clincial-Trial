@@ -15,7 +15,7 @@ import {
   api, type CriterionResultOut, type Diagnosis, type DoctorQuestion, type RespondentQuestion, type SiteOut,
   type VerdictCitation, type VerdictOut,
 } from "@/lib/api";
-import { CitationSource, hasSource, sourceLabel } from "@/app/citation-source";
+import { checkedLabel, CitationSource, hasSource, sourceLabel } from "@/app/citation-source";
 import { QuestionsForYou } from "./questions-for-you";
 import { Enquiry } from "./enquiry";
 import { TrialContacts } from "./trial-contacts";
@@ -220,6 +220,7 @@ function ResultItem({ result: r }: { result: CriterionResultOut }) {
             <span className="text-muted">{r.citation.filename ? `${r.citation.filename}, ` : ""}{r.citation.label}</span>
           )}
           : “{r.citation.quote}”
+          {checkedLabel(r.citation) && <span className="text-muted"> ({checkedLabel(r.citation)})</span>}
         </p>
       )}
       {r.citation && hasSource(r.citation) && (

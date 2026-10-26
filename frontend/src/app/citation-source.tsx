@@ -17,12 +17,19 @@ export function sourceLabel(c: VerdictCitation): string {
   return c.answer ? "Show your answer" : "Show where the letter says this";
 }
 
+// A letter Fact's Letter review mark: "checked by you" or "not checked"; null for any other Fact.
+export function checkedLabel(c: VerdictCitation): string | null {
+  return c.checked === true ? "checked by you" : c.checked === false ? "not checked" : null;
+}
+
 export function CitationSource({ citation: c }: { citation: VerdictCitation }) {
   if (c.answer) return <AnswerQuote citation={c} answer={c.answer} />;
   if (!c.region) return null;
+  const checked = checkedLabel(c);
   return (
     <>
       <blockquote className="border-l-4 border-accent pl-3">“{c.quote}”</blockquote>
+      {checked && <p className="text-sm text-muted">Read from your letter, {checked}.</p>}
       <RegionPage documentHash={c.document_hash} page={c.page} filename={c.filename ?? "letter"}
                   boxes={[c.region]} active={c.region.span_id} />
     </>

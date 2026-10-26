@@ -34,6 +34,7 @@ class QuestionOut(BaseModel):
     options: list[OptionOut]
     required: bool
     help: str | None
+    review_only: bool = False   # answered in Letter review, not on the form: keep its answer when saving the form
 
 
 class SectionOut(BaseModel):
@@ -148,12 +149,60 @@ class QuestionnaireAccepted(DocumentAccepted):
 
 class IngestOutcomeOut(BaseModel):
     run_id: str
-    outcome: Literal["committed", "awaiting_patient", "rejected"]
+    outcome: Literal["committed", "awaiting_patient", "awaiting_review", "rejected"]
     document_hash: str | None = None
     profile_version_id: str | None = None
     version_number: int | None = None
     reason: str | None = None
     rescan: RescanSummary | None = None   # set on "committed"
+    correction_run_id: str | None = None  # a Letter review's commit: the run making its corrections Patient-reported
+
+
+class ReviewRegionOut(BaseModel):
+    """The Region a drafted Fact was read from: its box is fractions of GET /documents/{hash}/pages/{page}/image."""
+    span_id: str
+    kind: str
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class ReviewFactOut(BaseModel):
+    index: int                  # names this Fact in POST /runs/{run_id}/review/facts/{index}
+    resource: str
+    subject: str
+    value: str
+    unit: str | None
+    observed_on: date | None
+    page: int
+    quote: str
+    region: ReviewRegionOut | None
+    flags: list[str]            # ambiguous_date, estimated_date, document_date
+    flagged: bool               # an ambiguous or estimated date: listed first
+    decision: Literal["keep", "drop"] | None   # "Looks right" / "Not right"; None: not answered
+    correction: str | None      # what a dropped Fact should be
+
+
+class LetterReviewOut(BaseModel):
+    run_id: str
+    document_hash: str
+    filename: str
+    page_count: int
+    document_date: date | None
+    document_date_corrected: bool
+    date_order: Literal["day_first", "month_first"] | None
+    facts: list[ReviewFactOut]  # flagged first, then in reading order
+
+
+class ReviewAnswerIn(BaseModel):
+    decision: Literal["keep", "drop"]
+    correction: str | None = None   # only with "drop": what it should be
+
+
+class DocumentDateIn(BaseModel):
+    document_date: date
 
 
 class SearchPreferencesIn(BaseModel):
@@ -191,6 +240,7 @@ class CitationOut(BaseModel):
     quote: str
     span_id: str | None = None  # the Region of a letter the quote was read from (GET /documents/{hash}/regions)
     label: str                  # "Patient-reported, intake questionnaire, Q3" or "page 2"
+    checked: bool | None = None # a letter Fact: whether the Respondent checked it in Letter review; None otherwise
 
 
 class FactOut(BaseModel):
@@ -223,6 +273,7 @@ class VerdictCitationOut(BaseModel):
     filename: str | None = None # the Document's de-identified filename
     region: "CitationRegionOut | None" = None   # a letter Fact's Region: the page image with this box opens it
     answer: "CitationAnswerOut | None" = None   # a Patient-reported Fact's answer: shown instead of a page image
+    checked: bool | None = None # a letter Fact: true "checked by you", false "not checked"; None for any other Fact
 
 
 class CitationAnswerOut(BaseModel):

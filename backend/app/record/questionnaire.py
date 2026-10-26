@@ -24,7 +24,7 @@ from app.record.types import (
     CitedAnswer, Document, DocumentHash, DraftFact, FactResource, InvalidAnswers, Page, PatientId, Respondent,
 )
 
-DEFINITION_VERSION = "1"
+DEFINITION_VERSION = "2"
 DOCUMENT_FILENAME = "Intake questionnaire"
 
 QuestionKind = Literal["month_year", "single", "multi", "text", "textarea", "repeat"]
@@ -48,6 +48,7 @@ class Question:
     options: tuple[Option, ...] = ()
     required: bool = False
     help: str | None = None
+    review_only: bool = False        # answered in Letter review, not on the form; a later save never withdraws it
 
     @property
     def ref(self) -> str:
@@ -146,7 +147,14 @@ DEFINITION = Questionnaire(DEFINITION_VERSION, (
                  "text", "preference",
                  help="Optional. Used only to tell you there is something new to look at, never to identify the patient."),
     )),
+    Section("letter_corrections", "Corrections to the letter", (
+        Question("letter_corrections", 16, "What did your letter get wrong, and what should it say?",
+                 "What did their letter get wrong, and what should it say?", "textarea", "free_text",
+                 help="Filled in from Letter review: each Fact marked Not right, and what it should be.",
+                 review_only=True),
+    )),
 ))
+CORRECTIONS = "letter_corrections"   # the review-only question Letter review's corrections are answers to
 
 # Structured question → (resource, subject). Options listed here are answered but make no Fact.
 _FACTS: dict[str, tuple[FactResource, str]] = {
@@ -307,9 +315,23 @@ def structured_drafts(answers: dict[str, Any], respondent: Respondent, pages: tu
 
 
 def skipped(pages: tuple[Page, ...]) -> frozenset[str]:
-    """Question numbers ("Q9") a questionnaire Document shows as not answered."""
+    """Question numbers ("Q9") a questionnaire Document shows as not answered. A review-only question is never
+    skipped: a save that leaves it blank keeps the corrections given in Letter review."""
     return frozenset(q.ref for q in DEFINITION.questions()
-                     if q.use in ("fact", "free_text") and q.id not in answers_from_pages(pages))
+                     if q.use in ("fact", "free_text") and not q.review_only and q.id not in answers_from_pages(pages))
+
+
+def correction_line(draft: DraftFact, said: str) -> str:
+    """One Letter review correction as part of the letter_corrections answer: the Fact the letter was read as, then
+    what the Respondent says it should be."""
+    read = " ".join(x for x in (draft.value, draft.unit) if x)
+    return f"{draft.subject} (the letter was read as {read}): {said}"
+
+
+def with_corrections(earlier: str | None, said: list[str]) -> str:
+    """The letter_corrections answer with new corrections after any earlier ones, on one line ("; " between them),
+    as an answer is stored on its page."""
+    return "; ".join([*([earlier] if earlier else []), *said])
 
 
 def answers_from_pages(pages: tuple[Page, ...]) -> dict[str, Any]:

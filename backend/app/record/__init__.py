@@ -11,7 +11,7 @@ import logging
 import secrets
 from dataclasses import asdict, dataclass, replace
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from app import logfile, trace
 from app.ctx import Ctx
@@ -25,6 +25,7 @@ from app.record.questionnaire import (
 )
 from app.record.types import (
     AwaitingPatient,
+    AwaitingReview,
     CitedAnswer,
     Committed,
     Conflict,
@@ -59,7 +60,7 @@ from app.record.types import (
     new_patient_id,
 )
 from app.trace import RunId
-from app.trace.events import ProfileCommitted
+from app.trace.events import ProfileCommitted, ReviewAnswered
 
 __all__ = [
     "register_document", "register_questionnaire", "ingest", "confirm", "conflicts", "versions", "profile_version", "diff",
@@ -71,7 +72,9 @@ __all__ = [
     "Ticked", "NoneOfThese", "NotSure", "AlreadyAnswered",
     "NotAwaitingPatient", "InvalidResolution", "Questionnaire", "Section", "Question", "Option", "InvalidAnswers", "Respondent", "NotFound",
     "Document", "DraftFact", "Fact", "ProfileVersion", "Conflict", "Resolution", "VersionDiff",
-    "IngestOutcome", "Committed", "AwaitingPatient", "Rejected",
+    "IngestOutcome", "Committed", "AwaitingPatient", "AwaitingReview", "Rejected",
+    "letter_review", "answer_review", "correct_document_date", "commit_review", "LetterReview", "ReviewItem",
+    "ReviewCommitted", "NotAwaitingReview", "InvalidReview",
     "ask", "page_png", "letter_spans", "GroundedAnswer", "GroundedCitation", "LetterSpan",
     "referral_letters", "prefill_letter", "load_letter", "LetterPrefill",
     "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId", "DiagnosisCheckId",
@@ -421,7 +424,135 @@ async def conflicts(ctx: Ctx, run_id: RunId) -> tuple[Conflict, ...]:
     except trace.UnknownRun:
         raise NotFound(f"run {run_id}")
     waiting = loop.parked(state, run_id)
-    return waiting.conflicts if waiting else ()
+    return waiting.conflicts if isinstance(waiting, AwaitingPatient) else ()
+
+
+# ---- Letter review (ADR 0006) ------------------------------------------------
+
+class NotAwaitingReview(Exception):
+    """A Letter review call on a run that is not parked for one (committed, rejected, or still drafting)."""
+
+
+class InvalidReview(ValueError):
+    """A review answer that does not fit: no such drafted Fact, or a correction on a Fact marked "Looks right"."""
+
+
+ReviewDecision = Literal["keep", "drop"]
+MAX_CORRECTION = 500   # characters of what a dropped Fact should be
+
+
+@dataclass(frozen=True)
+class ReviewItem:
+    """One drafted letter Fact in Letter review: `index` names it in answer_review; its Region is where it was read.
+    Its observed-on date already follows a corrected Document date."""
+    index: int
+    draft: DraftFact
+    region: Region | None
+    decision: ReviewDecision | None     # "keep" ("Looks right"), "drop" ("Not right"), None: not answered yet
+    correction: str | None              # what a dropped Fact should be, in the Respondent's words
+
+
+@dataclass(frozen=True)
+class LetterReview:
+    """A letter's drafted Facts waiting, uncommitted, for the Respondent: flagged ones (an ambiguous or estimated
+    date) first, then in reading order."""
+    run_id: RunId
+    document: Document
+    items: tuple[ReviewItem, ...]
+    document_date: date | None          # the Document date the drafts are dated by (as corrected, if it was)
+    document_date_corrected: bool
+    date_order: str | None
+
+
+@dataclass(frozen=True)
+class ReviewCommitted:
+    """The letter's commit, and the questionnaire submission holding the Respondent's corrections (None without any):
+    ingest it as a submitted questionnaire, so each correction becomes a Patient-reported Fact."""
+    committed: Committed
+    corrections: Registered | None
+
+
+async def _awaiting_review(ctx: Ctx, run_id: RunId) -> tuple[Any, Document]:
+    try:
+        state = await trace.project_ingest(ctx.ui_reader, run_id)
+    except trace.UnknownRun:
+        raise NotFound(f"run {run_id}")
+    if state.phase != "awaiting_review":
+        raise NotAwaitingReview(f"run {run_id} is {state.phase}, not awaiting Letter review")
+    log = await trace.read(ctx.ui_reader, run_id)
+    started = next(e.event for e in log.events if e.event.kind == "ingest.started")
+    return state, await repo.document(ctx.ui_reader, DocumentHash(started.document_hash))
+
+
+async def letter_review(ctx: Ctx, run_id: RunId) -> LetterReview:
+    """The drafted Facts a letter's run waits on, each beside its Region, flagged first. Raises NotFound (unknown run)
+    and NotAwaitingReview."""
+    state, doc = await _awaiting_review(ctx, run_id)
+    dating = dates.dating(doc)
+    items = []
+    for i, r in enumerate(state.review):
+        d = loop._draft_from(r["draft"])
+        if doc.document_date is not None:
+            on, flags = dates.redated(d.observed_on, d.flags, d.quote, doc.document_date)
+            d = replace(d, observed_on=on, flags=flags)
+        items.append(ReviewItem(i, d, doc.region(d.span_id), r["decision"], r["correction"]))
+    return LetterReview(run_id, doc, tuple(sorted(items, key=lambda it: not it.draft.flagged)),
+                        dating.document_date.on if dating.document_date else None, doc.document_date is not None,
+                        dating.order)
+
+
+async def answer_review(ctx: Ctx, run_id: RunId, index: int, decision: ReviewDecision,
+                        correction: str | None = None) -> LetterReview:
+    """The Respondent's word on one drafted Fact: keep ("Looks right": committed as checked) or drop ("Not right":
+    never committed; `correction`, what it should be, becomes an answer in their questionnaire when the review
+    commits). Answering again replaces the earlier answer. Raises NotFound, NotAwaitingReview and InvalidReview."""
+    state, _ = await _awaiting_review(ctx, run_id)
+    if not 0 <= index < len(state.review):
+        raise InvalidReview(f"run {run_id} has no drafted Fact {index}")
+    if decision not in ("keep", "drop"):
+        raise InvalidReview(f"decision must be 'keep' or 'drop', got {decision!r}")
+    correction = " ".join((correction or "").split()) or None
+    if correction is not None and decision != "drop":
+        raise InvalidReview("only a Fact marked Not right takes a correction")
+    if correction is not None and len(correction) > MAX_CORRECTION:
+        raise InvalidReview(f"a correction is at most {MAX_CORRECTION} characters")
+    await trace.append(ctx.writer, run_id, ReviewAnswered(actor="patient", index=index, decision=decision,
+                                                          correction=correction))
+    return await letter_review(ctx, run_id)
+
+
+async def correct_document_date(ctx: Ctx, run_id: RunId, on: date) -> LetterReview:
+    """The Respondent's correction of the letter's Document date. The drafts it dated (no date of their own, or a
+    relative date counted back from it) are re-dated by it when the review commits, and the review shows them so.
+    Raises NotFound, NotAwaitingReview and InvalidReview (a date after today)."""
+    state, doc = await _awaiting_review(ctx, run_id)
+    if on > ctx.now().date():
+        raise InvalidReview(f"the Document date {on.isoformat()} is after today")
+    async with ctx.writer.transaction() as tx:
+        await repo.set_document_date(tx, doc.hash, on)
+    return await letter_review(ctx, run_id)
+
+
+async def commit_review(ctx: Ctx, run_id: RunId, *, use_all_as_read: bool = False) -> ReviewCommitted:
+    """Commit a letter's reviewed Facts as a new Profile version: each kept one checked, each unanswered one not
+    checked, a dropped one never. With use_all_as_read every drafted Fact is committed as read, none checked, and
+    the answers are set aside. The corrections of dropped Facts are added to the Respondent's latest questionnaire
+    answers (the review-only question letter_corrections), registered as a new submission for the caller to ingest.
+    Raises NotFound and NotAwaitingReview."""
+    _, doc = await _awaiting_review(ctx, run_id)
+    async with loop.patient_lock(doc.patient_id):
+        state, doc = await _awaiting_review(ctx, run_id)   # again under the lock: one commit per review
+        committed = await loop.commit_review(ctx, doc, run_id, state, use_all_as_read=use_all_as_read)
+    said = [] if use_all_as_read else [
+        questionnaire.correction_line(loop._draft_from(r["draft"]), deidentify_text(r["correction"]))
+        for r in state.review if r["decision"] == "drop" and r["correction"]]
+    if not said:
+        return ReviewCommitted(committed, None)
+    latest = await latest_answers(ctx, doc.patient_id)
+    answers = dict(latest.answers) if latest else {}
+    answers[questionnaire.CORRECTIONS] = questionnaire.with_corrections(answers.get(questionnaire.CORRECTIONS), said)
+    return ReviewCommitted(committed, await register_questionnaire(ctx, doc.patient_id, answers,
+                                                                   latest.respondent if latest else "patient"))
 
 
 async def versions(ctx: Ctx, patient_id: PatientId) -> list[ProfileVersion]:

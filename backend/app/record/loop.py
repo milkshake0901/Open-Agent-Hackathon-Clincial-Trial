@@ -13,16 +13,16 @@ from typing import Awaitable, Callable
 
 from app.ctx import Ctx
 from app.llm import LlmUnavailable
-from app.record import critic, intake, questionnaire, repo
+from app.record import critic, dates, intake, questionnaire, repo
 from app.worldmodel import timeline
 from app.record.types import (
-    AwaitingPatient, Committed, Conflict, ConflictId, Document, DocumentHash, DraftFact, Fact, FactId, FactResource,
+    AwaitingPatient, AwaitingReview, Committed, Conflict, ConflictId, Document, DocumentHash, DraftFact, Fact, FactId, FactResource,
     Finding, FindingKind, IngestOutcome, PatientId, ProfileVersion, Rejected, Resolution,
 )
 from app import trace
 from app.trace.events import (
     CriticReviewed, IngestRetried, IngestStarted, IntakeDrafted, PatientResolved, ProfileCommitted, RunAwaitingPatient,
-    RunRejected,
+    RunAwaitingReview, RunRejected,
 )
 from app.trace.state import IngestRunState, reduce_ingest
 
@@ -198,7 +198,7 @@ async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts:
                                                               findings=[asdict(f) for f in findings]))
         match decide(findings, drafts, attempt, max_attempts, current):
             case Accept(drafts=ds):
-                return await commit(ctx, doc, ds, run_id)
+                return await park_or_commit(ctx, doc, ds, run_id)
             case Escalate(conflicts=cs, accepted_drafts=ok):
                 cs = tuple(replace(c, document_hash=doc.hash) for c in cs)
                 await trace.append(ctx.writer, run_id, RunAwaitingPatient(
@@ -244,8 +244,10 @@ def conflict_from(d: dict) -> Conflict:
                     document_hash=d.get("document_hash"))
 
 
-def parked(state: IngestRunState, run_id: trace.RunId) -> AwaitingPatient | None:
-    """The AwaitingPatient a run's folded state describes, or None if the run is not parked."""
+def parked(state: IngestRunState, run_id: trace.RunId) -> AwaitingPatient | AwaitingReview | None:
+    """The AwaitingPatient or AwaitingReview a run's folded state describes, or None if the run is not parked."""
+    if state.phase == "awaiting_review":
+        return AwaitingReview(run_id, tuple(_draft_from(r["draft"]) for r in state.review))
     if state.phase != "awaiting_patient":
         return None
     return AwaitingPatient(run_id, tuple(conflict_from(c) for c in state.conflicts))
@@ -281,7 +283,47 @@ async def resume_after_confirm(ctx: Ctx, doc: Document, run_id: trace.RunId,
             drafts.append(conflict.draft)
         if r["choice"] in ("accept_draft", "discard_both") and conflict.accepted is not None:
             withdrawn.add(conflict.accepted.id)
-    return await commit(ctx, doc, tuple(drafts), run_id, withdrawn=frozenset(withdrawn))
+    return await park_or_commit(ctx, doc, tuple(drafts), run_id, withdrawn=frozenset(withdrawn))
+
+
+def needs_review(doc: Document) -> bool:
+    """A letter (a Document read into Regions) waits for Letter review before its Facts are committed (ADR 0006)."""
+    return bool(doc.regions) and not doc.is_questionnaire
+
+
+async def park_or_commit(ctx: Ctx, doc: Document, drafts: tuple[DraftFact, ...], run_id: trace.RunId, *,
+                         withdrawn: frozenset[FactId] = frozenset()) -> Committed | AwaitingReview:
+    """Accepted drafts: a letter's park for Letter review, uncommitted (with what a resolved Conflict withdrew);
+    anything else's commit now."""
+    if not needs_review(doc):
+        return await commit(ctx, doc, drafts, run_id, withdrawn=withdrawn)
+    await trace.append(ctx.writer, run_id, RunAwaitingReview(
+        actor="record", drafts=[asdict(d) for d in drafts], withdrawn=sorted(withdrawn)))
+    return AwaitingReview(run_id, drafts)
+
+
+def reviewed_drafts(doc: Document, state: IngestRunState, *, use_all_as_read: bool) -> tuple[DraftFact, ...]:
+    """PURE. What a Letter review commits, from the parked run's state: every draft but those marked "Not right",
+    each kept one checked; with use_all_as_read, every draft, none checked. A Document date the Respondent corrected
+    (doc.document_date) re-dates the drafts it dated (dates.redated)."""
+    out = []
+    for r in state.review:
+        decision = None if use_all_as_read else r["decision"]
+        if decision == "drop":
+            continue
+        d = replace(_draft_from(r["draft"]), checked=decision == "keep")
+        if doc.document_date is not None:
+            on, flags = dates.redated(d.observed_on, d.flags, d.quote, doc.document_date)
+            d = replace(d, observed_on=on, flags=flags)
+        out.append(d)
+    return tuple(out)
+
+
+async def commit_review(ctx: Ctx, doc: Document, run_id: trace.RunId, state: IngestRunState, *,
+                        use_all_as_read: bool) -> Committed:
+    """Commit a parked letter run as reviewed (reviewed_drafts). A dropped draft never reaches the World Model."""
+    return await commit(ctx, doc, reviewed_drafts(doc, state, use_all_as_read=use_all_as_read), run_id,
+                        withdrawn=frozenset(FactId(i) for i in state.withdrawn))
 
 
 async def commit(ctx: Ctx, doc: Document, drafts: tuple[DraftFact, ...], run_id: trace.RunId, *,

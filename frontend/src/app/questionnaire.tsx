@@ -158,11 +158,11 @@ export function QuestionnaireForm() {
           Your postcode and contact details are not shown again; leave them blank to keep what you gave before.
         </p>
       )}
-      {status.definition.sections.map((section) => (
+      {status.definition.sections.filter((section) => section.questions.some((q) => !q.review_only)).map((section) => (
         <section key={section.id} aria-labelledby={`section-${section.id}`}
                  className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-5">
           <h2 id={`section-${section.id}`} className="text-lg font-semibold">{section.title}</h2>
-          {section.questions.map((q) => (
+          {section.questions.filter((q) => !q.review_only).map((q) => (
             <QuestionField key={q.id} question={q} respondent={respondent} value={answers[q.id]}
                            onChange={(v) => set(q.id, v)} onClear={() => clear(q.id)} />
           ))}

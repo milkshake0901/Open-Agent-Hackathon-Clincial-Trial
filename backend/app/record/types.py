@@ -86,6 +86,8 @@ class Document:
     uploaded_at: date
     respondent: Respondent | None = None   # set only on a completed Intake questionnaire; never a Fact
     regions: tuple[Region, ...] = ()       # every page's Regions in reading order; none on a questionnaire
+    document_date: date | None = None      # the Document date as the Respondent corrected it in Letter review;
+                                           # None: as read from its first page (dates.dating)
 
     def intake_regions(self, page: int) -> tuple[Region, ...]:
         """The Regions of one page the Intake agent reads and a Fact can cite (INTAKE_KINDS), in reading order."""
@@ -216,6 +218,7 @@ class DraftFact:
     span_id: str | None = None    # the Region the quote was read from (a letter); page is that Region's page
     flags: tuple[str, ...] = ()   # how observed_on was settled (dates.DateFlag): ambiguous_date, estimated_date,
                                   # document_date
+    checked: bool = False         # the Respondent said "Looks right" in Letter review; set only when committing one
 
     @property
     def flagged(self) -> bool:
@@ -238,6 +241,7 @@ class Fact:
     question: str | None = None   # "Q3": Patient-reported Facts cite "intake questionnaire, Q3"
     span_id: str | None = None    # the Region the quote was read from; None for a questionnaire or an older Fact
     flags: tuple[str, ...] = ()   # as DraftFact.flags; () for a questionnaire or an older Fact
+    checked: bool = False         # a letter Fact the Respondent checked in Letter review ("checked by you")
 
     @property
     def flagged(self) -> bool:
@@ -327,12 +331,19 @@ class AwaitingPatient:
 
 
 @dataclass(frozen=True)
+class AwaitingReview:
+    """A letter's drafted Facts, parked uncommitted until the Respondent reviews them or uses them all as read."""
+    run_id: RunId
+    drafts: tuple[DraftFact, ...]
+
+
+@dataclass(frozen=True)
 class Rejected:
     run_id: RunId
     reason: str
 
 
-IngestOutcome = Committed | AwaitingPatient | Rejected
+IngestOutcome = Committed | AwaitingPatient | AwaitingReview | Rejected
 
 
 @dataclass(frozen=True)

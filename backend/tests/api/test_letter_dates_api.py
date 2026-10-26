@@ -16,6 +16,7 @@ from app.main import app
 from tests.api.test_letter_citations_api import LETTER_FACTS, add_letter, letter_ctx
 from tests.conftest import ADMIN_DSN, make_ctx
 from tests.fixtures.letters import STRUCTURED_REPORT, RecordedParse, intake_reading, letter_pdf
+from tests.review import use_all_as_read
 
 BIOPSY = {"resource": "Procedure", "subject": "trus biopsy", "value": "Gleason 4+4=8 adenocarcinoma",
           "observed_on": "2023-02-07", "quote": "Gleason 4+4=8, diagnosed on TRUS biopsy 7/2/23"}
@@ -76,7 +77,7 @@ async def test_the_structured_report_is_dated_by_its_service_date_with_its_injur
         patient = (await http.post("/api/patients", json={"label": "Web respondent"})).json()["patient_id"]
         added = await http.post(f"/api/patients/{patient}/documents",
                                 files={"file": ("report.pdf", letter_pdf(STRUCTURED_REPORT), "application/pdf")})
-        run = (await http.get(f"/api/runs/{added.json()['run_id']}")).json()
+        run = await use_all_as_read(http, added.json()["run_id"])
         version = await version_of(http, patient, run)
         dating = (await http.get(f"/api/documents/{added.json()['document_hash']}/regions")).json()
 
