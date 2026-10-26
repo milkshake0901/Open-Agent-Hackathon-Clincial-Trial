@@ -30,6 +30,19 @@ class Citation:
     page: int
     quote: str
     question: str | None = None     # "Q13" when the Fact is Patient-reported (intake questionnaire)
+    filename: str | None = None     # the Document's de-identified filename, when read back from the store
+    region: CitedRegion | None = None   # the letter Region the Fact was read from, with its box
+
+
+@dataclass(frozen=True)
+class CitedRegion:
+    """Where on the page a cited letter Fact was read: its Region's span_id and box (fractions of the page image,
+    origin top left), so a reason can open the page with that Region boxed."""
+    span_id: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
 
 
 @dataclass(frozen=True)

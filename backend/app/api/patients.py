@@ -49,7 +49,8 @@ def _citation_label(f: record.Fact) -> str:
 def _fact_out(f: record.Fact) -> FactOut:
     return FactOut(id=f.id, resource=f.resource, subject=f.subject, value=f.value, unit=f.unit,
                    observed_on=f.observed_on, citation={"document_hash": f.document_hash, "page": f.page,
-                                                        "quote": f.quote, "label": _citation_label(f)})
+                                                        "quote": f.quote, "span_id": f.span_id,
+                                                        "label": _citation_label(f)})
 
 
 @router.get("/patients/{pid}/versions/{vid}", response_model=VersionOut)

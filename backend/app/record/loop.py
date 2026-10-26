@@ -89,6 +89,34 @@ def questionnaire_drafter(structured: tuple[DraftFact, ...], free_text: Document
     return draft
 
 
+def region_drafter() -> Drafter:
+    """A clinical Document read into Regions: one Intake call per page that has citable Regions, all with the same
+    prompt. On a retry only the pages whose drafts had findings are read again, each with the findings about its own
+    drafts; the other pages keep their drafts (traced again, so the attempt's drafts are the whole Document's)."""
+    by_page: dict[int, tuple[DraftFact, ...]] = {}
+    attempt = 0
+
+    async def draft(ctx: Ctx, doc: Document, feedback: tuple[Finding, ...], run_id: trace.RunId):
+        nonlocal attempt
+        attempt += 1
+        order = [p.number for p in doc.pages if doc.intake_regions(p.number)]
+        if attempt > 1:
+            flat = [(n, i) for n in order for i in range(len(by_page.get(n, ())))]
+            own: dict[int, list[Finding]] = {}
+            for f in feedback:
+                own.setdefault(flat[f.draft_index][0], []).append(f)
+        for n in order:
+            if attempt == 1 or n in own:
+                by_page[n] = await intake.extract_page(ctx, doc, n, tuple(own.get(n, ())) if attempt > 1 else (),
+                                                       attempt, run_id)
+            else:
+                await trace.append(ctx.writer, run_id, IntakeDrafted(
+                    actor="intake", attempt=attempt, drafts=[asdict(d) for d in by_page[n]],
+                    model_answered=f"none: page {n} kept from attempt {attempt - 1}"))
+        return tuple(d for n in order for d in by_page.get(n, ()))
+    return draft
+
+
 def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt: int, max_attempts: int,
            current: ProfileVersion | None) -> Step:
     """PURE. The whole loop policy in one function; table-tested.
@@ -125,10 +153,11 @@ def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt
 
 
 def drafter_for(doc: Document) -> Drafter:
-    """The Intake agent for a clinical Document. For an Intake questionnaire, its answers are read back from the
+    """The Intake agent for a clinical Document: page by page over its Regions (region_drafter), or in one call over its
+    page text for a Document stored before Documents were read into Regions. For an Intake questionnaire, its answers are read back from the
     Document itself: structured ones drafted in code, free-text ones through the agent (questionnaire_drafter)."""
     if not doc.is_questionnaire:
-        return intake.extract
+        return region_drafter() if doc.regions else intake.extract
     answers = questionnaire.answers_from_pages(doc.pages)
     structured = questionnaire.structured_drafts(answers, doc.respondent, doc.pages, doc.uploaded_at)
     free_text = replace(doc, pages=questionnaire.free_text_pages(answers, doc.respondent))
@@ -197,13 +226,14 @@ class InvalidResolution(ValueError):
 def _draft_from(d: dict) -> DraftFact:
     return DraftFact(resource=FactResource(d["resource"]), subject=d["subject"], value=d["value"], unit=d["unit"],
                      observed_on=date.fromisoformat(d["observed_on"]) if d["observed_on"] else None, page=d["page"],
-                     quote=d["quote"], question=d.get("question"))
+                     quote=d["quote"], question=d.get("question"), span_id=d.get("span_id"))
 
 
 def _fact_from(d: dict) -> Fact:
     return Fact(id=FactId(d["id"]), document_hash=DocumentHash(d["document_hash"]), page=d["page"],
                 resource=FactResource(d["resource"]), subject=d["subject"], value=d["value"], unit=d["unit"],
-                observed_on=date.fromisoformat(d["observed_on"]), quote=d["quote"], question=d.get("question"))
+                observed_on=date.fromisoformat(d["observed_on"]), quote=d["quote"], question=d.get("question"),
+                span_id=d.get("span_id"))
 
 
 def conflict_from(d: dict) -> Conflict:

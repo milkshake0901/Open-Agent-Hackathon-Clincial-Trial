@@ -52,10 +52,10 @@ async def _fact(tx: "Tx", f) -> None:
     # A supersession re-emits the old Fact with superseded_by set: the row already exists and stays as it was.
     v = f.value
     await tx.execute(
-        "INSERT INTO fact (id, document_hash, page, resource, subject, value, unit, observed_on, quote, question) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO fact (id, document_hash, page, resource, subject, value, unit, observed_on, quote, question, span_id) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING",
         (f.id, f.source.checksum, v["page"], v["resource"], f.predicate, v["value"], v.get("unit"),
-         date.fromisoformat(f.source.at[:10]), v["quote"], v.get("question")))
+         date.fromisoformat(f.source.at[:10]), v["quote"], v.get("question"), v.get("span_id")))
 
 
 async def _profile_version(tx: "Tx", s) -> None:

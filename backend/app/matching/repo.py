@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.matching.types import (
-    Citation, CriterionResult, DoctorQuestion, Outcome, RespondentQuestion, ValidatedResults, Verdict, VerdictOutcome,
+    Citation, CitedRegion, CriterionResult, DoctorQuestion, Outcome, RespondentQuestion, ValidatedResults, Verdict, VerdictOutcome,
 )
 from app.record import DocumentHash, FactId, ProfileVersionId
 from app.sql.reader import SqlReader
@@ -24,17 +24,28 @@ async def trials_needing_verdict(reader: SqlReader, version_id: ProfileVersionId
             [NctId(r["nct_id"]) for r in rows if r["judged"] is not None])
 
 
+def _citation(r: dict) -> Citation | None:
+    """A stored result's Citation: the Fact, its Document's filename, and for a letter Fact its Region's box."""
+    if not r["fact_id"]:
+        return None
+    region = (CitedRegion(r["span_id"], r["x0"], r["y0"], r["x1"], r["y1"]) if r["span_id"] and r["x0"] is not None
+              else None)
+    return Citation(fact_id=FactId(r["fact_id"]), document_hash=DocumentHash(r["document_hash"]), page=r["page"],
+                    quote=r["quote"], question=r["question"], filename=r["filename"], region=region)
+
+
 async def _results(reader: SqlReader, key: tuple) -> ValidatedResults:
     rows = await reader.fetch(
         f"SELECT cr.criterion_id, cr.outcome, cr.rationale, cr.ask, f.id AS fact_id, f.document_hash, f.page, f.quote, "
-        f"f.question FROM {reader.table('criterion_result')} cr "
+        f"f.question, f.span_id, d.filename, s.x0, s.y0, s.x1, s.y1 FROM {reader.table('criterion_result')} cr "
         f"JOIN {reader.table('criterion')} c ON c.id = cr.criterion_id "
         f"LEFT JOIN {reader.table('fact')} f ON f.id = cr.fact_id "
+        f"LEFT JOIN {reader.table('document')} d ON d.hash = f.document_hash "
+        f"LEFT JOIN {reader.table('document_span')} s ON s.id = f.span_id "
         "WHERE cr.nct_id = $1 AND cr.eligibility_hash = $2 AND cr.profile_version_id = $3 ORDER BY c.ordinal", key)
     return ValidatedResults(CriterionResult(
         criterion_id=CriterionId(r["criterion_id"]), outcome=Outcome(r["outcome"]), rationale=r["rationale"], ask=r["ask"],
-        citation=Citation(fact_id=FactId(r["fact_id"]), document_hash=DocumentHash(r["document_hash"]), page=r["page"],
-                          quote=r["quote"], question=r["question"]) if r["fact_id"] else None) for r in rows)
+        citation=_citation(r)) for r in rows)
 
 
 _DQ_COLS = "q.criterion_id, q.nct_id, q.subject, q.text"

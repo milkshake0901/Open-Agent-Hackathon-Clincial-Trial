@@ -189,6 +189,7 @@ class CitationOut(BaseModel):
     document_hash: str
     page: int
     quote: str
+    span_id: str | None = None  # the Region of a letter the quote was read from (GET /documents/{hash}/regions)
     label: str                  # "Patient-reported, intake questionnaire, Q3" or "page 2"
 
 
@@ -217,6 +218,17 @@ class VerdictCitationOut(BaseModel):
     quote: str
     question: str | None        # "Q13" for a Patient-reported Fact: the web page links to that question
     label: str                  # "Patient-reported, intake questionnaire, Q13" or "page 2"
+    filename: str | None = None # the Document's de-identified filename
+    region: "CitationRegionOut | None" = None   # a letter Fact's Region: the page image with this box opens it
+
+
+class CitationRegionOut(BaseModel):
+    """A Region's span_id and box: fractions of GET /documents/{hash}/pages/{page}/image, origin top left."""
+    span_id: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
 
 
 class CriterionResultOut(BaseModel):

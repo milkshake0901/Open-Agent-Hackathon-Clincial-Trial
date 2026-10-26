@@ -16,7 +16,8 @@ from app.llm.nightshift import FakeLLM
 from app.main import app
 from tests.conftest import ADMIN_DSN, make_ctx
 from tests.fixtures.letters import (NARRATIVE_LETTER, NARRATIVE_LETTER_IDENTITY, STRUCTURED_REPORT,
-                                    STRUCTURED_REPORT_IDENTITY, RecordedParse, letter_pdf, recording)
+                                    STRUCTURED_REPORT_IDENTITY, RecordedParse, intake_reading, letter_pdf,
+                                    recording)
 
 
 def no_facts(lane, system, user):
@@ -24,11 +25,8 @@ def no_facts(lane, system, user):
 
 
 ACL_TEAR = [{"resource": "Condition", "subject": "anterior cruciate ligament tear", "value": "complete",
-             "observed_on": "2026-10-02", "page": 1, "quote": "Complete ACL tear"}]
-
-
-def acl_tear(lane, system, user):
-    return {"facts": ACL_TEAR}
+             "observed_on": "2026-10-02", "quote": "complete tear of the proximal fibres"}]
+acl_tear = intake_reading(ACL_TEAR)
 
 
 def documents_ctx(clean_db, tmp_path, parser, intake=no_facts):

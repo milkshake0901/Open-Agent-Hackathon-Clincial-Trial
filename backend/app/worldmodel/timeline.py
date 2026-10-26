@@ -70,9 +70,12 @@ async def commit_profile_version(wm: "WorldModel", patient_id: "PatientId", doc:
     for d in drafts:
         source = Provenance(kind="file", at=d.observed_on.isoformat(), by="record",
                             url=f"doc:{doc.hash}#page={d.page}", checksum=doc.hash, run_id=run_id)
+        value = {"value": d.value, "unit": d.unit, "resource": str(d.resource), "page": d.page, "quote": d.quote,
+                 "question": d.question}
+        if d.span_id is not None:   # only when set: a Fact's id is derived from its value, so others keep theirs
+            value["span_id"] = d.span_id
         fact = await wm.assert_fact(about=about, predicate=d.subject, source=source, context=f"doc:{doc.hash}",
-                                    value={"value": d.value, "unit": d.unit, "resource": str(d.resource),
-                                           "page": d.page, "quote": d.quote, "question": d.question})
+                                    value=value)
         new_ids.append(fact.id)
     previous = set(profiles[-1].attrs["fact_ids"]) if profiles else set()
     snap = await wm.snapshot(entities=[about], source=doc_source, attrs={

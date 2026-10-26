@@ -45,6 +45,9 @@ export type VerdictCitation = {
   quote: string;
   question: string | null;
   label: string;
+  filename: string | null;
+  // A letter Fact's Region: open /api/documents/{document_hash}/pages/{page}/image with this box drawn on it.
+  region: { span_id: string; x0: number; y0: number; x1: number; y1: number } | null;
 };
 
 export type CriterionResultOut = {

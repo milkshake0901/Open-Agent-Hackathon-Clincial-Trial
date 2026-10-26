@@ -15,7 +15,7 @@ from app import record
 from app.config import Settings
 from app.llm.nightshift import FakeLLM
 from tests.conftest import ADMIN_DSN, make_ctx
-from tests.fixtures.letters import letter_pdf, recorded, recording
+from tests.fixtures.letters import intake_reading, letter_pdf, recorded, recording
 
 REFERRAL_READ = recording(
     "Oncology referral letter\n"
@@ -59,11 +59,10 @@ class SlowFakeLLM(FakeLLM):
         return await super().complete(lane, system, user, out)
 
 
-def by_document(**facts_by_marker):
-    """A fake Intake model that answers with the facts scripted for whichever Document the prompt shows."""
-    def respond(lane, system, user):
-        return {"facts": next(fs for marker, fs in facts_by_marker.items() if marker in user)}
-    return SlowFakeLLM(respond)
+def by_document(**facts_by_document):
+    """A fake Intake model scripted with each Document's facts (named for readability): Intake reads one page at a
+    time, and each page is answered with the scripted facts quoted on it, naming their Region (intake_reading)."""
+    return SlowFakeLLM(intake_reading([f for facts in facts_by_document.values() for f in facts]))
 
 
 @pytest.fixture
@@ -116,7 +115,7 @@ async def test_adding_the_same_bytes_twice_is_deduplicated(documents_ctx):
     assert (await record.document(ctx, again.document.hash)).filename == "referral.pdf"
     assert isinstance(outcome, record.Committed) and outcome.version == committed.version
     assert outcome.run_id == committed.run_id
-    assert len(ctx.llm.calls) == 1
+    assert len(ctx.llm.calls) == 2, "one Intake call for each of its two pages, the first time only"
     assert (await record.current_version(ctx, patient)).number == 2
 
 

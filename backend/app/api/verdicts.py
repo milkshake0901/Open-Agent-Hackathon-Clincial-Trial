@@ -1,4 +1,6 @@
 """Verdicts, why they changed, Doctor questions and Respondent questions."""
+from dataclasses import asdict
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import matching, record, trials
@@ -26,7 +28,8 @@ def respondent_question_out(q: matching.RespondentQuestion) -> RespondentQuestio
 def citation_out(c: matching.Citation | None) -> dict | None:
     return None if c is None else {
         "fact_id": c.fact_id, "document_hash": c.document_hash, "page": c.page, "quote": c.quote,
-        "question": c.question, "label": citation_label(c.question, c.page)}
+        "question": c.question, "label": citation_label(c.question, c.page), "filename": c.filename,
+        "region": asdict(c.region) if c.region else None}
 
 
 def change_out(ch: matching.VerdictChange) -> VerdictChangeOut:

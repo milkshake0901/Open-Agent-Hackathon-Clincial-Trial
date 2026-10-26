@@ -73,6 +73,13 @@ export function QuestionnaireForm() {
       return next;
     });
 
+  // The Respondent's own patient, created on first need: by adding a letter, or by the first save.
+  async function ensurePatient(): Promise<string> {
+    const id = patientId ?? (await api.createPatient("Web respondent")).patient_id;
+    setPatientId(id);
+    return id;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (status.kind !== "ready") return;
@@ -81,8 +88,7 @@ export function QuestionnaireForm() {
     setSubmitError(null);
     try {
       // A correction is a full resubmission for the same patient: a new Profile version.
-      const patient_id = patientId ?? (await api.createPatient("Web respondent")).patient_id;
-      setPatientId(patient_id);
+      const patient_id = await ensurePatient();
       const accepted = await api.submit(patient_id, {
         definition_version: status.definition.version,
         respondent,
@@ -143,10 +149,8 @@ export function QuestionnaireForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
-      <LetterFill onFill={(letter) => {
-        setPatientId(letter.patient_id);
-        setAnswers((current) => ({ ...current, ...letter.answers }));
-      }} />
+      <LetterFill ensurePatient={ensurePatient}
+                  onFill={(letter) => setAnswers((current) => ({ ...current, ...letter.answers }))} />
       <p className="text-muted">Every question can be skipped. We never ask for a name or a street address.</p>
       {savedVersionId && (
         <p className="text-muted">

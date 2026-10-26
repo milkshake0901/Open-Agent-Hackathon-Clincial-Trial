@@ -45,6 +45,7 @@ from app.record.types import (
     PatientId,
     ProfileVersion,
     ProfileVersionId,
+    Region,
     Rejected,
     ReturnTokenHash,
     Resolution,
@@ -333,21 +334,6 @@ async def register_document(ctx: Ctx, patient_id: PatientId, filename: str, cont
 
 
 @dataclass(frozen=True)
-class Region:
-    """One block of a page as Nemotron Parse read it: its kind, its de-identified words and its box (fractions of the
-    page image, origin top left). A Citation can point at its span_id."""
-    span_id: str
-    page: int
-    ordinal: int
-    kind: str
-    text: str
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-
-
-@dataclass(frozen=True)
 class DocumentRegions:
     """A stored Document's Regions in reading order, each with its box (fractions of the page image)."""
     document_hash: DocumentHash
@@ -361,10 +347,7 @@ async def document_regions(ctx: Ctx, document_hash: DocumentHash) -> DocumentReg
     doc = await repo.document(ctx.ui_reader, document_hash)
     if doc is None:
         raise NotFound(f"document {document_hash}")
-    rows = await repo.spans_for_document(ctx.ui_reader, document_hash)
-    return DocumentRegions(doc.hash, doc.filename, len(doc.pages), tuple(
-        Region(r["id"], r["page"], r["ordinal"], r["kind"], r["text"], r["x0"], r["y0"], r["x1"], r["y1"])
-        for r in rows))
+    return DocumentRegions(doc.hash, doc.filename, len(doc.pages), doc.regions)
 
 
 async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None = None) -> IngestOutcome:

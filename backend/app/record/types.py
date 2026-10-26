@@ -45,6 +45,26 @@ class Page:
     tables: tuple[tuple[tuple[str, ...], ...], ...] = ()   # rows of cells, for tabular blood reports
 
 
+INTAKE_KINDS = frozenset({"Text", "Title", "Section-header", "List-item", "Table", "Caption"})
+"""The Region kinds the Intake agent reads and a Fact can cite. Page headers, page footers and pictures (letterheads,
+addresses, barcodes) are never shown to it."""
+
+
+@dataclass(frozen=True)
+class Region:
+    """One block of a page as Nemotron Parse read it: its kind, its de-identified words and its box (fractions of the
+    page image, origin top left). A Citation can point at its span_id."""
+    span_id: str
+    page: int
+    ordinal: int
+    kind: str
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
 @dataclass(frozen=True)
 class Document:
     hash: DocumentHash
@@ -53,6 +73,15 @@ class Document:
     pages: tuple[Page, ...]
     uploaded_at: date
     respondent: Respondent | None = None   # set only on a completed Intake questionnaire; never a Fact
+    regions: tuple[Region, ...] = ()       # every page's Regions in reading order; none on a questionnaire
+
+    def intake_regions(self, page: int) -> tuple[Region, ...]:
+        """The Regions of one page the Intake agent reads and a Fact can cite (INTAKE_KINDS), in reading order."""
+        return tuple(r for r in self.regions if r.page == page and r.kind in INTAKE_KINDS and r.text.strip())
+
+    def region(self, span_id: str | None) -> Region | None:
+        """The citable Region with this span_id (an INTAKE_KINDS Region of this Document), or None."""
+        return next((r for r in self.regions if r.span_id == span_id and r.kind in INTAKE_KINDS), None)
 
     @property
     def is_questionnaire(self) -> bool:
@@ -172,6 +201,7 @@ class DraftFact:
     page: int
     quote: str            # verbatim span from the page; evaluator and UI use it
     question: str | None = None   # "Q3" when drafted from an Intake questionnaire answer
+    span_id: str | None = None    # the Region the quote was read from (a letter); page is that Region's page
 
 
 @dataclass(frozen=True)
@@ -187,6 +217,7 @@ class Fact:
     observed_on: date
     quote: str
     question: str | None = None   # "Q3": Patient-reported Facts cite "intake questionnaire, Q3"
+    span_id: str | None = None    # the Region the quote was read from; None for a questionnaire or an older Fact
 
 
 @dataclass(frozen=True)
@@ -220,6 +251,7 @@ class FindingKind(StrEnum):
     MISSING_DATE = "missing_date"
     BAD_PAGE = "bad_page"
     QUOTE_NOT_ON_PAGE = "quote_not_on_page"
+    UNKNOWN_REGION = "unknown_region"                # a letter's draft names no citable Region of the Document
     UNIT_OUT_OF_RANGE = "unit_out_of_range"
     DUPLICATE_OF_ACCEPTED = "duplicate_of_accepted"
     # Conflict: contradicts the accepted record; only the patient can resolve.

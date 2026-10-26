@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { RegionPage } from "@/app/region-page";
 import { api, type ClosedTrialOut, type GroundedCitation, type MatchingTrials, type TrialAsk } from "@/lib/api";
 
 const ASK_MS = 60_000;
@@ -31,24 +32,8 @@ function LetterView({ citations, active, onSelect }: {
         const boxes = citations.filter((c) => c.document_hash === hash && c.page === page);
         const filename = boxes[0]?.filename ?? "letter";
         return (
-          <figure key={key} className="flex flex-col gap-2">
-            <div className="relative border border-border bg-surface">
-              {/* The image is the parsed page. A box is a fraction of that page, origin at the top left. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/documents/${encodeURIComponent(hash)}/pages/${page}/image`}
-                   alt={`Page ${page} of ${filename}`} className="block w-full" />
-              {boxes.map((c) => (
-                <button key={c.span_id} type="button" aria-label={`Cited region on page ${page}`}
-                        onClick={() => onSelect(c.span_id)}
-                        className={`absolute border-2 border-accent ${c.span_id === active ? "bg-accent/25" : "bg-accent/10"}`}
-                        style={{
-                          left: `${c.x0 * 100}%`, top: `${c.y0 * 100}%`,
-                          width: `${(c.x1 - c.x0) * 100}%`, height: `${(c.y1 - c.y0) * 100}%`,
-                        }} />
-              ))}
-            </div>
-            <figcaption className="text-sm text-muted">Page {page} of {filename}</figcaption>
-          </figure>
+          <RegionPage key={key} documentHash={hash} page={page} filename={filename} boxes={boxes}
+                      active={active} onSelect={onSelect} />
         );
       })}
     </div>

@@ -91,3 +91,30 @@ class RecordedParse:
 def recorded(*documents: tuple[bytes, ExtractedDocument]) -> RecordedParse:
     """A parser replaying each (PDF bytes, recording) pair."""
     return RecordedParse(dict(documents))
+
+
+def intake_reading(facts: list[dict]):
+    """A scripted Intake model that reads a page the way a careful model would: each per-page Intake prompt lists the
+    page's Regions as `[span_id] (Kind) text`, and the reply is every scripted Fact whose quote is inside one of those
+    Regions, naming that Region. A Fact quoted on no Region of the page is not drafted from it."""
+    import re
+
+    marker = re.compile(r"^\[(\S+)\] \(([^)]+)\) ", re.MULTILINE)
+
+    def regions(user: str) -> list[tuple[str, str]]:
+        starts = list(marker.finditer(user))
+        return [(m.group(1), user[m.end():starts[i + 1].start() if i + 1 < len(starts) else len(user)])
+                for i, m in enumerate(starts)]
+
+    def squash(text: str) -> str:
+        return " ".join(text.split()).lower()
+
+    def respond(lane, system, user):
+        shown = regions(user)
+        drafted = []
+        for fact in facts:
+            span = next((span for span, text in shown if squash(fact["quote"]) in squash(text)), None)
+            if span is not None:
+                drafted.append({**fact, "span_id": span})
+        return {"facts": drafted}
+    return respond

@@ -16,6 +16,7 @@ from app.record.types import Document, DraftFact, Fact, Finding, FindingKind, Pr
 def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion | None) -> tuple[Finding, ...]:
     """All findings for a draft set. Per draft, in order:
       MISSING_DATE        no observed-on date (retryable)
+      UNKNOWN_REGION      on a Document read into Regions, the span_id names none it can cite (retryable), else
       BAD_PAGE            the page is not in the Document (retryable), else
       QUOTE_NOT_ON_PAGE   the quote is not on that page (retryable)
       UNIT_OUT_OF_RANGE   an implausible lab value for its unit (retryable)
@@ -34,7 +35,10 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
     for i, d in enumerate(drafts):
         if d.observed_on is None:
             add(FindingKind.MISSING_DATE, i, f"fact {i + 1} ({d.subject}): no observed-on date")
-        if not 1 <= d.page <= len(doc.pages):
+        if doc.regions and not doc.is_questionnaire and doc.region(d.span_id) is None:
+            add(FindingKind.UNKNOWN_REGION, i, f"fact {i + 1} ({d.subject}): span_id {d.span_id!r} is not one of "
+                                               "the Regions shown for this page")
+        elif not 1 <= d.page <= len(doc.pages):
             add(FindingKind.BAD_PAGE, i, f"fact {i + 1} ({d.subject}): page {d.page} is not in the document")
         elif not quote_on_page(d.quote, doc.pages[d.page - 1].text):
             add(FindingKind.QUOTE_NOT_ON_PAGE, i, f"fact {i + 1} ({d.subject}): quote not found on page {d.page}")
