@@ -1,9 +1,9 @@
--- db/migrations/0008_context_facts.sql — Context Facts of unknown Criterion results (#50), a projected table
+-- db/migrations/0009_context_facts.sql — Context Facts of unknown Criterion results (#50), a projected table
 -- (app.worldmodel.projector) on a database created from an older db/schema.sql. Safe to run twice. New databases
 -- don't need it; db/schema.sql already has it. Verdicts judged before it have no Context Facts (no backfill).
 --
 --   docker exec -i open-agent-hackathon-clincial-trial-postgres-1 \
---     psql -U trialmatch -d trialmatch -v ON_ERROR_STOP=1 < db/migrations/0008_context_facts.sql
+--     psql -U trialmatch -d trialmatch -v ON_ERROR_STOP=1 < db/migrations/0009_context_facts.sql
 --
 -- Then run REGISTER DATASOURCE TABLES FROM trialmatch in Zetaris (db/zetaris_register.sql): the Trials page reads
 -- the table through Zetaris.
