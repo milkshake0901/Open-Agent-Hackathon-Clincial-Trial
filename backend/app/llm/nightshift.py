@@ -8,6 +8,7 @@ required headers, so an agent never configures the provider itself. Discovery, s
 the same token over httpx. Media (image, speech, music, video) is made on a job, not chat: app/llm/media.py."""
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 import logging
@@ -28,8 +29,15 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8088/v1"
 DETECT_PORTS = (8088, 8090, 8787, 11434)
 DETECT_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 TIMEOUT_S = 180.0          # a model load can take minutes
+# NVIDIA's API answers 429 when Intake sends a letter's pages back to back; Nightshift relays it as a 502.
+RATE_LIMIT_BACKOFF_S = (2, 5, 10)
 
 Status = Literal["online", "unauthorized", "offline"]
+
+
+def _rate_limited(e: Exception) -> bool:
+    """A 429 from Nightshift itself, or one from the provider behind it relayed in a 502's body."""
+    return getattr(e, "status_code", None) == 429 or "429" in str(e)
 
 
 def normalize_base_url(url: str) -> str:
@@ -165,10 +173,16 @@ class Nightshift:
         prompt = [SystemMessage(f"{system}\n\nReply with one JSON object only, matching this JSON Schema:\n{schema}"),
                   HumanMessage(user)]
         started = time.monotonic()
-        try:
-            msg = await self.chat_model(lane).ainvoke(prompt, response_format={"type": "json_object"})
-        except Exception as e:   # openai.* errors surface through LangChain
-            raise LlmUnavailable(f"{lane} lane ({model}) failed: {type(e).__name__}: {str(e)[:200]}") from e
+        for wait_s in (*RATE_LIMIT_BACKOFF_S, None):
+            try:
+                msg = await self.chat_model(lane).ainvoke(prompt, response_format={"type": "json_object"})
+                break
+            except Exception as e:   # openai.* errors surface through LangChain
+                if wait_s is not None and _rate_limited(e):
+                    log.warning("%s lane (%s) rate limited; retrying in %ss", lane, model, wait_s)
+                    await asyncio.sleep(wait_s)
+                    continue
+                raise LlmUnavailable(f"{lane} lane ({model}) failed: {type(e).__name__}: {str(e)[:200]}") from e
         latency_ms = int((time.monotonic() - started) * 1000)
         usage = msg.usage_metadata or {}
         return Reply(

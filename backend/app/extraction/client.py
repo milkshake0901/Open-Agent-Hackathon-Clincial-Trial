@@ -21,7 +21,7 @@ def parse_client(settings: Settings | None = None) -> ChatNVIDIA:
     return ChatNVIDIA(
         model=settings.nvidia_parse_model or PARSE_MODEL,
         api_key=key,
-        temperature=0,
+        temperature=0.8,
         top_p=1,
         max_completion_tokens=4096,
     )

@@ -143,3 +143,43 @@ async def test_gateway_retries_once_with_the_validation_error_then_gives_up():
     with pytest.raises(LlmUnavailable, match="did not parse twice"):
         await llm.complete(SimpleNamespace(llm=Flaky()), Lane.JUDGE, system="s", user="u", out=Answer, run_id=None)
     assert len(calls) == 2 and "did not match the schema" in calls[1]
+
+
+async def test_a_relayed_rate_limit_is_retried(monkeypatch):
+    monkeypatch.setattr("app.llm.nightshift.RATE_LIMIT_BACKOFF_S", (0, 0))
+    seen: list[httpx.Request] = []
+    ok = runtime(seen, reply='{"answer": "pong"}')
+
+    def handle(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/v1/chat/completions" and len(seen) < 2:
+            seen.append(req)
+            return httpx.Response(502, json={"error": {"message": '429: {"status":429,"title":"Too Many Requests"}',
+                                                       "type": "api_error", "code": "provider_error"}})
+        return ok.handle_request(req)
+
+    class Out(BaseModel):
+        answer: str
+
+    n = Nightshift("127.0.0.1:8088", TOKEN, "TrialMatch", {"fast": "nvidia/nemotron-3.5-lightning-30b-a3b"},
+                   transport=httpx.MockTransport(handle))
+    reply = await n.complete(Lane.FAST, "system", "user", Out)
+    assert reply.text == '{"answer": "pong"}'
+    assert len(seen) == 3
+
+
+async def test_a_rate_limit_that_persists_is_unavailable(monkeypatch):
+    monkeypatch.setattr("app.llm.nightshift.RATE_LIMIT_BACKOFF_S", (0,))
+    calls = 0
+
+    def handle(req: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, json={"error": {"message": "Too Many Requests"}})
+
+    class Out(BaseModel):
+        answer: str
+
+    n = Nightshift("127.0.0.1:8088", TOKEN, "TrialMatch", {"fast": "m"}, transport=httpx.MockTransport(handle))
+    with pytest.raises(LlmUnavailable, match="429"):
+        await n.complete(Lane.FAST, "system", "user", Out)
+    assert calls == 2
