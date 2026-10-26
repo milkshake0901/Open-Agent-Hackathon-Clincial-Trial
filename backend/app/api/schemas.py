@@ -460,6 +460,25 @@ class AskIn(BaseModel):
     question: str
 
 
+class RegionOut(BaseModel):
+    span_id: str
+    page: int
+    ordinal: int
+    kind: str
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class DocumentRegionsOut(BaseModel):
+    document_hash: str
+    filename: str
+    page_count: int
+    regions: list[RegionOut]
+
+
 class GroundedCitationOut(BaseModel):
     span_id: str
     document_hash: str

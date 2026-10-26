@@ -6,10 +6,14 @@ in the gitignored raw folder.
 
     ctx = replace(make_ctx(pool), parser=RecordedParse(NARRATIVE_LETTER))
     POST /api/referrals with letter_pdf(NARRATIVE_LETTER)
+
+Hand-made recordings for added-Document tests: `recording(...)` per page, `letter_pdf(read, "name")` for its bytes,
+and `recorded((bytes, read), ...)` as the parser replaying them.
 """
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from app.extraction import ExtractedBlock, ExtractedDocument, ExtractedPage
@@ -46,6 +50,18 @@ STRUCTURED_REPORT_IDENTITY = ("QUINN", "Talia", "Maree", "09 June 1991", "LKI-55
 """The invented patient's name, date of birth and patient id."""
 
 
+def recording(*pages: str | tuple[tuple[str, str], ...]) -> ExtractedDocument:
+    """A hand-made recording, one argument per page: a string is one Text Region per non-empty line, a tuple is
+    (kind, text) Regions. Each Region gets a box one line high, stacked down the page in reading order."""
+    def regions(page):
+        return tuple(("Text", line) for line in page.split("\n") if line.strip()) if isinstance(page, str) else page
+    return ExtractedDocument(pages=tuple(
+        ExtractedPage(number=n, text="\n".join(text for _, text in regions(page)),
+                      blocks=tuple(ExtractedBlock(i, kind, text, 0.08, 0.05 + 0.04 * i, 0.92, 0.08 + 0.04 * i)
+                                   for i, (kind, text) in enumerate(regions(page))))
+        for n, page in enumerate(pages, 1)))
+
+
 def letter_pdf(document: ExtractedDocument, marker: str = "") -> bytes:
     """A PDF with as many pages as the recording, so page images render. Its own text is a placeholder.
     A different `marker` gives different bytes, and so a different Document."""
@@ -53,15 +69,25 @@ def letter_pdf(document: ExtractedDocument, marker: str = "") -> bytes:
 
 
 class RecordedParse:
-    """Stands in for Nemotron Parse on Ctx: every read returns the recording, without a network call.
-    With no recording, every read raises, the way FakeLLM does with no responder."""
+    """Stands in for Nemotron Parse on Ctx: every read returns a recording, without a network call.
+    Given one recording, every read returns it; given recordings by PDF bytes, each read returns the one for its
+    bytes, and other bytes raise. With no recording, every read raises, the way FakeLLM does with no responder."""
 
-    def __init__(self, document: ExtractedDocument | None = None) -> None:
+    def __init__(self, document: ExtractedDocument | Mapping[bytes, ExtractedDocument] | None = None) -> None:
         self.document = document
         self.reads: list[bytes] = []
 
     def read(self, content: bytes) -> ExtractedDocument:
         self.reads.append(content)
+        if isinstance(self.document, Mapping):
+            if content not in self.document:
+                raise LookupError("RecordedParse has no recording for these bytes")
+            return self.document[content]
         if self.document is None:
             raise LookupError("RecordedParse has no recording; pass one to make_ctx(parser=...)")
         return self.document
+
+
+def recorded(*documents: tuple[bytes, ExtractedDocument]) -> RecordedParse:
+    """A parser replaying each (PDF bytes, recording) pair."""
+    return RecordedParse(dict(documents))

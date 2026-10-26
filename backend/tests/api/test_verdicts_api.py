@@ -68,13 +68,14 @@ async def test_an_added_document_that_commits_a_new_version_rescans_it(clean_db,
     from app import record
     from app.config import Settings
     from tests.conftest import ADMIN_DSN, make_ctx
-    from tests.record.test_adding_documents import REFERRAL, REFERRAL_FACTS
+    from tests.fixtures.letters import recorded
+    from tests.record.test_adding_documents import PARSE, REFERRAL, REFERRAL_FACTS
 
     judge = matcher_citing({})
 
     def respond(lane, system, user):
         return {"facts": REFERRAL_FACTS} if lane == "fast" else judge(lane, system, user)
-    ctx = make_ctx(clean_db, FakeLLM(respond))
+    ctx = make_ctx(clean_db, FakeLLM(respond), parser=recorded(*PARSE))
     ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
     await trials.load_snapshot(ctx, SNAPSHOT)
     app.state.ctx = ctx

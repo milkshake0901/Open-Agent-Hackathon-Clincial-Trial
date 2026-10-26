@@ -18,7 +18,7 @@ from app.record import diagnosis as shortlists, loop, questionnaire, repo, stora
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
 from app.record.ground import GroundedAnswer, GroundedCitation, LetterSpan, ask, letter_spans, page_png
-from app.record.pdf import UnreadableDocument, to_pages
+from app.record.pdf import UnreadableDocument
 from app.record.questionnaire import (
     DEFINITION, Option, Question, Questionnaire, Section, SubmittedAnswers,
 )
@@ -61,7 +61,7 @@ from app.trace.events import ProfileCommitted
 __all__ = [
     "register_document", "register_questionnaire", "ingest", "confirm", "conflicts", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
-    "document", "Registered", "UnreadableDocument", "issue_return_link", "patient_for_return_link",
+    "document", "document_regions", "DocumentRegions", "Region", "Registered", "UnreadableDocument", "issue_return_link", "patient_for_return_link",
     "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
     "deidentify_text", "check_diagnosis", "answer_diagnosis_check", "diagnosis", "diagnosis_step", "DiagnosisCheck",
     "DiagnosisStep", "DiagnosisState", "DiagnosisAnswer",
@@ -309,23 +309,62 @@ class Registered:
 
 
 async def register_document(ctx: Ctx, patient_id: PatientId, filename: str, content: bytes) -> Registered:
-    """Hash content, parse pages, de-identify, persist document+pages. Idempotent on hash (per patient):
-    adding the same bytes twice returns the existing Document and does not re-parse.
-    De-identified page text is what Citations display; raw bytes are kept only on disk (settings.raw_documents_dir).
-    Raises UnreadableDocument (not a PDF, or no text layer) and NotFound before anything is stored."""
+    """Hash content, read its pages into Regions through ctx.parser, de-identify the whole Document, persist the
+    document, its pages and its Regions (with boxes). Idempotent on hash (per patient): adding the same bytes twice
+    returns the existing Document and does not read it again.
+    De-identified text is what Citations display; raw bytes are kept only on disk (settings.raw_documents_dir).
+    Raises UnreadableDocument (empty, not a PDF, or no readable text found) and NotFound before anything is stored."""
+    import asyncio
+
+    from app.record.referral import as_document, read_pdf, store_document
+
     await _require_patient(ctx, patient_id)
     h = storage.document_hash(patient_id, content)
     existing = await repo.document(ctx.ui_reader, h)
     if existing is not None:
         return Registered(existing, deduplicated=True)
-    pages = deidentify(to_pages(content))
+    parsed, safe_filename = await asyncio.to_thread(read_pdf, ctx.parser, filename, content)
     now = ctx.now()
-    doc = Document(hash=h, patient_id=patient_id, filename=storage.filename(filename), pages=pages,
-                   uploaded_at=now.date())
+    doc = as_document(patient_id, content, safe_filename, parsed, now)
     storage.keep_raw(ctx.settings.raw_documents_dir, h, content)
     async with ctx.writer.transaction() as tx:
-        await repo.insert_document(tx, doc, uploaded_at=now)
+        await store_document(tx, doc, parsed, now)
     return Registered(doc, deduplicated=False)
+
+
+@dataclass(frozen=True)
+class Region:
+    """One block of a page as Nemotron Parse read it: its kind, its de-identified words and its box (fractions of the
+    page image, origin top left). A Citation can point at its span_id."""
+    span_id: str
+    page: int
+    ordinal: int
+    kind: str
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+@dataclass(frozen=True)
+class DocumentRegions:
+    """A stored Document's Regions in reading order, each with its box (fractions of the page image)."""
+    document_hash: DocumentHash
+    filename: str
+    page_count: int
+    regions: tuple[Region, ...]
+
+
+async def document_regions(ctx: Ctx, document_hash: DocumentHash) -> DocumentRegions:
+    """The de-identified Regions stored for one Document. Raises NotFound."""
+    doc = await repo.document(ctx.ui_reader, document_hash)
+    if doc is None:
+        raise NotFound(f"document {document_hash}")
+    rows = await repo.spans_for_document(ctx.ui_reader, document_hash)
+    return DocumentRegions(doc.hash, doc.filename, len(doc.pages), tuple(
+        Region(r["id"], r["page"], r["ordinal"], r["kind"], r["text"], r["x0"], r["y0"], r["x1"], r["y1"])
+        for r in rows))
 
 
 async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None = None) -> IngestOutcome:
@@ -466,25 +505,22 @@ async def load_letter(ctx: Ctx, filename_raw: str, content: bytes) -> LetterPref
     import asyncio
 
     from app.record.prefill import prefill_answers
-    from app.record.referral import deidentify_parsed, save_referral
+    from app.record.referral import as_document, read_pdf, store_document
 
-    if not content:
-        raise UnreadableDocument("the file is empty")
-    if not filename_raw.lower().endswith(".pdf") and not content.startswith(b"%PDF"):
-        raise UnreadableDocument("the file is not a PDF")
     stored = await ctx.ui_reader.fetch(
         f"SELECT d.patient_id, d.hash FROM {ctx.ui_reader.table('document')} d "
         f"WHERE EXISTS (SELECT 1 FROM {ctx.ui_reader.table('document_span')} s WHERE s.document_hash = d.hash)")
     for row in stored:
         if storage.document_hash(PatientId(row["patient_id"]), content) == row["hash"]:
             return await prefill_letter(ctx, PatientId(row["patient_id"]))
-    parsed, safe_filename = deidentify_parsed(await asyncio.to_thread(ctx.parser.read, content), filename_raw)
-    regions = [(block.kind, block.text) for page in parsed.pages for block in page.blocks]
-    if not any(kind == "Text" and text.strip() for kind, text in regions):
-        raise UnreadableDocument("the letter had no readable text")
-    patient_id = "pt_" + hashlib.sha256(content).hexdigest()[:16]
-    digest = await save_referral(
-        ctx.writer, patient_id=patient_id, label=f"Letter uploaded {ctx.now().date().isoformat()}",
-        filename_raw=safe_filename, content=content, parsed=parsed, uploaded_at=ctx.now())
-    storage.keep_raw(ctx.settings.raw_documents_dir, DocumentHash(digest), content)
-    return LetterPrefill(patient_id, digest, safe_filename, prefill_answers(regions))
+    parsed, safe_filename = await asyncio.to_thread(read_pdf, ctx.parser, filename_raw, content)
+    patient_id = PatientId("pt_" + hashlib.sha256(content).hexdigest()[:16])
+    now = ctx.now()
+    doc = as_document(patient_id, content, safe_filename, parsed, now)
+    async with ctx.writer.transaction() as tx:
+        await tx.execute("INSERT INTO patient (id, label) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING",
+                         (patient_id, f"Letter uploaded {now.date().isoformat()}"))
+        await store_document(tx, doc, parsed, now)
+    storage.keep_raw(ctx.settings.raw_documents_dir, doc.hash, content)
+    return LetterPrefill(patient_id, doc.hash, safe_filename,
+                         prefill_answers([(block.kind, block.text) for page in parsed.pages for block in page.blocks]))

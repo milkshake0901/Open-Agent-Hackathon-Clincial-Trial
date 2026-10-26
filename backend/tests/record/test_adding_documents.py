@@ -1,7 +1,8 @@
 """Seam 1 (spec #5): the record facade, for adding clinical Documents (#11). A Document goes through
 register_document (hash, pages, de-identification) and ingest (Intake ⇄ Critic, a scripted fake model here);
 observe the result through record.document, profile_version and the prompts the fake model captured.
-The PDFs are generated (tests/pdfs.py) and every name, number and address in them is invented."""
+Nemotron Parse is replayed from hand-made recordings (tests/fixtures/letters.py), and every name, number and address
+in them is invented."""
 from __future__ import annotations
 
 import asyncio
@@ -14,9 +15,9 @@ from app import record
 from app.config import Settings
 from app.llm.nightshift import FakeLLM
 from tests.conftest import ADMIN_DSN, make_ctx
-from tests.pdfs import make_pdf
+from tests.fixtures.letters import letter_pdf, recorded, recording
 
-REFERRAL = make_pdf(
+REFERRAL_READ = recording(
     "Oncology referral letter\n"
     "Patient: Jane Citizen\n"
     "MRN: 4455667\n"
@@ -30,13 +31,19 @@ REFERRAL = make_pdf(
     "ECOG 1 on 2026-09-30.\n"
     "Signed: Dr Alan Example",
 )
+REFERRAL = letter_pdf(REFERRAL_READ, "referral")
 REFERRAL_FACTS = [
     {"resource": "Condition", "subject": "breast cancer", "value": "HER2 positive", "observed_on": "2024-03-12",
      "page": 2, "quote": "HER2 positive breast cancer"},
     {"resource": "Observation", "subject": "ecog", "value": "1", "unit": "score", "observed_on": "2026-09-30",
      "page": 2, "quote": "ECOG 1 on 2026-09-30"},
 ]
-BLOODS = make_pdf("Pathology report\nHaemoglobin 118 g/L collected 2026-10-01")
+BLOODS_READ = recording("Pathology report\nHaemoglobin 118 g/L collected 2026-10-01")
+BLOODS = letter_pdf(BLOODS_READ, "bloods")
+BLANK_READ = recording("")
+BLANK = letter_pdf(BLANK_READ, "blank")
+PARSE = ((REFERRAL, REFERRAL_READ), (BLOODS, BLOODS_READ), (BLANK, BLANK_READ))
+"""What Nemotron Parse reads from each generated PDF: invented text, one Text Region per line."""
 BLOODS_FACTS = [
     {"resource": "Observation", "subject": "haemoglobin", "value": "118", "unit": "g/L", "observed_on": "2026-10-01",
      "page": 1, "quote": "Haemoglobin 118 g/L"},
@@ -62,7 +69,7 @@ def by_document(**facts_by_marker):
 @pytest.fixture
 def documents_ctx(clean_db, tmp_path):
     fake = by_document(referral=REFERRAL_FACTS, Pathology=BLOODS_FACTS)
-    ctx = make_ctx(clean_db, fake)
+    ctx = make_ctx(clean_db, fake, parser=recorded(*PARSE))
     return replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
 
 
@@ -144,7 +151,7 @@ async def test_a_file_without_readable_text_is_refused_before_anything_is_stored
     ctx = documents_ctx
     patient = await _patient_with_questionnaire(ctx)
 
-    for content in (b"GIF89a not a pdf", make_pdf("")):
+    for content in (b"GIF89a not a pdf", BLANK):
         with pytest.raises(record.UnreadableDocument):
             await record.register_document(ctx, patient, "scan.pdf", content)
 

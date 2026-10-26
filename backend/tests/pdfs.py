@@ -7,7 +7,8 @@ def _escape(line: str) -> str:
 
 
 def make_pdf(*pages: str) -> bytes:
-    """A valid PDF with a Helvetica text layer, so pdfplumber reads each page's lines back."""
+    """A valid PDF with a Helvetica text layer that pypdfium2 renders, so page images work. Uploads read it through
+    the Parser on Ctx, so a test pairs it with a recording (tests/fixtures/letters.py)."""
     n = len(pages)
     objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
                b"<< /Type /Pages /Kids [" + b" ".join(f"{4 + 2 * i} 0 R".encode() for i in range(n))

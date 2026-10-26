@@ -1,7 +1,7 @@
 """Seam 1 (spec #5): the record facade, for Conflicts (#13). A Patient-reported Fact from the Intake questionnaire
 and a clinical Document that contradicts it: record.ingest parks the run AwaitingPatient with a Conflict citing
 both sides, and record.confirm commits the Respondent's choice as the next Profile version. The Intake model is a
-scripted fake; every name and number in the generated PDFs is invented."""
+scripted fake and Nemotron Parse replays hand-made recordings; every name and number in them is invented."""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -11,35 +11,44 @@ import pytest
 from app import record
 from app.config import Settings
 from tests.conftest import ADMIN_DSN, make_ctx
-from tests.pdfs import make_pdf
+from tests.fixtures.letters import letter_pdf, recorded, recording
 from tests.record.test_adding_documents import by_document
 
-REFERRAL = make_pdf(
+REFERRAL_READ = recording(
     "Oncology referral letter\nDear colleague,",
     "Diagnosis: HER2 positive breast cancer, confirmed 2024-03-12.\nECOG 2 on 2026-10-20.",
 )
+REFERRAL = letter_pdf(REFERRAL_READ, "conflicting referral")
 REFERRAL_FACTS = [
     {"resource": "Condition", "subject": "breast cancer", "value": "HER2 positive", "observed_on": "2024-03-12",
      "page": 2, "quote": "HER2 positive breast cancer"},
     {"resource": "Observation", "subject": "ECOG performance status", "value": "2", "unit": "score",
      "observed_on": "2026-10-20", "page": 2, "quote": "ECOG 2 on 2026-10-20"},
 ]
-OLD_LETTER = make_pdf("Clinic letter\nECOG 2 on 2025-01-10.")
+OLD_LETTER_READ = recording("Clinic letter\nECOG 2 on 2025-01-10.")
+OLD_LETTER = letter_pdf(OLD_LETTER_READ, "old letter")
 OLD_LETTER_FACTS = [
     {"resource": "Observation", "subject": "ECOG performance status", "value": "2", "unit": "score",
      "observed_on": "2025-01-10", "page": 1, "quote": "ECOG 2 on 2025-01-10"},
 ]
-AGREEING = make_pdf("Clinic review\nECOG 0 on 2026-10-21.")
+AGREEING_READ = recording("Clinic review\nECOG 0 on 2026-10-21.")
+AGREEING = letter_pdf(AGREEING_READ, "agreeing review")
 AGREEING_FACTS = [
     {"resource": "Observation", "subject": "ecog", "value": "0", "unit": "score", "observed_on": "2026-10-21",
      "page": 1, "quote": "ECOG 0 on 2026-10-21"},
 ]
 
 
+def parse():
+    """Nemotron Parse replaying what it reads from each generated PDF in this file."""
+    return recorded((REFERRAL, REFERRAL_READ), (OLD_LETTER, OLD_LETTER_READ), (AGREEING, AGREEING_READ),
+                    (TWO_CONFLICTS, TWO_CONFLICTS_READ))
+
+
 @pytest.fixture
 def conflict_ctx(clean_db, tmp_path):
     fake = by_document(referral=REFERRAL_FACTS, **{"Clinic letter": OLD_LETTER_FACTS, "Clinic review": AGREEING_FACTS})
-    ctx = make_ctx(clean_db, fake)
+    ctx = make_ctx(clean_db, fake, parser=parse())
     return replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
 
 
@@ -137,7 +146,8 @@ async def test_discarding_both_leaves_neither_value_in_the_next_version(conflict
     assert {"daily activity", "ecog performance status"}.isdisjoint(subjects) and "breast cancer" in subjects
 
 
-TWO_CONFLICTS = make_pdf("Discharge summary\nSex: male. ECOG 2 on 2026-10-20.")
+TWO_CONFLICTS_READ = recording("Discharge summary\nSex: male. ECOG 2 on 2026-10-20.")
+TWO_CONFLICTS = letter_pdf(TWO_CONFLICTS_READ, "discharge")
 TWO_CONFLICTS_FACTS = [
     {"resource": "Patient", "subject": "sex assigned at birth", "value": "male", "observed_on": "2026-10-20",
      "page": 1, "quote": "Sex: male"},
@@ -147,7 +157,7 @@ TWO_CONFLICTS_FACTS = [
 
 
 async def test_a_partial_answer_keeps_waiting_on_the_rest_and_a_finished_run_cannot_be_confirmed_again(clean_db, tmp_path):
-    ctx = make_ctx(clean_db, by_document(Discharge=TWO_CONFLICTS_FACTS))
+    ctx = make_ctx(clean_db, by_document(Discharge=TWO_CONFLICTS_FACTS), parser=parse())
     ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
     patient, _ = await _fully_active_patient(ctx)
     _, parked = await _add(ctx, patient, "discharge.pdf", TWO_CONFLICTS)

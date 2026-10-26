@@ -212,6 +212,13 @@ async def spans_for_patient(reader: SqlReader, patient_id: PatientId) -> list[di
         (patient_id,))
 
 
+async def spans_for_document(reader: SqlReader, document_hash: DocumentHash) -> list[dict]:
+    """One Document's Regions in reading order, each with its box."""
+    return await reader.fetch(
+        f"SELECT id, document_hash, page, ordinal, kind, text, x0, y0, x1, y1 FROM {reader.table('document_span')} "
+        "WHERE document_hash = $1 ORDER BY page, ordinal", (document_hash,))
+
+
 async def insert_spans(tx: Tx, document_hash: str, spans: Sequence[tuple]) -> None:
     """One row per region the parse model read. A Fact's span_id points at one of these so a trial reason
     can open the box on the page. `spans` is (id, page, ordinal, kind, text, x0, y0, x1, y1)."""

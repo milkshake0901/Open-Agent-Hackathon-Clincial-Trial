@@ -1,10 +1,13 @@
-"""Ask one question of a patient's parsed letter. The answer comes back with the box it was read from."""
+"""Ask one question of a patient's parsed letter. The answer comes back with the box it was read from. Also a stored
+Document's page images and Regions, which those boxes point into."""
+from dataclasses import asdict
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from app import record
 from app.api.deps import get_ctx
-from app.api.schemas import AskIn, AskOut, GroundedCitationOut
+from app.api.schemas import AskIn, AskOut, DocumentRegionsOut, GroundedCitationOut, RegionOut
 from app.ctx import Ctx
 from app.llm import LlmUnavailable
 
@@ -41,3 +44,14 @@ async def page_image(document_hash: str, number: int, ctx: Ctx = Depends(get_ctx
         raise HTTPException(404, f"page {number}")
     png = record.page_png(ctx.settings.raw_documents_dir, doc.hash, number)
     return Response(content=png, media_type="image/png")
+
+
+@router.get("/documents/{document_hash}/regions", response_model=DocumentRegionsOut)
+async def document_regions(document_hash: str, ctx: Ctx = Depends(get_ctx)):
+    """The de-identified Regions read from a stored Document, in reading order, with their boxes."""
+    try:
+        doc = await record.document_regions(ctx, record.DocumentHash(document_hash))
+    except record.NotFound as e:
+        raise HTTPException(404, str(e)) from e
+    return DocumentRegionsOut(document_hash=doc.document_hash, filename=doc.filename, page_count=doc.page_count,
+                              regions=[RegionOut(**asdict(r)) for r in doc.regions])
