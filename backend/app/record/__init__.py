@@ -20,10 +20,11 @@ from app.record.deidentify import deidentify
 from app.record.ground import GroundedAnswer, GroundedCitation, LetterSpan, ask, letter_spans, page_png
 from app.record.pdf import UnreadableDocument
 from app.record.questionnaire import (
-    DEFINITION, Option, Question, Questionnaire, Section, SubmittedAnswers,
+    DEFINITION, Option, Question, Questionnaire, Section, SubmittedAnswers, cited_answer,
 )
 from app.record.types import (
     AwaitingPatient,
+    CitedAnswer,
     Committed,
     Conflict,
     ConflictId,
@@ -63,7 +64,7 @@ __all__ = [
     "register_document", "register_questionnaire", "ingest", "confirm", "conflicts", "versions", "profile_version", "diff",
     "current_version", "questionnaire_definition", "submit_questionnaire", "create_patient",
     "document", "document_regions", "DocumentRegions", "Region", "Registered", "UnreadableDocument", "issue_return_link", "patient_for_return_link",
-    "latest_answers", "SubmittedAnswers", "search_preferences", "set_search_preferences", "SearchPreferences",
+    "latest_answers", "SubmittedAnswers", "cited_answer", "CitedAnswer", "search_preferences", "set_search_preferences", "SearchPreferences",
     "deidentify_text", "check_diagnosis", "answer_diagnosis_check", "diagnosis", "diagnosis_step", "DiagnosisCheck",
     "DiagnosisStep", "DiagnosisState", "DiagnosisAnswer",
     "Ticked", "NoneOfThese", "NotSure", "AlreadyAnswered",
