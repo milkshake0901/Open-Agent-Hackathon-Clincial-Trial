@@ -54,4 +54,5 @@ async def document_regions(document_hash: str, ctx: Ctx = Depends(get_ctx)):
     except record.NotFound as e:
         raise HTTPException(404, str(e)) from e
     return DocumentRegionsOut(document_hash=doc.document_hash, filename=doc.filename, page_count=doc.page_count,
-                              regions=[RegionOut(**asdict(r)) for r in doc.regions])
+                              regions=[RegionOut(**asdict(r)) for r in doc.regions],
+                              document_date=doc.document_date, date_order=doc.date_order)

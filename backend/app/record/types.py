@@ -7,6 +7,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Literal, NewType
 
+from app.record.dates import REVIEW_FLAGS
 from app.trace import RunId
 from app.trials import ConditionLabel, label_key
 
@@ -213,6 +214,13 @@ class DraftFact:
     quote: str            # verbatim span from the page; evaluator and UI use it
     question: str | None = None   # "Q3" when drafted from an Intake questionnaire answer
     span_id: str | None = None    # the Region the quote was read from (a letter); page is that Region's page
+    flags: tuple[str, ...] = ()   # how observed_on was settled (dates.DateFlag): ambiguous_date, estimated_date,
+                                  # document_date
+
+    @property
+    def flagged(self) -> bool:
+        """Letter review shows this draft first: its date is ambiguous or an estimate (dates.REVIEW_FLAGS)."""
+        return any(f in REVIEW_FLAGS for f in self.flags)
 
 
 @dataclass(frozen=True)
@@ -229,6 +237,12 @@ class Fact:
     quote: str
     question: str | None = None   # "Q3": Patient-reported Facts cite "intake questionnaire, Q3"
     span_id: str | None = None    # the Region the quote was read from; None for a questionnaire or an older Fact
+    flags: tuple[str, ...] = ()   # as DraftFact.flags; () for a questionnaire or an older Fact
+
+    @property
+    def flagged(self) -> bool:
+        """Its date is ambiguous or an estimate (dates.REVIEW_FLAGS)."""
+        return any(f in REVIEW_FLAGS for f in self.flags)
 
 
 @dataclass(frozen=True)
@@ -263,6 +277,9 @@ class FindingKind(StrEnum):
     BAD_PAGE = "bad_page"
     QUOTE_NOT_ON_PAGE = "quote_not_on_page"
     UNKNOWN_REGION = "unknown_region"                # a letter's draft names no citable Region of the Document
+    QUOTE_NOT_IN_REGION = "quote_not_in_region"      # a letter's quote is not inside the Region it names
+    NUMBER_NOT_IN_QUOTE = "number_not_in_quote"      # a number in the value that the quote does not have
+    DATE_AGAINST_ORDER = "date_against_order"        # a date in the quote read against the Document's date order
     UNIT_OUT_OF_RANGE = "unit_out_of_range"
     DUPLICATE_OF_ACCEPTED = "duplicate_of_accepted"
     # Conflict: contradicts the accepted record; only the patient can resolve.

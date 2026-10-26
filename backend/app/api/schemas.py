@@ -201,6 +201,8 @@ class FactOut(BaseModel):
     unit: str | None
     observed_on: date
     citation: CitationOut
+    flags: list[str] = []       # how observed_on was settled: ambiguous_date, estimated_date, document_date
+    flagged: bool = False       # the date is ambiguous or an estimate: Letter review shows it first
 
 
 class VersionOut(BaseModel):
@@ -500,6 +502,8 @@ class DocumentRegionsOut(BaseModel):
     filename: str
     page_count: int
     regions: list[RegionOut]
+    document_date: date | None = None   # the Document date read from its first page (GLOSSARY); None if it gives none
+    date_order: Literal["day_first", "month_first"] | None = None   # how it writes numeric dates; None: not settled
 
 
 class GroundedCitationOut(BaseModel):

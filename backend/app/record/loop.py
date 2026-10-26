@@ -226,14 +226,15 @@ class InvalidResolution(ValueError):
 def _draft_from(d: dict) -> DraftFact:
     return DraftFact(resource=FactResource(d["resource"]), subject=d["subject"], value=d["value"], unit=d["unit"],
                      observed_on=date.fromisoformat(d["observed_on"]) if d["observed_on"] else None, page=d["page"],
-                     quote=d["quote"], question=d.get("question"), span_id=d.get("span_id"))
+                     quote=d["quote"], question=d.get("question"), span_id=d.get("span_id"),
+                     flags=tuple(d.get("flags") or ()))
 
 
 def _fact_from(d: dict) -> Fact:
     return Fact(id=FactId(d["id"]), document_hash=DocumentHash(d["document_hash"]), page=d["page"],
                 resource=FactResource(d["resource"]), subject=d["subject"], value=d["value"], unit=d["unit"],
                 observed_on=date.fromisoformat(d["observed_on"]), quote=d["quote"], question=d.get("question"),
-                span_id=d.get("span_id"))
+                span_id=d.get("span_id"), flags=tuple(d.get("flags") or ()))
 
 
 def conflict_from(d: dict) -> Conflict:
