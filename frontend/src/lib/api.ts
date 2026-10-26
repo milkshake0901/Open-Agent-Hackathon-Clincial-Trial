@@ -57,6 +57,8 @@ export type CriterionResultOut = {
   outcome: "met" | "not_met" | "unknown";
   rationale: string;
   citation: VerdictCitation | null;
+  // Unknown only: Context Facts, Facts it considered that don't settle it. Shaped like a citation, never one.
+  context_facts: VerdictCitation[];
 };
 
 // criterion_id and nct_id are null on the patient-level diagnosis question (subject "diagnosis").

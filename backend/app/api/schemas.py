@@ -238,6 +238,7 @@ class CriterionResultOut(BaseModel):
     outcome: Literal["met", "not_met", "unknown"]
     rationale: str
     citation: VerdictCitationOut | None
+    context_facts: list[VerdictCitationOut] = []   # unknown only: Facts it considered that don't settle it
 
 
 class DoctorQuestionOut(BaseModel):

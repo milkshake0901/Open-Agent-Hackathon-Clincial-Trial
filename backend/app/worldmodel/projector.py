@@ -16,7 +16,8 @@ Mapping (see timeline.py for how domain operations become these events):
                                         attrs.dropped → trial flagged dropped, its sites, contacts and Outcomes removed
   upsertEntity type=criteria          → criterion rows split lazily for one (Trial, eligibility hash)
   upsertEntity type=outcome_summary   → outcome_summary row written lazily for one (Trial, Outcome content hash)
-  relate      type=verdict, open edge → verdict + criterion_result + doctor_question + respondent_question
+  relate      type=verdict, open edge → verdict + criterion_result (+ criterion_result_context) + doctor_question
+                                        + respondent_question
               (the closing re-emit of a superseded edge changes no row: old Verdicts are history, ADR 0002)
 """
 from __future__ import annotations
@@ -189,6 +190,10 @@ async def _verdict(tx: "Tx", r) -> None:
             "INSERT INTO criterion_result (nct_id, eligibility_hash, profile_version_id, criterion_id, outcome, "
             "fact_id, rationale, ask) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
             (*key, res["criterion_id"], res["outcome"], res["fact_id"], res["rationale"], res.get("ask")))
+        for ordinal, fact_id in enumerate(res.get("context_fact_ids", ()), 1):
+            await tx.execute(
+                "INSERT INTO criterion_result_context (nct_id, eligibility_hash, profile_version_id, criterion_id, "
+                "ordinal, fact_id) VALUES ($1, $2, $3, $4, $5, $6)", (*key, res["criterion_id"], ordinal, fact_id))
     for q in a["questions"]:
         await tx.execute(
             "INSERT INTO doctor_question (nct_id, eligibility_hash, profile_version_id, criterion_id, subject, text) "

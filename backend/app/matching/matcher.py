@@ -22,6 +22,7 @@ class _ResultOut(BaseModel):
     fact_id: str | None = None   # must be one of the ids listed in the prompt
     rationale: str
     ask: str | None = None       # unknown only: a questionnaire question number for the Respondent
+    context_fact_ids: list[str] = []   # unknown only: listed Facts it considered that don't settle it
 
 
 class _MatchOut(BaseModel):
@@ -43,6 +44,8 @@ Criterion against the patient's current Facts. Answer with JSON only:
 - On an "unknown" that turns on something the Respondent could know (a date, a medicine name) but answered too
   vaguely or not at all, set "ask" to the number of the questionnaire question they should answer again ("Q8").
   Leave "ask" null when it needs clinical records or judgement (labs, stage, scans): the doctor is asked instead.
+- On an "unknown", set "context_fact_ids" to the ids of listed Facts you considered that bear on the Criterion but
+  don't settle it (a hormone therapy named when the needed testosterone level is missing). Leave it empty otherwise.
 """
 
 BIRTH_MONTH = "birth month"   # the record's Patient Fact; age is derived here, at matching time, never stored
@@ -110,6 +113,12 @@ def _prompt(trial: Trial, criteria: tuple[Criterion, ...], profile: ProfileVersi
     return "\n".join(lines)
 
 
+def _cite(f: Fact | None, fact_id: str) -> Citation:
+    """A Citation's provenance comes from the Fact, never the model; an id that is no Fact gets an empty one."""
+    return (Citation(fact_id=f.id, document_hash=f.document_hash, page=f.page, quote=f.quote, question=f.question)
+            if f else Citation(fact_id=fact_id, document_hash="", page=0, quote=""))
+
+
 def _outcome(raw: str) -> Outcome:
     try:
         return Outcome(raw.strip().lower())
@@ -134,21 +143,18 @@ async def propose(ctx: Ctx, trial: Trial, criteria: tuple[Criterion, ...], profi
     for r in completion.value.results:
         if r.criterion_id not in ids:
             continue
-        citation = None
-        if r.fact_id:
-            f = facts.get(r.fact_id)
-            citation = (Citation(fact_id=f.id, document_hash=f.document_hash, page=f.page, quote=f.quote,
-                                 question=f.question) if f else
-                        Citation(fact_id=r.fact_id, document_hash="", page=0, quote=""))
+        citation = _cite(facts.get(r.fact_id), r.fact_id) if r.fact_id else None
         outcome = _outcome(r.outcome)
         ask = (r.ask or "").strip().upper()
         results.append(CriterionResult(criterion_id=CriterionId(r.criterion_id), outcome=outcome,
                                        citation=citation, rationale=r.rationale.strip(),
-                                       ask=ask if outcome == Outcome.UNKNOWN and ask in askable() else None))
+                                       ask=ask if outcome == Outcome.UNKNOWN and ask in askable() else None,
+                                       context_facts=tuple(_cite(facts.get(i), i) for i in r.context_fact_ids)))
     await trace.append(ctx.writer, run_id, MatcherProposed(
         actor="matcher", nct_id=trial.nct_id, attempt=attempt, model_answered=completion.model_answered,
         results=[{"criterion_id": r.criterion_id, "outcome": str(r.outcome),
-                  "fact_id": r.citation.fact_id if r.citation else None, "rationale": r.rationale, "ask": r.ask}
+                  "fact_id": r.citation.fact_id if r.citation else None, "rationale": r.rationale, "ask": r.ask,
+                  "context_fact_ids": [c.fact_id for c in r.context_facts]}
                  for r in results]))
     return tuple(results)
 

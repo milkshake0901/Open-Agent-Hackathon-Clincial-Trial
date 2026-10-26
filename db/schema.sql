@@ -9,8 +9,8 @@
 --   trial, trial_condition, criterion, trial_site,      transaction (projections of the World Model, ADR 0001)
 --   trial_contact, trial_outcome, trial_outcome_value,
 --   trial_publication, outcome_summary
---   verdict, criterion_result, doctor_question,
---   respondent_question
+--   verdict, criterion_result, criterion_result_context,
+--   doctor_question, respondent_question
 --   trace_run, trace_event, llm_call                    app.trace
 -- Facts are append-only. Everything is read through Zetaris by agents.
 
@@ -255,6 +255,17 @@ CREATE TABLE criterion_result (
   PRIMARY KEY (nct_id, eligibility_hash, profile_version_id, criterion_id),
   FOREIGN KEY (nct_id, eligibility_hash, profile_version_id) REFERENCES verdict ON DELETE CASCADE,
   CHECK ((outcome = 'unknown') = (fact_id IS NULL))     -- the evaluator invariant, also in the DB
+);
+
+CREATE TABLE criterion_result_context (  -- Context Facts: Facts an unknown result considered that don't settle it.
+  nct_id             text NOT NULL,        -- Never a Citation, so never criterion_result.fact_id (its CHECK stands)
+  eligibility_hash   text NOT NULL,
+  profile_version_id text NOT NULL,
+  criterion_id       text NOT NULL,
+  ordinal            int  NOT NULL,        -- the Matcher's order
+  fact_id            text NOT NULL REFERENCES fact(id),
+  PRIMARY KEY (nct_id, eligibility_hash, profile_version_id, criterion_id, ordinal),
+  FOREIGN KEY (nct_id, eligibility_hash, profile_version_id, criterion_id) REFERENCES criterion_result ON DELETE CASCADE
 );
 
 CREATE TABLE doctor_question (

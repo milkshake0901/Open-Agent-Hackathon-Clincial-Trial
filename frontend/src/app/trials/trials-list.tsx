@@ -3,7 +3,8 @@
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
 // first, excluded; then nearest recruiting site). Trials with no recruiting site within the travel limit sit in a
 // collapsed "Further away" group under their outcome, never hidden. Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
-// questionnaire links back to that question, and one from a letter opens a side panel with the page and its Region boxed. Each Trial offers its contacts and an Enquiry to copy and send (about
+// questionnaire links back to that question, and one from a letter opens a side panel with the page and its Region boxed
+// (as does each Context Fact listed under an unknown reason). Each Trial offers its contacts and an Enquiry to copy and send (about
 // taking part, or about its results once it is no longer recruiting). Questions for you (Respondent questions, answered inline) and
 // Questions for your doctor are kept as two separate lists. A Trial that stopped recruiting after it was judged keeps
 // its Verdict, shown in its own "No longer recruiting" section after the open ones (ADR 0004). Only Trials listing a
@@ -234,7 +235,36 @@ function ResultItem({ result: r }: { result: CriterionResultOut }) {
       {r.citation && region && open && (
         <CitationPanel result={r} citation={r.citation} region={region} onClose={() => setOpen(false)} />
       )}
+      {r.context_facts.length > 0 && <ContextFacts result={r} />}
     </li>
+  );
+}
+
+// Under an unknown reason: the Context Facts it considered, each opening the letter at its Region in the side panel.
+function ContextFacts({ result: r }: { result: CriterionResultOut }) {
+  const [opened, setOpened] = useState<VerdictCitation | null>(null);
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      <p className="text-sm font-medium">What we looked at, which doesn't settle it:</p>
+      <ul className="flex flex-col gap-2">
+        {r.context_facts.map((c) => (
+          <li key={c.fact_id} className="text-sm flex flex-col gap-1">
+            <p>
+              <span className="text-muted">{c.filename ? `${c.filename}, ` : ""}{c.label}</span>: “{c.quote}”
+            </p>
+            {c.region && (
+              <button type="button" onClick={() => setOpened(c)}
+                      className="min-h-11 self-start rounded-lg border border-border px-4 text-sm font-semibold text-accent">
+                Show where the letter says this
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {opened?.region && (
+        <CitationPanel result={r} citation={opened} region={opened.region} onClose={() => setOpened(null)} />
+      )}
+    </div>
   );
 }
 
