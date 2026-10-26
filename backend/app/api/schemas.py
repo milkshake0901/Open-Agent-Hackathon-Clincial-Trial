@@ -420,17 +420,6 @@ class LetterOut(BaseModel):
     answers: dict[str, str] = {}
 
 
-class LetterListOut(BaseModel):
-    letters: list[LetterOut]
-
-
-class MatchingTrialsOut(BaseModel):
-    """Stored trials whose Condition labels contain one of the search phrases, open first."""
-    labels: list[str]
-    open: list[ClosedTrialOut]
-    closed: list[ClosedTrialOut]
-
-
 class RescanOut(BaseModel):
     run_id: str
     planned: list[str]
@@ -468,10 +457,6 @@ class VersionDiffOut(BaseModel):
     verdicts_changed: list[VerdictChangeOut] = []   # Trials whose outcome or any Criterion result moved
 
 
-class AskIn(BaseModel):
-    question: str
-
-
 class RegionOut(BaseModel):
     span_id: str
     page: int
@@ -489,29 +474,6 @@ class DocumentRegionsOut(BaseModel):
     filename: str
     page_count: int
     regions: list[RegionOut]
-
-
-class GroundedCitationOut(BaseModel):
-    span_id: str
-    document_hash: str
-    filename: str
-    page: int
-    quote: str
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-
-
-class AskOut(BaseModel):
-    answer: Literal["yes", "no", "unknown"]
-    reasoning: str
-    as_of: date
-    patient_label: str
-    document_hash: str
-    filename: str
-    page_count: int
-    citations: list[GroundedCitationOut]
 
 
 class ScreenIn(BaseModel):

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { QuestionnaireForm } from "./questionnaire";
 
 export default function Home() {
@@ -10,9 +9,6 @@ export default function Home() {
           A few plain-language questions help us look for clinical trials that might fit. It does not replace
           advice from a doctor.
         </p>
-        <Link href="/record" className="self-start text-sm text-accent underline">
-          Ask a question of a referral letter
-        </Link>
       </header>
       <QuestionnaireForm />
     </main>

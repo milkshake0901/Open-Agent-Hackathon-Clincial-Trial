@@ -157,12 +157,6 @@ export type ClosedTrialOut = {
   url: string;
 };
 
-export type MatchingTrials = {
-  labels: string[];
-  open: ClosedTrialOut[];
-  closed: ClosedTrialOut[];
-};
-
 // Registry fields it does not give are "".
 export type ContactOut = { name: string; role: string; email: string; phone: string; affiliation: string; title: string };
 
@@ -312,17 +306,6 @@ export type GroundedCitation = {
   y1: number;
 };
 
-export type AskAnswer = {
-  answer: "yes" | "no" | "unknown";
-  reasoning: string;
-  as_of: string;
-  patient_label: string;
-  document_hash: string;
-  filename: string;
-  page_count: number;
-  citations: GroundedCitation[];
-};
-
 const enquiryPath = (patientId: string, versionId: string, nctId: string) =>
   `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}` +
   `/trials/${encodeURIComponent(nctId)}/enquiry`;
@@ -331,14 +314,8 @@ export const api = {
   definition: () => call<Questionnaire>("/questionnaire/definition"),
   createPatient: (label: string) =>
     call<{ patient_id: string }>("/patients", { method: "POST", body: JSON.stringify({ label }) }),
-  referralLetters: () => call<{ letters: LetterOut[] }>("/referrals"),
   prefillReferral: (patientId: string) =>
     call<LetterOut>(`/patients/${encodeURIComponent(patientId)}/referral/prefill`, { method: "POST" }),
-  loadReferral: (file: File) => {
-    const body = new FormData();
-    body.append("file", file);
-    return call<LetterOut>("/referrals", { method: "POST", body });
-  },
   submit: (patientId: string, body: { definition_version: string; respondent: Respondent; answers: Answers }) =>
     call<QuestionnaireAccepted>(`/patients/${encodeURIComponent(patientId)}/questionnaire`, {
       method: "POST",
@@ -375,10 +352,6 @@ export const api = {
     call<{ condition_term: string[] | null; trials: ClosedTrialOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/closed-trials`,
     ),
-  matchingTrials: (phrases: string[]) => {
-    const q = phrases.map((phrase) => `q=${encodeURIComponent(phrase)}`).join("&");
-    return call<MatchingTrials>(`/trials/matching?${q}`);
-  },
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
   outcomeSummary: (nctId: string) => call<OutcomeSummaryOut>(`/trials/${encodeURIComponent(nctId)}/outcomes/summary`),
   enquiryDetails: (patientId: string, versionId: string, nctId: string) =>
@@ -399,11 +372,6 @@ export const api = {
     call<DoctorQuestion[]>(
       `/patients/${encodeURIComponent(patientId)}/questions?version=${encodeURIComponent(versionId)}`,
     ),
-  ask: (patientId: string, question: string) =>
-    call<AskAnswer>(`/patients/${encodeURIComponent(patientId)}/ask`, {
-      method: "POST",
-      body: JSON.stringify({ question }),
-    }),
   askTrial: (patientId: string, nctId: string, question: string) =>
     call<TrialAsk>(
       `/patients/${encodeURIComponent(patientId)}/trials/${encodeURIComponent(nctId)}/ask`,

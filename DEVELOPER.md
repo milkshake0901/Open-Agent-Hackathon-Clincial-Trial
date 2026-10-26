@@ -255,7 +255,7 @@ The description on `CREATE DATASOURCE` may contain letters, digits, spaces, and 
 
 ## Referral letters and trial questions
 
-A scanned referral can fill the questionnaire, and `/record` can ask one stored trial a question against that letter. The criteria and the letter regions are read through Zetaris; the model answers and must cite a real region. Setup, the two pages, and the Doppler secret names are in [docs/setup/referral-letters.md](docs/setup/referral-letters.md).
+A referral letter or report added on the home page is read into Regions, and on the Trials page (`/trials`) each recruiting trial takes a free-form question about it. The criteria and the Regions are read through Zetaris; the model answers and must cite a real Region, which opens in the side panel with its box. Setup and the Doppler secret names are in [docs/setup/referral-letters.md](docs/setup/referral-letters.md).
 
 ## Where to start
 

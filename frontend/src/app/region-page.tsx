@@ -2,7 +2,7 @@
 
 // One parsed Document page with Regions boxed on it. The image is the page as Nemotron Parse read it, and a box is a
 // fraction of that image, origin at the top left (GET /api/documents/{hash}/pages/{n}/image). Shared by the Trials
-// page's Citation panel and the /record letter view.
+// page's Citation panel and its trial question's panel.
 
 export type RegionBox = { span_id: string; x0: number; y0: number; x1: number; y1: number };
 
