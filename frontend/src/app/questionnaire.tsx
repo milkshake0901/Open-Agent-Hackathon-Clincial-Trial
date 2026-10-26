@@ -62,7 +62,15 @@ export function QuestionnaireForm() {
     const poll = () => api.intake(patientId).then(setIntake, () => {});
     poll();
     const id = window.setInterval(poll, POLL_MS);
-    return () => window.clearInterval(id);
+    // A hidden tab's timers are throttled, so look again as soon as the Respondent comes back to it.
+    const onVisible = () => { if (document.visibilityState === "visible") poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", poll);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", poll);
+    };
   }, [patientId, intake?.ready]);
 
   const refreshIntake = () => {

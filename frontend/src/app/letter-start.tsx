@@ -66,7 +66,7 @@ export function LetterProgress({ filename, phase }: { filename: string; phase: I
   const text = phase === null || phase === "started" || phase === "drafting"
     ? "Reading it in the background. You can answer the questions below meanwhile."
     : phase === "awaiting_review"
-      ? "Read. You can check what we read from it after saving your answers."
+      ? "Read. Please fill in the details below; you can check what we read from it after saving them."
       : phase === "awaiting_patient"
         ? "Read. Something in it differs from what we have; please tell us which is right below."
         : phase === "committed"
