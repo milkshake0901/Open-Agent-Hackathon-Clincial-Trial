@@ -1,6 +1,7 @@
 """A letter is de-identified before it is stored, sent through Zetaris, or shown to a model (#53).
 
-The identity below is invented. The parse model is replaced by recorded Regions; the trial model by a scripted reply.
+The identities are invented. Nemotron Parse is replaced on Ctx by recorded Regions; the trial model by a scripted
+reply.
 """
 from __future__ import annotations
 
@@ -10,12 +11,14 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app import extraction, trials
+from app import trials
 from app.config import Settings
 from app.extraction import ExtractedBlock, ExtractedDocument, ExtractedPage
 from app.llm.nightshift import FakeLLM
 from app.main import app
 from tests.conftest import ADMIN_DSN, make_ctx
+from tests.fixtures.letters import (NARRATIVE_LETTER, NARRATIVE_LETTER_IDENTITY, STRUCTURED_REPORT,
+                                    STRUCTURED_REPORT_IDENTITY, RecordedParse, letter_pdf)
 from tests.pdfs import make_pdf
 
 SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "trials_snapshot"
@@ -44,21 +47,20 @@ FILENAME = "Elwyn_Tarrant_referral.pdf"
 CONTENT = make_pdf("letter page one", "letter page two")
 
 
-def recorded_parse(content: bytes, **_) -> ExtractedDocument:
-    return ExtractedDocument(pages=tuple(
-        ExtractedPage(number=n, text="\n".join(text for _, text, _ in regions),
-                      blocks=tuple(ExtractedBlock(i, kind, text, *box) for i, (kind, text, box) in enumerate(regions)))
-        for n, regions in PAGES))
+LETTER = ExtractedDocument(pages=tuple(
+    ExtractedPage(number=n, text="\n".join(text for _, text, _ in regions),
+                  blocks=tuple(ExtractedBlock(i, kind, text, *box) for i, (kind, text, box) in enumerate(regions)))
+    for n, regions in PAGES))
 
 
-def assert_no_identifier(text: str) -> None:
-    leaked = [i for i in IDENTIFIERS if i in text]
+def assert_no_identifier(text: str, identifiers: tuple[str, ...] = IDENTIFIERS) -> None:
+    leaked = [i for i in identifiers if i in text]
     assert not leaked, f"{leaked} in {text!r}"
 
 
-@pytest.fixture
-def parse(monkeypatch):
-    monkeypatch.setattr(extraction, "extract_pdf", recorded_parse)
+def letter_ctx(clean_db, tmp_path, recording=LETTER, llm=None):
+    ctx = make_ctx(clean_db, llm, parser=RecordedParse(recording))
+    return replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
 
 
 def ask_reply(lane, system, user):
@@ -66,28 +68,50 @@ def ask_reply(lane, system, user):
     return {"standing": "possible", "answer": "The letter shows docetaxel.", "span_ids": ids}
 
 
-async def upload(http) -> dict:
-    loaded = await http.post("/api/referrals", files={"file": (FILENAME, CONTENT, "application/pdf")})
+async def upload(http, filename=FILENAME, content=CONTENT) -> dict:
+    loaded = await http.post("/api/referrals", files={"file": (filename, content, "application/pdf")})
     assert loaded.status_code == 200, loaded.text
     return loaded.json()
 
 
+async def stored_texts(pool) -> list[str]:
+    spans = await pool.fetch("SELECT text FROM document_span")
+    pages = await pool.fetch("SELECT text, tables_json::text AS tables FROM document_page")
+    named = await pool.fetch("SELECT d.filename, p.label FROM document d JOIN patient p ON p.id = d.patient_id")
+    return [*(s["text"] for s in spans), *(v for r in [*pages, *named] for v in r.values())]
+
+
+@pytest.mark.parametrize("recording, identity, filename", [
+    (NARRATIVE_LETTER, NARRATIVE_LETTER_IDENTITY, "Harlow_DESMOND referral.pdf"),
+    (STRUCTURED_REPORT, STRUCTURED_REPORT_IDENTITY, "talia-quinn-mri.pdf"),
+], ids=["narrative", "structured"])
+async def test_neither_letter_fixture_stores_its_identity(clean_db, tmp_path, recording, identity, filename):
+    app.state.ctx = letter_ctx(clean_db, tmp_path, recording)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        letter = await upload(http, filename, letter_pdf(recording))
+
+    assert_no_identifier(str(letter), identity)
+    for text in await stored_texts(clean_db):
+        assert_no_identifier(text, identity)
+    boxes = await clean_db.fetch("SELECT page, ordinal, x0, y0, x1, y1 FROM document_span ORDER BY page, ordinal")
+    assert [(b["page"], b["ordinal"], (b["x0"], b["y0"], b["x1"], b["y1"])) for b in boxes] == [
+        (page.number, block.ordinal, pytest.approx((block.xmin, block.ymin, block.xmax, block.ymax)))
+        for page in recording.pages for block in page.blocks if block.text]
+
+
 async def test_an_uploaded_letter_stores_no_name_hospital_number_or_birth_date_and_keeps_every_box(
-        clean_db, parse, tmp_path):
-    ctx = make_ctx(clean_db)
-    app.state.ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
+        clean_db, tmp_path):
+    app.state.ctx = letter_ctx(clean_db, tmp_path)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         letter = await upload(http)
         listed = (await http.get("/api/referrals")).json()
 
     assert_no_identifier(str(letter))
     assert_no_identifier(str(listed))
+    for text in await stored_texts(clean_db):
+        assert_no_identifier(text)
     spans = await clean_db.fetch("SELECT page, ordinal, kind, text, x0, y0, x1, y1 FROM document_span "
                                  "ORDER BY page, ordinal")
-    pages = await clean_db.fetch("SELECT text FROM document_page ORDER BY number")
-    stored = await clean_db.fetch("SELECT d.filename, p.label FROM document d JOIN patient p ON p.id = d.patient_id")
-    for text in [*(s["text"] for s in spans), *(p["text"] for p in pages), *(v for r in stored for v in r.values())]:
-        assert_no_identifier(text)
     assert [(s["page"], s["ordinal"], s["kind"], (s["x0"], s["y0"], s["x1"], s["y1"])) for s in spans] == [
         (n, i, kind, pytest.approx(box)) for n, regions in PAGES for i, (kind, _, box) in enumerate(regions)]
     clinical = {s["text"] for s in spans if s["kind"] == "Text"}
@@ -96,11 +120,11 @@ async def test_an_uploaded_letter_stores_no_name_hospital_number_or_birth_date_a
     assert "Date of birth: [DOB]" in clinical
 
 
-async def test_the_trial_question_shows_the_model_no_identity_and_cites_the_stored_regions(clean_db, parse, tmp_path):
+async def test_the_trial_question_shows_the_model_no_identity_and_cites_the_stored_regions(clean_db, tmp_path):
     fake = FakeLLM(ask_reply)
-    ctx = make_ctx(clean_db, fake)
+    ctx = letter_ctx(clean_db, tmp_path, llm=fake)
     await trials.load_snapshot(ctx, SNAPSHOT)
-    app.state.ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
+    app.state.ctx = ctx
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         letter = await upload(http)
         asked = await http.post(f"/api/patients/{letter['patient_id']}/trials/{NCT}/ask",

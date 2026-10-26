@@ -3,11 +3,12 @@ page text BEFORE any model sees it (GLOSSARY: De-identification). Runs inside re
 so every Page stored and every Citation shown is already de-identified.
 
 Deterministic rules, in this order: email addresses, labelled dates of birth, Medicare and record numbers
-(labelled, or bare as on a letter's identity line, `P123456(7)`, and barcode, `OC.1234567`), phone numbers, street
-addresses (Australian, and any line ending in a UK postcode), then names. Names are found where a document labels or
-titles them ("Patient: ...", "Re: SMITH, JOHN", "Mrs ...", "Dr ...", "Signed: ..."), plus `known_names`; every later
-occurrence of such a name, or of one of its words, written as found, in capitals or capitalised, is replaced across
-all pages and Regions of the Document, and in its filename. Placeholders are stable within a Document: [PATIENT],
+(labelled, or bare as on a letter's identity line, `P123456(7)`, and barcodes, `OC.1234567`), NHS numbers, phone
+numbers, street addresses (Australian, and any line ending in a UK postcode), then names. Names are found where a
+document labels or titles them ("Patient: ...", "| Patient | ... |", "Re: SMITH, JOHN", "Mrs ...", "Dr ...",
+"Signed: ..."), plus `known_names`; every later occurrence of such a name, or of one of its words, written as found,
+in capitals or capitalised, is replaced across all pages and Regions of the Document, and in its filename.
+Placeholders are stable within a Document: [PATIENT],
 [CLINICIAN-1], [CLINICIAN-2], ... Other dates are kept: observed-on dates are clinical data."""
 from __future__ import annotations
 
@@ -20,9 +21,9 @@ _NAME = r"[A-Z][A-Za-z'\-]+(?:(?:[ \t]+|,[ \t]*)(?:[A-Z]\.|[A-Z][A-Za-z'\-]+)){0
 _TITLED_CLINICIAN = re.compile(rf"\b(?:A/Prof|Prof(?:essor)?|Doctor|Dr)\.?[ \t]+((?:[A-Z]\.[ \t]*)*{_NAME})")
 _LABELLED_CLINICIAN = re.compile(
     rf"\b((?:Referring|Treating)[ \t]+(?:doctor|clinician|physician|GP)|Consultant|Oncologist|Surgeon|Physician|GP|"
-    rf"Reported[ \t]+by|Signed|Clinician|Pathologist|Radiologist)[ \t]*:[ \t]*({_NAME})")
+    rf"Reported[ \t]+by|Signed|Clinician|Pathologist|Radiologist|Referrer)[ \t]*[:|][ \t]*({_NAME})")
 _LABELLED_PATIENT = re.compile(
-    rf"\b(Patient(?:[ \t]+name)?|Name|Surname|Family[ \t]+name|Given[ \t]+names?|First[ \t]+name)[ \t]*:[ \t]*"
+    rf"\b(Patient(?:[ \t]+name)?|Name|Surname|Family[ \t]+name|Given[ \t]+names?|First[ \t]+name)[ \t]*[:|][ \t]*"
     rf"({_NAME})")
 _TITLED_PATIENT = re.compile(rf"\b(?:Mrs|Mr|Ms|Miss|Mx)\.?[ \t]+({_NAME})")
 # A letter's identity line: "Re: SMITH, JOHN Age:55 ..." or "Re: Smith, John". Only the surname-first forms, so
@@ -35,13 +36,16 @@ _UK_POSTCODE = r"[A-Z]{1,2}\d[A-Z\d]?[ \t]+\d[A-Z]{2}\b"
 
 _RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"), "[EMAIL]"),
-    (re.compile(r"\b(DOB|D\.O\.B\.?|Date[ \t]+of[ \t]+birth)([ \t]*[:\-]?[ \t]*)[^\n,;]+", re.I), r"\1\2[DOB]"),
+    (re.compile(r"\b(DOB|D\.O\.B\.?|Date[ \t]+of[ \t]+birth)([ \t]*[:\-|]?[ \t]*)[^\n,;|]+", re.I), r"\1\2[DOB]"),
     (re.compile(r"\b(Medicare(?:[ \t]+(?:no\.?|number))?)([ \t]*[:#]?[ \t]*)[\d \t]{10,14}(?:/\d)?", re.I),
      r"\1\2[MEDICARE]"),
     (re.compile(r"\b\d{4}[ \t]?\d{5}[ \t]?\d(?:[ \t]?\d)?\b"), "[MEDICARE]"),
     (re.compile(r"\b(MRN|URN)([ \t]*[:#]?[ \t]*)[A-Z0-9][A-Z0-9-]{3,}"), r"\1\2[MRN]"),
     (re.compile(r"\b(UR(?:[ \t]+(?:no\.?|number))?|Medical[ \t]+record[ \t]+(?:no\.?|number)|"
-                r"Hospital[ \t]+(?:no\.?|number))([ \t]*[:#][ \t]*)[A-Z0-9][A-Z0-9-]{3,}", re.I), r"\1\2[MRN]"),
+                r"Hospital[ \t]+(?:no\.?|number)|(?:Patient|Hospital)[ \t]+ID)([ \t]*[:#|][ \t]*)[A-Z0-9][A-Z0-9-]{3,}", re.I), r"\1\2[MRN]"),
+    (re.compile(r"\b(NHS(?:[ \t]+(?:no\.?|number))?)([ \t]*[:#|]?[ \t]*)\d{3}[ \t]?\d{3}[ \t]?\d{4}\b", re.I),
+     r"\1\2[NHS]"),
+    (re.compile(r"\b\d{3}[ \t]\d{3}[ \t]\d{4}\b"), "[NHS]"),
     (re.compile(r"\b[A-Z]{1,2}\d{6,8}(?:\(\d\))?"), "[MRN]"),
     (re.compile(r"\b[A-Z]{1,3}\.\d{5,}\b"), "[MRN]"),
     (re.compile(r"(?:\+61[ \t]?|\(0\d\)[ \t]?|\b0)\d(?:[ \t-]?\d){7,8}\b"), "[PHONE]"),
