@@ -94,14 +94,14 @@ _VERSION_COLS = "id, patient_id, number, document_hash"
 async def _build(reader: SqlReader, row: dict, with_facts: bool) -> ProfileVersion:
     facts = await reader.fetch(
         f"SELECT f.id, f.document_hash, f.page, f.resource, f.subject, f.value, f.unit, f.observed_on, f.quote, "
-        f"f.question, f.span_id FROM {reader.table('profile_version_fact')} pvf "
+        f"f.question, f.span_id, f.flags FROM {reader.table('profile_version_fact')} pvf "
         f"JOIN {reader.table('fact')} f ON f.id = pvf.fact_id "
         f"JOIN {reader.table('profile_version')} accepted ON accepted.document_hash = f.document_hash "
         f"WHERE pvf.profile_version_id = $1 ORDER BY accepted.number, f.page, f.id", (row["id"],))
     loaded = tuple(Fact(id=FactId(f["id"]), document_hash=DocumentHash(f["document_hash"]), page=f["page"],
                         resource=FactResource(f["resource"]), subject=f["subject"], value=f["value"], unit=f["unit"],
                         observed_on=f["observed_on"], quote=f["quote"], question=f["question"],
-                        span_id=f["span_id"]) for f in facts)
+                        span_id=f["span_id"], flags=tuple(f["flags"] or ())) for f in facts)
     return ProfileVersion(id=ProfileVersionId(row["id"]), patient_id=PatientId(row["patient_id"]),
                           number=row["number"], document_hash=DocumentHash(row["document_hash"]),
                           fact_ids=frozenset(f.id for f in loaded), facts=loaded if with_facts else ())

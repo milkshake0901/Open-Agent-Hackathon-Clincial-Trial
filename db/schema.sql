@@ -100,6 +100,7 @@ CREATE TABLE fact (                        -- FHIR-lite, one table with resource
   quote         text NOT NULL,
   span_id       text REFERENCES document_span(id),  -- the box on the page this quote was read from; NULL for a questionnaire
   question      text,                     -- "Q3" for a Patient-reported Fact from an Intake questionnaire
+  flags         text[] NOT NULL DEFAULT '{}',  -- how observed_on was settled: ambiguous_date, estimated_date, document_date
   created_at    timestamptz NOT NULL DEFAULT now(),
   FOREIGN KEY (document_hash, page) REFERENCES document_page(document_hash, number)
 );

@@ -10,11 +10,12 @@ import hashlib
 import logging
 import secrets
 from dataclasses import asdict, dataclass, replace
+from datetime import date
 from typing import Any
 
 from app import logfile, trace
 from app.ctx import Ctx
-from app.record import diagnosis as shortlists, loop, questionnaire, repo, storage
+from app.record import dates, diagnosis as shortlists, loop, questionnaire, repo, storage
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
 from app.record.ground import GroundedAnswer, GroundedCitation, LetterSpan, ask, letter_spans, page_png
@@ -340,6 +341,8 @@ class DocumentRegions:
     filename: str
     page_count: int
     regions: tuple[Region, ...]
+    document_date: date | None = None   # read from the first page (dates.document_date); None if it gives none
+    date_order: str | None = None       # "day_first" | "month_first" | None (dates.date_order)
 
 
 async def document_regions(ctx: Ctx, document_hash: DocumentHash) -> DocumentRegions:
@@ -347,7 +350,9 @@ async def document_regions(ctx: Ctx, document_hash: DocumentHash) -> DocumentReg
     doc = await repo.document(ctx.ui_reader, document_hash)
     if doc is None:
         raise NotFound(f"document {document_hash}")
-    return DocumentRegions(doc.hash, doc.filename, len(doc.pages), doc.regions)
+    dating = dates.dating(doc)
+    return DocumentRegions(doc.hash, doc.filename, len(doc.pages), doc.regions,
+                           dating.document_date.on if dating.document_date else None, dating.order)
 
 
 async def ingest(ctx: Ctx, document_hash: DocumentHash, *, run_id: RunId | None = None) -> IngestOutcome:
