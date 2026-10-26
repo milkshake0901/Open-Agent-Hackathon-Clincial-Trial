@@ -220,6 +220,16 @@ class VerdictCitationOut(BaseModel):
     label: str                  # "Patient-reported, intake questionnaire, Q13" or "page 2"
     filename: str | None = None # the Document's de-identified filename
     region: "CitationRegionOut | None" = None   # a letter Fact's Region: the page image with this box opens it
+    answer: "CitationAnswerOut | None" = None   # a Patient-reported Fact's answer: shown instead of a page image
+
+
+class CitationAnswerOut(BaseModel):
+    """The Intake questionnaire answer a Patient-reported Fact quotes. quote_start/quote_end are character offsets of
+    the quote in `text` (highlight text[quote_start:quote_end]); both null when the quote is not verbatim in it."""
+    wording: str                # the question as the Respondent saw it; its number is the Citation's `question`
+    text: str                   # the whole answer, as the Document shows it
+    quote_start: int | None
+    quote_end: int | None
 
 
 class CitationRegionOut(BaseModel):

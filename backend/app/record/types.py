@@ -66,6 +66,17 @@ class Region:
 
 
 @dataclass(frozen=True)
+class CitedAnswer:
+    """The Intake questionnaire answer a Patient-reported Fact quotes: the question's wording as the Respondent saw it,
+    the whole answer, and where the quote sits in it (character offsets into `text`; None when the quote is not a
+    verbatim part of the answer, as for a model's paraphrase)."""
+    wording: str
+    text: str
+    quote_start: int | None
+    quote_end: int | None
+
+
+@dataclass(frozen=True)
 class Document:
     hash: DocumentHash
     patient_id: PatientId
