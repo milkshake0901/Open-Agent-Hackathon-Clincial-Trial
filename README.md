@@ -61,7 +61,7 @@ Real patient documents go in `data/raw/`, which is gitignored and never committe
 ```
 backend/app/     record · trials · matching · worldmodel · trace · llm · sql · api
 backend/tests/   boundary test, World Model conformance
-backend/scripts/ ingest trials, rebuild projections, check the Nightshift connection
+backend/scripts/ ingest_trials, rebuild_projections, meterless, load_referral, extract_document, screen_referral
 db/              Postgres schema, Zetaris registration SQL
 docs/            architecture, API, ADRs, setup prompts
 frontend/        Next.js: questionnaire, Diagnosis check, Trials page

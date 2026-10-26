@@ -1,4 +1,4 @@
-"""Config's REPO_ROOT is the folder scripts anchor .env, data/raw and data/media to."""
+"""Config's REPO_ROOT is the folder scripts anchor .env, data/raw and data/media to (#40)."""
 from __future__ import annotations
 
 from app.config import REPO_ROOT

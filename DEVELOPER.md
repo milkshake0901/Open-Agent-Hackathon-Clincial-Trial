@@ -107,7 +107,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   └── worldmodel/
 │   │       └── test_conformance.py   Meterless's 8 conformance checks, ported
 │   │
-│   └── scripts/                  ingest_trials, rebuild_projections; seed_demo (to write)
+│   └── scripts/                  ingest_trials, rebuild_projections, meterless, load_referral, extract_document, screen_referral; seed_demo (to write)
 │
 ├── db/
 │   ├── schema.sql                Postgres tables, with the owner of each one noted at the top

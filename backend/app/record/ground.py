@@ -13,12 +13,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.config import REPO_ROOT
 from app.ctx import Ctx
 from app.extraction import render_page
 from app.llm import Lane, complete
 from app.record.types import PatientId
-
-_REPO = Path(__file__).resolve().parents[3]
 
 SYSTEM = """You answer one question about a patient using only the letter regions listed in the user message.
 Each region has an id. Those words are the only evidence you may use.
@@ -163,7 +162,7 @@ def page_png(raw_documents_dir: str, document_hash: str, number: int) -> bytes:
 
     base = Path(raw_documents_dir)
     if not base.is_absolute():
-        base = _REPO / base
+        base = REPO_ROOT / base
     path = base / f"{document_hash}.pdf"
     if not path.is_file():
         raise NotFound(f"document {document_hash} has no stored PDF")

@@ -1,4 +1,4 @@
-"""The operator scripts in backend/scripts start from the command line, from the repo root and from backend/.
+"""The operator scripts in backend/scripts start from the command line, from the repo root and from backend/ (#41).
 
 Only safe calls: --help and missing-argument usage errors. Nothing here reaches Postgres, Zetaris,
 Nightshift, NVIDIA's API or ClinicalTrials.gov. The projection rebuild truncates tables on any run,
@@ -13,10 +13,11 @@ from pathlib import Path
 
 import pytest
 
+from app.config import REPO_ROOT
+
 BACKEND = Path(__file__).resolve().parents[1]
 SCRIPTS = BACKEND / "scripts"
-REPO = BACKEND.parent
-DIRECTORIES = pytest.mark.parametrize("cwd", [REPO, BACKEND], ids=["repo-root", "backend"])
+DIRECTORIES = pytest.mark.parametrize("cwd", [REPO_ROOT, BACKEND], ids=["repo-root", "backend"])
 
 
 def run(script: str, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
