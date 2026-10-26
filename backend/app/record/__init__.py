@@ -465,7 +465,6 @@ async def load_letter(ctx: Ctx, filename_raw: str, content: bytes) -> LetterPref
     """
     import asyncio
 
-    from app.extraction import extract_pdf
     from app.record.prefill import prefill_answers
     from app.record.referral import deidentify_parsed, save_referral
 
@@ -479,7 +478,7 @@ async def load_letter(ctx: Ctx, filename_raw: str, content: bytes) -> LetterPref
     for row in stored:
         if storage.document_hash(PatientId(row["patient_id"]), content) == row["hash"]:
             return await prefill_letter(ctx, PatientId(row["patient_id"]))
-    parsed, safe_filename = deidentify_parsed(await asyncio.to_thread(extract_pdf, content), filename_raw)
+    parsed, safe_filename = deidentify_parsed(await asyncio.to_thread(ctx.parser.read, content), filename_raw)
     regions = [(block.kind, block.text) for page in parsed.pages for block in page.blocks]
     if not any(kind == "Text" and text.strip() for kind, text in regions):
         raise UnreadableDocument("the letter had no readable text")

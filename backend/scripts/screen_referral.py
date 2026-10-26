@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import Settings  # noqa: E402
 from app.ctx import Ctx  # noqa: E402
+from app.extraction import NemotronParse  # noqa: E402
 from app.llm.nightshift import Nightshift  # noqa: E402
 from app.matching import screen_letter  # noqa: E402
 from app.sql.reader import PgReader  # noqa: E402
@@ -41,8 +42,8 @@ async def main() -> int:
     await wm.replay()
     llm = Nightshift(settings.meterless_base_url, settings.meterless_runtime_token, settings.meterless_app_id,
                      settings.lane_models, default_model=settings.meterless_model)
-    ctx = Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm, wm=wm, settings=settings,
-              now=lambda: datetime.now(timezone.utc))
+    ctx = Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm, parser=NemotronParse(settings), wm=wm,
+              settings=settings, now=lambda: datetime.now(timezone.utc))
     try:
         report = await sync(ctx, CONDITION, LOCATION, max_trials=MAX_TRIALS)
         nct_ids = list(report.new + report.changed + report.unchanged)[:SCREEN]

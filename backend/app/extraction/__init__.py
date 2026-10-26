@@ -5,6 +5,9 @@ The API key comes from Doppler (`NVIDIA_PARSE_API_KEY`), never from source.
 It is not the Nightshift NVIDIA key.
 """
 from app.extraction.pages import render_page
-from app.extraction.parse import ExtractedBlock, ExtractedDocument, ExtractedPage, extract_pdf
+from app.extraction.client import MissingNvidiaKey
+from app.extraction.parse import (ExtractedBlock, ExtractedDocument, ExtractedPage, NemotronParse, Parser,
+                                  extract_pdf)
 
-__all__ = ["ExtractedBlock", "ExtractedDocument", "ExtractedPage", "extract_pdf", "render_page"]
+__all__ = ["ExtractedBlock", "ExtractedDocument", "ExtractedPage", "MissingNvidiaKey", "NemotronParse", "Parser",
+           "extract_pdf", "render_page"]
