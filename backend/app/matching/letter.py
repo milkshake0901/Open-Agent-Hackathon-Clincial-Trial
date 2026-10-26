@@ -123,6 +123,138 @@ def _outcome(criteria: tuple[Criterion, ...], judged: tuple[CriterionScreen, ...
     return derive_outcome(results, criteria).value
 
 
+ASK_SYSTEM = """You answer one question about one clinical trial for the patient in this letter.
+The criteria and the letter regions are the only information you may use. Each region and each criterion has an id.
+standing is eligible, possible, excluded, or needs_information.
+eligible means the letter meets the inclusions and does not show an exclusion. excluded means the letter shows a failed inclusion or a met exclusion.
+possible means some criteria are unsettled but nothing on the letter rules the patient out. needs_information means the letter is missing something they would have to bring.
+span_ids lists at most four region ids, the ones whose words most directly support the answer. to_gather lists the missing facts, tests, or dates, each as one short line. Do not list anything the letter already states. Use an empty list when nothing is missing.
+misses lists exclusion criteria the letter shows the patient meets, so that line rules them out. Each miss has criterion_id, clause, span_id, and why.
+clause is a short verbatim excerpt of that exclusion: the specific line that does not fit, not a paraphrase. span_id is the letter region that shows the patient has what that line excludes. why is one sentence.
+Leave misses empty when the letter does not show any exclusion. Do not include an exclusion the letter does not settle, and do not include an inclusion.
+Do not invent a region id, a criterion id, a date, a drug, or a result. answer is at most four sentences and states only the conclusion."""
+
+
+class _Miss(BaseModel):
+    criterion_id: str
+    clause: str = ""
+    span_id: str | None = None
+    why: str = ""
+
+
+class _Ask(BaseModel):
+    standing: Literal["eligible", "possible", "excluded", "needs_information"]
+    answer: str = ""
+    to_gather: list[str] = Field(default_factory=list)
+    span_ids: list[str] = Field(default_factory=list)
+    misses: list[_Miss] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TrialCitation:
+    span_id: str
+    document_hash: str
+    filename: str
+    page: int
+    quote: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+@dataclass(frozen=True)
+class CriterionMiss:
+    """An exclusion the letter shows. clause is a verbatim excerpt of the stored criterion."""
+    criterion_id: str
+    clause: str
+    why: str
+    citation: TrialCitation
+
+
+@dataclass(frozen=True)
+class TrialAsk:
+    nct_id: str
+    title: str
+    question: str
+    standing: Literal["eligible", "possible", "excluded", "needs_information"]
+    answer: str
+    to_gather: tuple[str, ...]
+    citations: tuple[TrialCitation, ...]
+    misses: tuple[CriterionMiss, ...]
+    via: str
+
+
+def _excerpt(criterion_text: str, clause: str) -> str | None:
+    """The clause as it appears in the criterion, or None when it is not a verbatim excerpt."""
+    source = " ".join(criterion_text.split())
+    wanted = " ".join(clause.split())
+    if len(wanted) < 12:
+        return None
+    start = source.casefold().find(wanted.casefold())
+    if start < 0:
+        return None
+    return source[start:start + len(wanted)]
+
+
+def _cite(span: LetterSpan) -> TrialCitation:
+    return TrialCitation(span_id=span.id, document_hash=span.document_hash, filename=span.filename, page=span.page,
+                         quote=span.text, x0=span.x0, y0=span.y0, x1=span.x1, y1=span.y1)
+
+
+def ask_prompt(question: str, title: str, criteria: tuple[Criterion, ...], spans: tuple[LetterSpan, ...]) -> str:
+    """Text regions only. Captions and footers are letterhead, not evidence."""
+    criteria_lines = [f"[{c.id}] {c.kind}: {' '.join(c.text.split())}" for c in criteria] or ["(no criteria stored)"]
+    regions = _regions(tuple(span for span in spans if span.kind == "Text"))
+    return f"Question: {question}\n\nTrial: {title}\n\nCriteria:\n" + "\n".join(criteria_lines) + f"\n\nRegions:\n{regions}"
+
+
+def ground_ask(nct_id: str, title: str, question: str, spans: tuple[LetterSpan, ...], criteria: tuple[Criterion, ...],
+               item: _Ask, via: str) -> TrialAsk:
+    """Drop invented region ids and exclusion lines that are not in the stored criterion."""
+    by_span = {span.id: span for span in spans}
+    by_criterion = {c.id: c for c in criteria if str(c.kind) == "exclusion"}
+    misses: list[CriterionMiss] = []
+    seen: set[str] = set()
+    for miss in item.misses:
+        criterion = by_criterion.get(miss.criterion_id)
+        span = by_span.get(miss.span_id) if miss.span_id else None
+        clause = _excerpt(criterion.text, miss.clause) if criterion else None
+        if criterion is None or span is None or clause is None or criterion.id in seen:
+            continue
+        seen.add(criterion.id)
+        misses.append(CriterionMiss(criterion_id=criterion.id, clause=clause, why=" ".join(miss.why.split()),
+                                    citation=_cite(span)))
+    cited_ids = list(dict.fromkeys([*item.span_ids, *(m.citation.span_id for m in misses)]))
+    citations = tuple(_cite(span) for span_id in cited_ids if (span := by_span.get(span_id)) is not None)
+    standing = item.standing
+    answer = " ".join(item.answer.split())
+    if standing in ("eligible", "excluded") and not citations:
+        standing = "needs_information"
+        answer = answer or "The letter does not show enough to decide."
+    gather = tuple(" ".join(line.split()) for line in item.to_gather if line.strip())
+    return TrialAsk(nct_id=nct_id, title=title, question=question, standing=standing,
+                    answer=answer or "The letter does not settle this.", to_gather=gather, citations=citations,
+                    misses=tuple(misses), via=via)
+
+
+async def ask_trial(ctx: Ctx, patient_id: str, nct_id: str, question: str) -> TrialAsk:
+    """Answer one question about one stored trial. Criteria and letter regions are read through the agent reader."""
+    from app.record import NotFound
+    from app.sql.reader import ZetarisReader
+
+    spans = await letter_spans(ctx, PatientId(patient_id), for_agent=True)
+    trial = await trials.trial(ctx, NctId(nct_id), for_agent=True)
+    if trial is None:
+        raise NotFound(f"no Trial {nct_id}")
+    criteria = await trials.criteria(ctx, NctId(nct_id), for_agent=True)
+    completion = await complete(
+        ctx, Lane.DEEP, system=ASK_SYSTEM, user=ask_prompt(question, trial.title, criteria, spans),
+        out=_Ask, run_id=None)
+    via = "zetaris" if isinstance(ctx.agent_reader, ZetarisReader) else "postgres"
+    return ground_ask(trial.nct_id, trial.title, question, spans, criteria, completion.value, via)
+
+
 async def screen_letter(ctx: Ctx, patient_id: str, nct_ids: list[str]) -> tuple[TrialScreen, ...]:
     """One model call per trial. Raises NotFound when the patient has no parsed letter."""
     spans = await letter_spans(ctx, PatientId(patient_id))

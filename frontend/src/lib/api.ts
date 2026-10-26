@@ -119,6 +119,32 @@ export type VerdictOut = {
 export type SiteOut = { name: string; status: string; km: number | null };
 
 // A Closed trial: it can no longer enrol, so it has no Verdict; shown for what it studied and when it finished.
+export type CriterionMiss = {
+  criterion_id: string;
+  clause: string;
+  why: string;
+  citation: GroundedCitation;
+};
+
+export type TrialAsk = {
+  nct_id: string;
+  title: string;
+  question: string;
+  standing: "eligible" | "possible" | "excluded" | "needs_information";
+  answer: string;
+  to_gather: string[];
+  citations: GroundedCitation[];
+  misses: CriterionMiss[];
+  via: "zetaris" | "postgres";
+};
+
+export type LetterOut = {
+  patient_id: string;
+  document_hash: string;
+  filename: string;
+  answers: Record<string, string>;
+};
+
 export type ClosedTrialOut = {
   nct_id: string;
   title: string;
@@ -126,6 +152,12 @@ export type ClosedTrialOut = {
   conditions: string[];
   closed_on: string | null; // ISO date: primary completion, else completion, else last update
   url: string;
+};
+
+export type MatchingTrials = {
+  labels: string[];
+  open: ClosedTrialOut[];
+  closed: ClosedTrialOut[];
 };
 
 // Registry fields it does not give are "".
@@ -296,6 +328,14 @@ export const api = {
   definition: () => call<Questionnaire>("/questionnaire/definition"),
   createPatient: (label: string) =>
     call<{ patient_id: string }>("/patients", { method: "POST", body: JSON.stringify({ label }) }),
+  referralLetters: () => call<{ letters: LetterOut[] }>("/referrals"),
+  prefillReferral: (patientId: string) =>
+    call<LetterOut>(`/patients/${encodeURIComponent(patientId)}/referral/prefill`, { method: "POST" }),
+  loadReferral: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return call<LetterOut>("/referrals", { method: "POST", body });
+  },
   submit: (patientId: string, body: { definition_version: string; respondent: Respondent; answers: Answers }) =>
     call<QuestionnaireAccepted>(`/patients/${encodeURIComponent(patientId)}/questionnaire`, {
       method: "POST",
@@ -332,6 +372,10 @@ export const api = {
     call<{ condition_term: string[] | null; trials: ClosedTrialOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/closed-trials`,
     ),
+  matchingTrials: (phrases: string[]) => {
+    const q = phrases.map((phrase) => `q=${encodeURIComponent(phrase)}`).join("&");
+    return call<MatchingTrials>(`/trials/matching?${q}`);
+  },
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
   outcomeSummary: (nctId: string) => call<OutcomeSummaryOut>(`/trials/${encodeURIComponent(nctId)}/outcomes/summary`),
   enquiryDetails: (patientId: string, versionId: string, nctId: string) =>
@@ -357,6 +401,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ question }),
     }),
+  askTrial: (patientId: string, nctId: string, question: string) =>
+    call<TrialAsk>(
+      `/patients/${encodeURIComponent(patientId)}/trials/${encodeURIComponent(nctId)}/ask`,
+      { method: "POST", body: JSON.stringify({ question }) },
+    ),
   respondentQuestions: (patientId: string, versionId: string) =>
     call<RespondentQuestion[]>(
       `/patients/${encodeURIComponent(patientId)}/respondent-questions?version=${encodeURIComponent(versionId)}`,

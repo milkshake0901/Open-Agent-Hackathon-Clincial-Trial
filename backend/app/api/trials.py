@@ -1,15 +1,33 @@
 """Trials stored from the Australia ingest, and a screen of one letter against a named trial."""
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app import llm, matching, record, trials
 from app.api.deps import get_ctx
-from app.api.schemas import (ClosedTrialListOut, ClosedTrialOut, ContactOut, CriterionScreenOut, OutcomeSummaryOut,
-                             OutcomesOut, PublicationOut, ScreenIn, TrialDetailOut, TrialScreenOut, TrialSiteOut)
+from app.api.schemas import (ClosedTrialListOut, ClosedTrialOut, ContactOut, CriterionMissOut, CriterionScreenOut,
+                             MatchingTrialsOut, OutcomeSummaryOut, OutcomesOut, PublicationOut, ScreenIn,
+                             TrialAskCitationOut, TrialAskIn, TrialAskOut, TrialDetailOut, TrialScreenOut, TrialSiteOut)
 from app.ctx import Ctx
 
 router = APIRouter(tags=["trials"])
+
+
+def _listed(t: trials.Trial) -> ClosedTrialOut:
+    return ClosedTrialOut(nct_id=t.nct_id, title=t.title, status=t.status, conditions=list(t.conditions),
+                          closed_on=t.closed_on, url=trials.page_url(t.nct_id))
+
+
+@router.get("/trials/matching", response_model=MatchingTrialsOut)
+async def matching_trials(q: list[str] = Query(), ctx: Ctx = Depends(get_ctx)):
+    """Stored Australian trials whose Condition labels contain one of these phrases as whole words."""
+    phrases = [" ".join(phrase.split()) for phrase in q if phrase.strip()]
+    if not phrases:
+        raise HTTPException(422, "name the condition to search")
+    labels = await trials.search_condition_labels(ctx, phrases, limit=200)
+    open_trials, closed = await trials.trials_for_labels(ctx, tuple(one.label for one in labels))
+    return MatchingTrialsOut(labels=[one.label for one in labels], open=[_listed(t) for t in open_trials],
+                             closed=[_listed(t) for t in closed])
 
 
 @router.get("/patients/{pid}/closed-trials", response_model=ClosedTrialListOut)
@@ -19,6 +37,32 @@ async def closed_trials(pid: str, ctx: Ctx = Depends(get_ctx)):
     return ClosedTrialListOut(condition_term=term, trials=[ClosedTrialOut(
         nct_id=t.nct_id, title=t.title, status=t.status, conditions=list(t.conditions), closed_on=t.closed_on,
         url=trials.page_url(t.nct_id)) for t in await trials.closed_trials_with_labels(ctx, term)])
+
+
+@router.post("/patients/{pid}/trials/{nct}/ask", response_model=TrialAskOut)
+async def ask_trial(pid: str, nct: str, body: TrialAskIn, ctx: Ctx = Depends(get_ctx)):
+    """One question about one stored trial. Criteria and letter regions are read through the agent reader."""
+    question = " ".join(body.question.split())
+    if not question:
+        raise HTTPException(422, "the question is empty")
+    if len(question) > 500:
+        raise HTTPException(422, "the question is longer than 500 characters")
+    try:
+        asked = await matching.ask_trial(ctx, pid, nct, question)
+    except record.NotFound as e:
+        raise HTTPException(404, str(e)) from e
+    except llm.LlmUnavailable as e:
+        raise HTTPException(503, str(e)) from e
+    def cited(c) -> TrialAskCitationOut:
+        return TrialAskCitationOut(
+            span_id=c.span_id, document_hash=c.document_hash, filename=c.filename, page=c.page,
+            quote=c.quote, x0=c.x0, y0=c.y0, x1=c.x1, y1=c.y1)
+    return TrialAskOut(
+        nct_id=asked.nct_id, title=asked.title, question=asked.question, standing=asked.standing,
+        answer=asked.answer, to_gather=list(asked.to_gather), via=asked.via,
+        citations=[cited(c) for c in asked.citations],
+        misses=[CriterionMissOut(criterion_id=m.criterion_id, clause=m.clause, why=m.why, citation=cited(m.citation))
+                for m in asked.misses])
 
 
 @router.post("/patients/{pid}/trials/screen", response_model=list[TrialScreenOut])

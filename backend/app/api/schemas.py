@@ -401,6 +401,24 @@ class ClosedTrialListOut(BaseModel):
     trials: list[ClosedTrialOut]  # newest first by closed_on
 
 
+class LetterOut(BaseModel):
+    patient_id: str
+    document_hash: str
+    filename: str
+    answers: dict[str, str] = {}
+
+
+class LetterListOut(BaseModel):
+    letters: list[LetterOut]
+
+
+class MatchingTrialsOut(BaseModel):
+    """Stored trials whose Condition labels contain one of the search phrases, open first."""
+    labels: list[str]
+    open: list[ClosedTrialOut]
+    closed: list[ClosedTrialOut]
+
+
 class RescanOut(BaseModel):
     run_id: str
     planned: list[str]
@@ -489,6 +507,41 @@ class TrialScreenOut(BaseModel):
     title: str
     outcome: Literal["eligible", "possible", "excluded"]
     criteria: list[CriterionScreenOut]
+
+
+class TrialAskIn(BaseModel):
+    question: str
+
+
+class TrialAskCitationOut(BaseModel):
+    span_id: str
+    document_hash: str
+    filename: str
+    page: int
+    quote: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class CriterionMissOut(BaseModel):
+    criterion_id: str
+    clause: str
+    why: str
+    citation: TrialAskCitationOut
+
+
+class TrialAskOut(BaseModel):
+    nct_id: str
+    title: str
+    question: str
+    standing: Literal["eligible", "possible", "excluded", "needs_information"]
+    answer: str
+    to_gather: list[str]
+    citations: list[TrialAskCitationOut]
+    misses: list[CriterionMissOut]
+    via: Literal["zetaris", "postgres"]
 
 
 # TODO: RunLogOut, TraceTreeOut, HealthOut — see docs/api.md.

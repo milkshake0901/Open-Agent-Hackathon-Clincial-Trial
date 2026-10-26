@@ -227,6 +227,7 @@ def page_url(nct_id: str) -> str:
     """The Trial's page on ClinicalTrials.gov."""
     return f"https://clinicaltrials.gov/study/{nct_id}"
 
+
 # Statuses a Re-scan judges. NOT_YET_RECRUITING counts: Australian sites often open after US ones.
 ACTIVE_STATUSES = ("RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION")
 
@@ -326,3 +327,158 @@ async def _record(ctx: Ctx, studies: list[tuple[ctgov.RawStudy, str]], source: s
     return SyncReport(fetched=len(loaded), new=tuple(n for n in ids if before[n] is None),
                       changed=tuple(n for n in ids if before[n] is not None and n in changed),
                       unchanged=tuple(n for n in ids if n not in changed), source=source)
+
+
+async def trial(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> Trial | None:
+    """The Trial as last loaded (None for an unknown or dropped Trial). for_agent reads through Zetaris."""
+    return await repo.trial(ctx.agent_reader if for_agent else ctx.ui_reader, nct_id)
+
+
+async def active_trials(ctx: Ctx) -> list[Trial]:
+    return await repo.active_trials(ctx.ui_reader)
+
+
+def _newest_first(closed: list[Trial]) -> list[Trial]:
+    return sorted(sorted(closed, key=lambda t: t.nct_id), key=lambda t: t.closed_on or "", reverse=True)
+
+
+def label_key(label: str) -> str:
+    """Condition labels are equal when they match ignoring case and repeated whitespace."""
+    return " ".join(label.casefold().split())
+
+
+def label_words(text: str) -> str:
+    """A label's or search phrase's words: its runs of letters and digits, casefolded, one space apart. A phrase is
+    in a label when its words appear in the label's, whole and adjacent."""
+    return " ".join(re.findall(r"[a-z0-9]+", text.casefold()))
+
+
+async def condition_labels(ctx: Ctx) -> list[ConditionLabel]:
+    """Every distinct Condition label the stored, non-dropped Trials list, with how many Open and Closed trials list
+    it; most used first, then alphabetically."""
+    return _labels(await repo.condition_spellings(ctx.ui_reader))
+
+
+def _labels(spellings: list[tuple[str, str, int, int]]) -> list[ConditionLabel]:
+    """Spellings of one label key are one label, shown as the spelling most Trials use (then the first by code
+    point), with the counts summed."""
+    by_key: dict[str, list[tuple[str, int, int]]] = {}
+    for key, label, open_, closed in spellings:
+        by_key.setdefault(key, []).append((label, open_, closed))
+    found = [ConditionLabel(min(ss, key=lambda s: (-(s[1] + s[2]), s[0]))[0], open=sum(s[1] for s in ss),
+                            closed=sum(s[2] for s in ss)) for ss in by_key.values()]
+    return sorted(found, key=lambda one: (-one.total, label_key(one.label)))
+
+
+async def search_condition_labels(ctx: Ctx, phrases: list[str], *, limit: int) -> list[ConditionLabel]:
+    """The Condition labels containing any of the phrases as whole words ("cruciate ligament" finds "Anterior Cruciate
+    Ligament Rupture", "injur" finds nothing), at most `limit`, most used first."""
+    words = [w for w in dict.fromkeys(label_words(p) for p in phrases) if w]
+    return _labels(await repo.condition_spellings(ctx.ui_reader, words))[:limit] if words else []
+
+
+@dataclass(frozen=True)
+class Selection:
+    """The Trials a Condition term selects (ADR 0005): the stored Open trials (judged and listed) and Closed trials
+    (listed, never judged) listing one of its labels, equal ignoring case and repeated whitespace. Selection.EMPTY
+    without a Condition term."""
+    open: frozenset[NctId]
+    closed: frozenset[NctId]
+    EMPTY: ClassVar[Selection]
+
+
+Selection.EMPTY = Selection(open=frozenset(), closed=frozenset())
+
+
+async def selection(ctx: Ctx, condition_term: tuple[str, ...] | None) -> Selection:
+    """The Trials the Condition term selects; Selection.EMPTY (and no read) with none."""
+    if not condition_term:
+        return Selection.EMPTY
+    found = await repo.listing_any(ctx.ui_reader, label_keys(condition_term))
+    return Selection(open=frozenset(n for n, status in found if status in ACTIVE_STATUSES),
+                     closed=frozenset(n for n, status in found if status in CLOSED_STATUSES))
+
+
+def label_keys(labels: Sequence[str]) -> list[str]:
+    """The distinct label keys of a Condition term's labels, in order: the parameters of listing_filter."""
+    return list(dict.fromkeys(label_key(label) for label in labels))
+
+
+async def trials_for_labels(ctx: Ctx, labels: tuple[str, ...]) -> tuple[list[Trial], list[Trial]]:
+    """(open, closed) stored trials listing one of these Condition labels. Open trials are by NCT id. Closed trials
+    are newest first. Both are empty when `labels` is empty."""
+    picked = await selection(ctx, labels)
+    found = {t.nct_id: t for t in await repo.trials_by_id(ctx.ui_reader, sorted(picked.open | picked.closed))}
+    return ([found[i] for i in sorted(picked.open)],
+            _newest_first([found[i] for i in picked.closed]))
+
+
+async def closed_trials_with_labels(ctx: Ctx, condition_term: tuple[str, ...] | None) -> list[Trial]:
+    """The Closed trials the Condition term selects (Selection.closed), newest first by cutoff date (Trial.closed_on);
+    none without a Condition term. Never judged: they have no Criterion results or Verdict (ADR 0004)."""
+    closed = (await selection(ctx, condition_term)).closed
+    return _newest_first(await repo.trials_by_id(ctx.ui_reader, sorted(closed)))
+
+
+async def sites(ctx: Ctx, nct_id: NctId) -> tuple[TrialSite, ...]:
+    """The Trial's locations as last loaded, in registry order (empty for an unknown Trial)."""
+    return await repo.sites(ctx.ui_reader, nct_id)
+
+
+async def contacts(ctx: Ctx, nct_id: NctId) -> TrialContacts | None:
+    """Who to contact about the Trial as last loaded (None for an unknown Trial); its sites' contacts are on `sites`."""
+    if await repo.trial(ctx.ui_reader, nct_id) is None:
+        return None
+    return await repo.contacts(ctx.ui_reader, nct_id)
+
+
+async def outcomes(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> Outcomes | None:
+    """The Trial's Outcomes as last loaded (None for an unknown Trial). for_agent reads through Zetaris."""
+    reader = ctx.agent_reader if for_agent else ctx.ui_reader
+    if await repo.trial(reader, nct_id) is None:
+        return None
+    return await repo.outcomes(reader, nct_id)
+
+
+async def outcome_summary(ctx: Ctx, nct_id: NctId) -> OutcomeSummary | None:
+    """A plain-language summary of the Closed trial's Outcomes, written lazily (never at ingest): the first ask makes
+    one fast-lane model call (not traced to a run) and records the summary keyed by NCT id and Outcome content hash;
+    later asks for unchanged Outcomes read it back with no model call. None for an unknown Trial. Raises
+    llm.LlmUnavailable."""
+    from app import llm
+    from app.worldmodel import timeline
+
+    t = await trial(ctx, nct_id, for_agent=True)
+    o = await outcomes(ctx, nct_id, for_agent=True)   # the model's input, read through Zetaris (ADR 0001)
+    if t is None or o is None:
+        return None
+    key = summaries.outcomes_hash(o)
+    cached = await repo.outcome_summary(ctx.ui_reader, nct_id, key)
+    if cached is not None:
+        return cached
+    written = await llm.complete(ctx, llm.Lane.FAST, system=summaries.SYSTEM, user=summaries.prompt(t, o),
+                                 out=summaries.Written, run_id=None)
+    summary = OutcomeSummary(text=written.value.summary.strip(), outcomes_hash=key)
+    logfile.step(log, "trials.outcome_summary.drafted", nct_id=nct_id, outcomes_hash=key,
+                 model_answered=written.model_answered)
+    await timeline.record_outcome_summary(ctx.wm, t, summary, written.model_answered, ctx.now().isoformat())
+    return summary
+
+
+async def criteria(ctx: Ctx, nct_id: NctId, *, for_agent: bool = False) -> tuple[Criterion, ...]:
+    """Criteria for the trial's CURRENT eligibility hash, in ordinal order. for_agent reads through Zetaris.
+    The ingest stores only eligibility text and its hash (ADR 0004), so the first ask for a hash splits the text
+    deterministically and records the Criteria; later asks read them back."""
+    from app.worldmodel import timeline
+
+    reader = ctx.agent_reader if for_agent else ctx.ui_reader
+    t = await repo.trial(reader, nct_id)
+    if t is None:
+        return ()
+    stored = await repo.criteria(reader, nct_id, t.eligibility_hash)
+    if stored:
+        return stored
+    split = splitting.split_deterministic(t.nct_id, t.eligibility_hash, t.eligibility_text)
+    if split:
+        await timeline.record_criteria(ctx.wm, t, split)
+    return split

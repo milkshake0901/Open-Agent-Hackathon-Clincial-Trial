@@ -113,12 +113,15 @@ def citations_for(span_ids: list[str], spans: list[dict]) -> tuple[GroundedCitat
     return tuple(chosen)
 
 
-async def letter_spans(ctx: Ctx, patient_id: PatientId) -> tuple[LetterSpan, ...]:
-    """The parsed regions of this patient's letters, in reading order. Raises NotFound when there is no letter."""
+async def letter_spans(ctx: Ctx, patient_id: PatientId, *, for_agent: bool = False) -> tuple[LetterSpan, ...]:
+    """The parsed regions of this patient's letters, in reading order. Raises NotFound when there is no letter.
+
+    for_agent reads through Zetaris (ADR 0001). The page highlight reads Postgres."""
     from app.record import NotFound, repo
 
     await _patient(ctx, patient_id)
-    rows = await repo.spans_for_patient(ctx.ui_reader, patient_id)
+    reader = ctx.agent_reader if for_agent else ctx.ui_reader
+    rows = await repo.spans_for_patient(reader, patient_id)
     if not rows:
         raise NotFound(f"patient {patient_id} has no parsed letter")
     return tuple(LetterSpan(

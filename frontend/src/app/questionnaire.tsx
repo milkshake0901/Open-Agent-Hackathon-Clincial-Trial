@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DiagnosisCheckCard } from "./diagnosis-check";
+import { LetterFill } from "./letter-fill";
 import { ReturnLink } from "./return-link";
 import { AddDocuments } from "./documents";
 import {
@@ -14,6 +15,13 @@ import {
 } from "@/lib/api";
 
 const RESPONDENT_QUESTION = "respondent";
+// Intake reads the answers, and a long referral can take a couple of minutes. The bar approaches 90% on
+// that clock, then the page moves on when the save actually finishes.
+const SAVE_MS = 120_000;
+
+function saveFraction(elapsedMs: number): number {
+  return Math.min(0.9, 0.08 + (elapsedMs / SAVE_MS) * 0.82);
+}
 
 type Status =
   | { kind: "loading" }
@@ -32,6 +40,14 @@ export function QuestionnaireForm() {
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [returnToken, setReturnToken] = useState<string | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    if (!submitting) return;
+    const started = performance.now();
+    const id = window.setInterval(() => setElapsedMs(performance.now() - started), 200);
+    return () => window.clearInterval(id);
+  }, [submitting]);
 
   useEffect(() => {
     api
@@ -61,6 +77,7 @@ export function QuestionnaireForm() {
     e.preventDefault();
     if (status.kind !== "ready") return;
     setSubmitting(true);
+    setElapsedMs(0);
     setSubmitError(null);
     try {
       // A correction is a full resubmission for the same patient: a new Profile version.
@@ -126,8 +143,12 @@ export function QuestionnaireForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
+      <LetterFill onFill={(letter) => {
+        setPatientId(letter.patient_id);
+        setAnswers((current) => ({ ...current, ...letter.answers }));
+      }} />
       <p className="text-muted">Every question can be skipped. We never ask for a name or a street address.</p>
-      {patientId && (
+      {savedVersionId && (
         <p className="text-muted">
           You are editing your saved answers. Saving sends the whole questionnaire again and keeps the earlier version.
           Your postcode and contact details are not shown again; leave them blank to keep what you gave before.
@@ -144,6 +165,24 @@ export function QuestionnaireForm() {
         </section>
       ))}
       {submitError && <p role="alert" className="text-red-700 dark:text-red-400">{submitError}</p>}
+      {submitting && (
+        <div className="flex flex-col gap-2">
+          <div
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(saveFraction(elapsedMs) * 100)}
+            aria-valuetext={`Saving your answers, ${Math.floor(elapsedMs / 1000)} seconds`}
+            className="h-1.5 overflow-hidden rounded-full bg-border"
+          >
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-200 ease-linear"
+              style={{ width: `${saveFraction(elapsedMs) * 100}%` }}
+            />
+          </div>
+          <p className="text-sm text-muted">Saving your answers, {Math.floor(elapsedMs / 1000)}s</p>
+        </div>
+      )}
       <button type="submit" disabled={submitting}
               className="min-h-12 rounded-lg bg-accent px-5 text-base font-semibold text-white dark:text-black disabled:opacity-60">
         {submitting ? "Saving your answers…" : "Save answers"}

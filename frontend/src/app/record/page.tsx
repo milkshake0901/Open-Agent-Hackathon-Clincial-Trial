@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { LetterQuestion } from "./letter";
+import { MatchingTrialsList } from "./matching";
 
 // Canvas 1200px, side padding 24px, one 24px gutter: 420 + 24 + the letter column.
 
@@ -11,9 +12,10 @@ export default function RecordPage({ searchParams }: PageProps<"/record">) {
         <Link href="/" className="self-start text-sm text-accent underline">
           TrialMatch
         </Link>
-        <h1 className="text-2xl font-semibold">Has this patient had chemotherapy in the last ten days?</h1>
+        <h1 className="text-2xl font-semibold">mCRPC trials for this referral</h1>
         <p className="text-muted">
-          The answer is read from the referral letter. The highlighted region is the part of the page it used.
+          Stored Australian trials whose condition name is metastatic castration-resistant prostate cancer,
+          including the short form mCRPC. The letter below is the Royal Marsden referral.
         </p>
       </header>
       <Suspense fallback={<p className="text-muted">Opening the letter…</p>}>
@@ -26,5 +28,10 @@ export default function RecordPage({ searchParams }: PageProps<"/record">) {
 async function ForPatient({ searchParams }: Pick<PageProps<"/record">, "searchParams">) {
   const params = await searchParams;
   const patient = typeof params.patient === "string" ? params.patient : "pt_referral_20260209";
-  return <LetterQuestion patientId={patient} />;
+  return (
+    <>
+      <MatchingTrialsList patientId={patient} />
+      <LetterQuestion patientId={patient} />
+    </>
+  );
 }
