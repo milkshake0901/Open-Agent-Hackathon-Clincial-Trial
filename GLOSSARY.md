@@ -16,6 +16,14 @@ _Avoid_: User, patient (when someone else is answering)
 One source the patient supplies (referral letter, blood report, genomic report, or a completed Intake questionnaire), identified by the hash of its content.
 _Avoid_: File, upload, record, PDF
 
+**Region**:
+One block of text on a Document page, with its position on that page, that a Fact can quote.
+_Avoid_: Span, block, box, bbox
+
+**Letter review**:
+The optional step where the Respondent looks at each Fact drafted from a letter beside its Region and keeps or drops it before it enters the record.
+_Avoid_: Verification, approval, check
+
 **Patient-reported**:
 Describes a Fact whose Document is a completed Intake questionnaire rather than a clinical document.
 _Avoid_: Self-reported, unverified, user-entered
@@ -28,6 +36,10 @@ _Avoid_: Data point, observation (unless meaning the FHIR resource), extraction
 The date a Fact was true in the patient's life, as opposed to when its Document was uploaded.
 _Avoid_: Date, timestamp, upload date
 
+**Document date**:
+The date a Document was written or a test was done, as the Document states it; the Observed-on date of any Fact that gives no date of its own, and the point "4 months ago" is counted back from.
+_Avoid_: Upload date, letter date, service date
+
 **Conflict**:
 Two Facts that cannot both be true: same subject and observed-on date with different values, or an impossible sequence such as an age going backwards.
 _Avoid_: Error, inconsistency, mismatch
@@ -37,7 +49,7 @@ The patient's set of accepted Facts after a Document is accepted; each accepted 
 _Avoid_: Profile (unqualified), snapshot, patient state
 
 **De-identification**:
-Removing names, addresses, record numbers and clinician names from a Document's text before any model sees it.
+Removing names, addresses, record numbers, dates of birth and clinician names from a Document's page text, Region text and filename, in one pass over the whole Document, before it is stored or any model sees it. Region boxes are kept.
 _Avoid_: Anonymisation, redaction, masking
 
 **Return link**:
@@ -101,8 +113,12 @@ The overall outcome of one Trial against one Profile version: eligible, possible
 _Avoid_: Match, score, result
 
 **Citation**:
-The link from a claim in a Criterion result back to a Fact, and through it to a Document and page.
+The link from a claim in a Criterion result back to a Fact, and through it to a Document and page; for a letter, to the Region the Fact was read from, and for an Intake questionnaire, to the answer it quotes.
 _Avoid_: Reference, source, evidence link
+
+**Context Fact**:
+A Fact an unknown Criterion result considered but that does not settle it, such as a hormone therapy named when the needed testosterone level is missing; shown beside the reason, never counted as a Citation.
+_Avoid_: Partial citation, evidence, related fact
 
 **Doctor question**:
 A question for the patient's clinician, generated from a Criterion result that is unknown because no Fact covers it and answering needs clinical records or judgement (performance status, labs, stage).

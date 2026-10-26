@@ -3,7 +3,7 @@
 -- a database created from an older db/schema.sql. Safe to run twice. New databases don't need it; db/schema.sql
 -- already has it. Fills the table from trial.conditions with the keys app.trials.label_key and label_words give
 -- (Postgres lower() for Python's casefold(): the same for every label but a few non-English letters such as ß;
--- scripts/rebuild_projections.py rebuilds it exactly from the World Model).
+-- backend/scripts/rebuild_projections.py rebuilds it exactly from the World Model).
 --
 --   docker exec -i open-agent-hackathon-clincial-trial-postgres-1 \
 --     psql -U trialmatch -d trialmatch -v ON_ERROR_STOP=1 < db/migrations/0007_trial_condition.sql

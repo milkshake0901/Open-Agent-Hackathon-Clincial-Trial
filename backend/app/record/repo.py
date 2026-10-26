@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timezone
 from typing import Sequence
 
 from app.record.types import (
     DiagnosisCheck, DiagnosisCheckId, Document, DocumentHash, Fact, FactId, FactResource, Page, PatientId, ProfileVersion,
-    ProfileVersionId, ReturnTokenHash, SearchPreferences,
+    ProfileVersionId, Region, ReturnTokenHash, SearchPreferences,
 )
 from app.sql.reader import SqlReader
 from app.trials import ConditionLabel
@@ -67,7 +67,8 @@ async def patient_for_token_hash(reader: SqlReader, token_hash: ReturnTokenHash)
 
 async def document(reader: SqlReader, h: DocumentHash) -> Document | None:
     rows = await reader.fetch(
-        f"SELECT hash, patient_id, filename, respondent, uploaded_at FROM {reader.table('document')} WHERE hash = $1",
+        f"SELECT hash, patient_id, filename, respondent, uploaded_at, document_date FROM {reader.table('document')} "
+        "WHERE hash = $1",
         (h,))
     if not rows:
         return None
@@ -75,9 +76,18 @@ async def document(reader: SqlReader, h: DocumentHash) -> Document | None:
         f"SELECT number, text, tables_json FROM {reader.table('document_page')} WHERE document_hash = $1 "
         "ORDER BY number", (h,))
     r = rows[0]
+    regions = () if r["respondent"] else tuple(
+        Region(s["id"], s["page"], s["ordinal"], s["kind"], s["text"], s["x0"], s["y0"], s["x1"], s["y1"])
+        for s in await spans_for_document(reader, h))
     return Document(hash=DocumentHash(r["hash"]), patient_id=PatientId(r["patient_id"]), filename=r["filename"],
                     pages=tuple(Page(number=p["number"], text=p["text"], tables=_tables(p["tables_json"])) for p in pages),
-                    uploaded_at=r["uploaded_at"].date(), respondent=r["respondent"])
+                    uploaded_at=r["uploaded_at"].date(), respondent=r["respondent"], regions=regions,
+                    document_date=r["document_date"])
+
+
+async def set_document_date(tx: Tx, h: DocumentHash, on: date) -> None:
+    """The Document date as the Respondent corrected it in Letter review."""
+    await tx.execute("UPDATE document SET document_date = $2 WHERE hash = $1", (h, on))
 
 
 def _tables(raw) -> tuple[tuple[tuple[str, ...], ...], ...]:
@@ -91,13 +101,14 @@ _VERSION_COLS = "id, patient_id, number, document_hash"
 async def _build(reader: SqlReader, row: dict, with_facts: bool) -> ProfileVersion:
     facts = await reader.fetch(
         f"SELECT f.id, f.document_hash, f.page, f.resource, f.subject, f.value, f.unit, f.observed_on, f.quote, "
-        f"f.question FROM {reader.table('profile_version_fact')} pvf "
+        f"f.question, f.span_id, f.flags, f.checked FROM {reader.table('profile_version_fact')} pvf "
         f"JOIN {reader.table('fact')} f ON f.id = pvf.fact_id "
         f"JOIN {reader.table('profile_version')} accepted ON accepted.document_hash = f.document_hash "
         f"WHERE pvf.profile_version_id = $1 ORDER BY accepted.number, f.page, f.id", (row["id"],))
     loaded = tuple(Fact(id=FactId(f["id"]), document_hash=DocumentHash(f["document_hash"]), page=f["page"],
                         resource=FactResource(f["resource"]), subject=f["subject"], value=f["value"], unit=f["unit"],
-                        observed_on=f["observed_on"], quote=f["quote"], question=f["question"]) for f in facts)
+                        observed_on=f["observed_on"], quote=f["quote"], question=f["question"],
+                        span_id=f["span_id"], flags=tuple(f["flags"] or ()), checked=bool(f["checked"])) for f in facts)
     return ProfileVersion(id=ProfileVersionId(row["id"]), patient_id=PatientId(row["patient_id"]),
                           number=row["number"], document_hash=DocumentHash(row["document_hash"]),
                           fact_ids=frozenset(f.id for f in loaded), facts=loaded if with_facts else ())
@@ -210,6 +221,13 @@ async def spans_for_patient(reader: SqlReader, patient_id: PatientId) -> list[di
         f"JOIN {reader.table('patient')} p ON p.id = d.patient_id "
         f"WHERE d.patient_id = $1 ORDER BY d.uploaded_at, s.page, s.ordinal",
         (patient_id,))
+
+
+async def spans_for_document(reader: SqlReader, document_hash: DocumentHash) -> list[dict]:
+    """One Document's Regions in reading order, each with its box."""
+    return await reader.fetch(
+        f"SELECT id, document_hash, page, ordinal, kind, text, x0, y0, x1, y1 FROM {reader.table('document_span')} "
+        "WHERE document_hash = $1 ORDER BY page, ordinal", (document_hash,))
 
 
 async def insert_spans(tx: Tx, document_hash: str, spans: Sequence[tuple]) -> None:

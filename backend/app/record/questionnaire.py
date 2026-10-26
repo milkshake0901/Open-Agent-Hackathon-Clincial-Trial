@@ -21,10 +21,10 @@ from typing import Any, Literal
 
 from app.record import postcodes
 from app.record.types import (
-    Document, DocumentHash, DraftFact, FactResource, InvalidAnswers, Page, PatientId, Respondent,
+    CitedAnswer, Document, DocumentHash, DraftFact, FactResource, InvalidAnswers, Page, PatientId, Respondent,
 )
 
-DEFINITION_VERSION = "1"
+DEFINITION_VERSION = "2"
 DOCUMENT_FILENAME = "Intake questionnaire"
 
 QuestionKind = Literal["month_year", "single", "multi", "text", "textarea", "repeat"]
@@ -48,6 +48,7 @@ class Question:
     options: tuple[Option, ...] = ()
     required: bool = False
     help: str | None = None
+    review_only: bool = False        # answered in Letter review, not on the form; a later save never withdraws it
 
     @property
     def ref(self) -> str:
@@ -146,7 +147,34 @@ DEFINITION = Questionnaire(DEFINITION_VERSION, (
                  "text", "preference",
                  help="Optional. Used only to tell you there is something new to look at, never to identify the patient."),
     )),
+    Section("letter_corrections", "Corrections to the letter", (
+        Question("letter_corrections", 16, "What did your letter get wrong, and what should it say?",
+                 "What did their letter get wrong, and what should it say?", "textarea", "free_text",
+                 help="Filled in from Letter review: each Fact marked Not right, and what it should be.",
+                 review_only=True),
+    )),
 ))
+CORRECTIONS = "letter_corrections"   # the review-only question Letter review's corrections are answers to
+
+# The questions a letter's Facts of a resource answer, so the short questionnaire skips them. Birth month, postcode,
+# travel, allergies and contact are always asked.
+_LETTER_ANSWERS: dict[FactResource, tuple[str, ...]] = {
+    FactResource.CONDITION: ("diagnosis", "diagnosis_when"),
+    FactResource.MEDICATION_STATEMENT: ("medicines",),
+}
+
+
+def answered_by_letter(resources: set[FactResource]) -> frozenset[str]:
+    """The question ids a letter's Facts of these resources answer: the short questionnaire skips them."""
+    return frozenset(qid for r in resources for qid in _LETTER_ANSWERS.get(r, ()))
+
+
+def kept_from(previous: dict[str, Any], answers: dict[str, Any], hidden: frozenset[str]) -> dict[str, Any]:
+    """`answers` with each hidden question it leaves blank answered as before: a question the form did not show (the
+    letter answers it, or it is review-only) keeps its earlier answer, so a save never withdraws it."""
+    blank = {qid for qid in hidden | {q.id for q in DEFINITION.questions() if q.review_only}
+             if answers.get(qid) is None or (isinstance(answers[qid], str) and not answers[qid].strip())}
+    return {**answers, **{qid: previous[qid] for qid in blank if qid in previous}}
 
 # Structured question → (resource, subject). Options listed here are answered but make no Fact.
 _FACTS: dict[str, tuple[FactResource, str]] = {
@@ -307,9 +335,23 @@ def structured_drafts(answers: dict[str, Any], respondent: Respondent, pages: tu
 
 
 def skipped(pages: tuple[Page, ...]) -> frozenset[str]:
-    """Question numbers ("Q9") a questionnaire Document shows as not answered."""
+    """Question numbers ("Q9") a questionnaire Document shows as not answered. A review-only question is never
+    skipped: a save that leaves it blank keeps the corrections given in Letter review."""
     return frozenset(q.ref for q in DEFINITION.questions()
-                     if q.use in ("fact", "free_text") and q.id not in answers_from_pages(pages))
+                     if q.use in ("fact", "free_text") and not q.review_only and q.id not in answers_from_pages(pages))
+
+
+def correction_line(draft: DraftFact, said: str) -> str:
+    """One Letter review correction as part of the letter_corrections answer: the Fact the letter was read as, then
+    what the Respondent says it should be."""
+    read = " ".join(x for x in (draft.value, draft.unit) if x)
+    return f"{draft.subject} (the letter was read as {read}): {said}"
+
+
+def with_corrections(earlier: str | None, said: list[str]) -> str:
+    """The letter_corrections answer with new corrections after any earlier ones, on one line ("; " between them),
+    as an answer is stored on its page."""
+    return "; ".join([*([earlier] if earlier else []), *said])
 
 
 def answers_from_pages(pages: tuple[Page, ...]) -> dict[str, Any]:
@@ -332,6 +374,22 @@ def answers_from_pages(pages: tuple[Page, ...]) -> dict[str, Any]:
             else:
                 answers[q.id] = text
     return answers
+
+
+def cited_answer(page_text: str, ref: str, quote: str) -> CitedAnswer | None:
+    """The answer to question `ref` on a rendered questionnaire page, with where `quote` sits in it (matched ignoring
+    case). The wording is read from the page, so it is the one the Respondent was shown. None when the page does not
+    have that question answered."""
+    lines = page_text.split("\n")
+    for line, nxt in zip(lines, lines[1:]):
+        number, _, wording = line.partition(". ")
+        if number != ref or not nxt.startswith("Answer: ") or nxt == f"Answer: {_NOT_ANSWERED}":
+            continue
+        text = nxt.removeprefix("Answer: ")
+        start = text.lower().find(quote.strip().lower()) if quote.strip() else -1
+        return CitedAnswer(wording=wording, text=text, quote_start=start if start >= 0 else None,
+                           quote_end=start + len(quote.strip()) if start >= 0 else None)
+    return None
 
 
 def document_hash(patient_id: PatientId, pages: tuple[Page, ...], respondent: Respondent,

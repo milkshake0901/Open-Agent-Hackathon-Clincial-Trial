@@ -70,9 +70,16 @@ async def commit_profile_version(wm: "WorldModel", patient_id: "PatientId", doc:
     for d in drafts:
         source = Provenance(kind="file", at=d.observed_on.isoformat(), by="record",
                             url=f"doc:{doc.hash}#page={d.page}", checksum=doc.hash, run_id=run_id)
+        value = {"value": d.value, "unit": d.unit, "resource": str(d.resource), "page": d.page, "quote": d.quote,
+                 "question": d.question}
+        if d.span_id is not None:   # only when set: a Fact's id is derived from its value, so others keep theirs
+            value["span_id"] = d.span_id
+        if d.flags:                 # likewise
+            value["flags"] = list(d.flags)
+        if d.checked:               # likewise: only a letter Fact the Respondent checked in Letter review
+            value["checked"] = True
         fact = await wm.assert_fact(about=about, predicate=d.subject, source=source, context=f"doc:{doc.hash}",
-                                    value={"value": d.value, "unit": d.unit, "resource": str(d.resource),
-                                           "page": d.page, "quote": d.quote, "question": d.question})
+                                    value=value)
         new_ids.append(fact.id)
     previous = set(profiles[-1].attrs["fact_ids"]) if profiles else set()
     snap = await wm.snapshot(entities=[about], source=doc_source, attrs={
@@ -200,7 +207,8 @@ async def record_verdict(wm: "WorldModel", patient_id: "PatientId", verdict: "Ve
             "degraded": verdict.degraded,
             "results": [{"criterion_id": r.criterion_id, "outcome": str(r.outcome),
                          "fact_id": r.citation.fact_id if r.citation else None, "rationale": r.rationale,
-                         "ask": r.ask} for r in verdict.results],
+                         "ask": r.ask, "context_fact_ids": [c.fact_id for c in r.context_facts]}
+                        for r in verdict.results],
             "questions": [{"criterion_id": q.criterion_id, "subject": q.subject, "text": q.text}
                           for q in verdict.questions],
             "respondent_questions": [{"criterion_id": q.criterion_id, "question_id": q.question_id,

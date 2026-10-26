@@ -92,13 +92,14 @@ class PgEventStore:
 # them, so they truncate together without CASCADE.
 PROJECTED_TABLES = ("fact", "profile_version", "profile_version_fact", "trial", "trial_condition", "criterion",
                     "trial_site", "trial_contact", "trial_outcome", "trial_outcome_value", "trial_publication",
-                    "outcome_summary", "verdict", "criterion_result", "doctor_question", "respondent_question")
+                    "outcome_summary", "verdict", "criterion_result", "criterion_result_context", "doctor_question",
+                    "respondent_question")
 
 
 async def rebuild_projections(writer: "PgWriter", namespace: str) -> int:
     """Truncate the projected tables and replay the namespace's wm_event log through the projector, in one
-    transaction, proving they are derived from the World Model (scripts/rebuild_projections.py). The app uses one
-    namespace; projections of any other are not replayed. Returns the number of events replayed."""
+    transaction, proving they are derived from the World Model (backend/scripts/rebuild_projections.py). The app
+    uses one namespace; projections of any other are not replayed. Returns the number of events replayed."""
     from app.worldmodel import projector
 
     events = await PgEventStore(writer, namespace).load(namespace)

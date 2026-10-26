@@ -34,9 +34,11 @@ async def add_document(pid: str, file: UploadFile, background: BackgroundTasks, 
                           deduplicated=registered.deduplicated)
 
 
-async def start_ingest(ctx: Ctx, background: BackgroundTasks, registered: record.Registered) -> trace.RunId:
+async def start_ingest(ctx: Ctx, background: BackgroundTasks, registered: record.Registered, *,
+                       otherwise: record.ProfileVersionId | None = None) -> trace.RunId:
     """The run that follows a registered Document: an earlier run for it unless that one was rejected, else a new
-    run opened now, whose ingest (then Re-scan on Committed, same correlation id) runs in the background."""
+    run opened now, whose ingest (then Re-scan on Committed, same correlation id) runs in the background. `otherwise`:
+    the version to Re-scan instead when this ingest does not commit (a Letter review's letter, under its corrections)."""
     doc = registered.document
     if registered.deduplicated:
         earlier = await trace.latest_for_document(ctx.ui_reader, doc.hash)
@@ -44,16 +46,21 @@ async def start_ingest(ctx: Ctx, background: BackgroundTasks, registered: record
             return earlier
     run_id = trace.new_id()
     await trace.open(ctx.writer, run_id, "ingest", patient_id=doc.patient_id, document_hash=doc.hash)
-    background.add_task(_ingest, ctx, doc.hash, run_id)
+    background.add_task(_ingest, ctx, doc.hash, run_id, otherwise)
     return run_id
 
 
-async def _ingest(ctx: Ctx, h: record.DocumentHash, run_id: trace.RunId) -> None:
+async def _ingest(ctx: Ctx, h: record.DocumentHash, run_id: trace.RunId,
+                  otherwise: record.ProfileVersionId | None = None) -> None:
     try:
         outcome = await record.ingest(ctx, h, run_id=run_id)
     except Exception:   # the run must still end, or the UI would wait on it for ever
         log.exception("ingest of %s failed", h)
         await trace.append(ctx.writer, run_id, RunRejected(actor="record", reason="the Document could not be checked"))
+        if otherwise is not None:
+            await matching.rescan(ctx, otherwise, correlation_id=run_id)
         raise
     if isinstance(outcome, record.Committed):
         await matching.rescan(ctx, outcome.version.id, correlation_id=run_id)
+    elif otherwise is not None:
+        await matching.rescan(ctx, otherwise, correlation_id=run_id)

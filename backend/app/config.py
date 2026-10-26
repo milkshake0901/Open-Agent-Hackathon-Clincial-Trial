@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-_REPO = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[2]   # holds .env, data/raw, data/media; backend/scripts/ anchor to it
 NEMOTRON_LIGHTNING = "nvidia/nemotron-3.5-lightning-30b-a3b"   # listed by this box's GET /v1/models
 NEMOTRON_ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"
 
@@ -27,8 +27,14 @@ class Settings(BaseSettings):
     nvidia_parse_model: str = "nvidia/nemotron-parse"
     # lane → Nightshift model id, pinned rather than meterless/* so the model behind each agent is fixed (DEVELOPER.md).
     # All on Ultra: Lightning stops at ~60 s on the Intake prompt and is switched off in this box's Compute sources.
-    # Once it is on, move judge to Lightning so a second model checks the Matcher. Override with LANE_MODELS='{...}'.
+    # Judge stays on Ultra too: Lightning on NVIDIA's API took 85-113 s per judge call (DEVELOPER.md). Override with
+    # LANE_MODELS='{...}'.
     lane_models: dict[str, str] = {"fast": NEMOTRON_ULTRA, "deep": NEMOTRON_ULTRA, "judge": NEMOTRON_ULTRA}
+    # Lanes sent straight to NVIDIA's API instead of Nightshift (app/llm/direct.py), only when NVIDIA_API_KEY is set.
+    # None by default; DIRECT_LANES='{"judge": "nvidia/nemotron-3.5-lightning-30b-a3b"}' puts the judge on Lightning.
+    nvidia_api_key: str = ""
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    direct_lanes: dict[str, str] = {}
 
     media_dir: str = "data/media"             # generated images and audio; gitignored
     media_privacy: str = "local-only"         # floor for media source jobs: local-only | edge-only | cloud-ok
@@ -39,10 +45,10 @@ class Settings(BaseSettings):
     zetaris_visibility_wait_s: float = 5.0
 
     raw_documents_dir: str = "data/raw"       # gitignored
-    trials_snapshot_dir: str = str(_REPO / "data" / "trials_snapshot")   # saved Trials, loaded at start-up (#12)
+    trials_snapshot_dir: str = str(REPO_ROOT / "data" / "trials_snapshot")   # saved Trials, loaded at start-up (#12)
 
     # every pipeline step and model call, one JSON object per line (app/logfile.py, #35); gitignored
-    log_file: str = str(_REPO / "data" / "logs" / "trialmatch.jsonl")
+    log_file: str = str(REPO_ROOT / "data" / "logs" / "trialmatch.jsonl")
     log_max_bytes: int = 10_000_000           # rotated at this size, keeping log_backups old files (.1, .2, ...)
     log_backups: int = 5
 

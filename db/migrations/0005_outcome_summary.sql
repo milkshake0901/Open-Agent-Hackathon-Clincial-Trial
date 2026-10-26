@@ -1,7 +1,7 @@
 -- db/migrations/0005_outcome_summary.sql — adds outcome_summary (#26), the cache of plain-language Outcome summaries,
 -- to a database created from an older db/schema.sql. Additive only. Safe to run twice. New databases don't need it;
 -- db/schema.sql already has it. Summaries are written the first time a Closed trial's Outcomes are opened, so the
--- table starts empty; scripts/rebuild_projections.py refills it from the World Model event log.
+-- table starts empty; backend/scripts/rebuild_projections.py refills it from the World Model event log.
 --
 --   docker exec -i open-agent-hackathon-clincial-trial-postgres-1 \
 --     psql -U trialmatch -d trialmatch -v ON_ERROR_STOP=1 < db/migrations/0005_outcome_summary.sql

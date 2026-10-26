@@ -1,0 +1,77 @@
+{
+  "about": "Invented, de-identified Region data in the shape of a 3-page narrative oncology letter. No real person, hospital or number. Boxes are fractions of the page, origin top left.",
+  "pages": [
+    {
+      "number": 1,
+      "regions": [
+        {"kind": "Page-header", "text": "Fernhill Cancer Centre NHS Foundation Trust", "box": [0.08, 0.03, 0.62, 0.06]},
+        {"kind": "Caption", "text": "OC.9081726", "box": [0.74, 0.03, 0.93, 0.06]},
+        {"kind": "Text", "text": "Department of Uro-oncology\nKestrel Lane\nWexford Green WG4 7TL", "box": [0.62, 0.08, 0.93, 0.15]},
+        {"kind": "Text", "text": "Dictated: 23/11/23\nTyped: 27/11/23", "box": [0.08, 0.16, 0.40, 0.20]},
+        {"kind": "Text", "text": "Dr Imogen Castell\nAshby Road Surgery\n41 Ashby Road\nWexford Green WG2 9QB", "box": [0.08, 0.21, 0.48, 0.29]},
+        {"kind": "Title", "text": "Re: HARLOW, DESMOND Age:66 Sex:M P482913(4)", "box": [0.08, 0.31, 0.80, 0.34]},
+        {"kind": "Text", "text": "DOB: 14/03/1957 NHS No: 943 552 7781\n18 Juniper Close, Wexford Green WG7 3RN", "box": [0.08, 0.34, 0.80, 0.38]},
+        {"kind": "Section-header", "text": "Diagnosis", "box": [0.08, 0.40, 0.30, 0.42]},
+        {"kind": "List-item", "text": "1. Metastatic castration-resistant prostate cancer (mCRPC)", "box": [0.10, 0.43, 0.85, 0.45]},
+        {"kind": "List-item", "text": "2. Adenocarcinoma of the prostate, Gleason 4+4=8, diagnosed on TRUS biopsy 7/2/23", "box": [0.10, 0.45, 0.88, 0.48]},
+        {"kind": "List-item", "text": "3. Presenting PSA 86 ng/mL on 30/1/23", "box": [0.10, 0.48, 0.70, 0.50]},
+        {"kind": "List-item", "text": "4. Bone metastases: left iliac bone, T9 and L2 vertebrae on bone scan 21/2/23", "box": [0.10, 0.50, 0.88, 0.53]},
+        {"kind": "List-item", "text": "5. Enlarged pelvic lymph nodes on CT 21/2/23, largest 14 mm", "box": [0.10, 0.53, 0.80, 0.55]},
+        {"kind": "Section-header", "text": "Treatment to date", "box": [0.08, 0.57, 0.40, 0.59]},
+        {"kind": "List-item", "text": "Androgen deprivation therapy with Enantone (leuprorelin) 3-monthly injections, started 1/3/23", "box": [0.10, 0.60, 0.90, 0.63]},
+        {"kind": "List-item", "text": "Bicalutamide 50 mg daily for flare cover, 1/3/23 to 28/3/23", "box": [0.10, 0.63, 0.80, 0.65]},
+        {"kind": "List-item", "text": "Docetaxel 75 mg/m2, six cycles, completed 9/8/23", "box": [0.10, 0.65, 0.75, 0.67]},
+        {"kind": "Section-header", "text": "Other medical history", "box": [0.08, 0.69, 0.42, 0.71]},
+        {"kind": "List-item", "text": "Hypertension", "box": [0.10, 0.72, 0.40, 0.74]},
+        {"kind": "List-item", "text": "Type 2 diabetes mellitus, diet controlled", "box": [0.10, 0.74, 0.60, 0.76]},
+        {"kind": "List-item", "text": "Left total hip replacement 2016", "box": [0.10, 0.76, 0.55, 0.78]},
+        {"kind": "Picture", "text": "||| ||||| || ||| OC.9081726", "box": [0.70, 0.86, 0.93, 0.90]},
+        {"kind": "Page-footer", "text": "Fernhill Cancer Centre, Kestrel Lane, Wexford Green WG4 7TL  Tel 01632 960 418", "box": [0.08, 0.93, 0.92, 0.96]},
+        {"kind": "Page-footer", "text": "Page 1 of 3", "box": [0.80, 0.96, 0.92, 0.98]}
+      ]
+    },
+    {
+      "number": 2,
+      "regions": [
+        {"kind": "Page-header", "text": "Re: HARLOW, DESMOND P482913(4)", "box": [0.08, 0.03, 0.60, 0.06]},
+        {"kind": "Caption", "text": "OC.9081726", "box": [0.74, 0.03, 0.93, 0.06]},
+        {"kind": "Text", "text": "Dear Dr Castell,", "box": [0.08, 0.08, 0.40, 0.10]},
+        {"kind": "Text", "text": "I reviewed Mr Harlow in clinic today with his wife. He was diagnosed in February this year after presenting with urinary frequency and back pain. His PSA fell from 86 to a nadir of 1.9 ng/mL on 12/6/23 on androgen deprivation with Enantone and six cycles of docetaxel.", "box": [0.08, 0.11, 0.92, 0.22]},
+        {"kind": "Text", "text": "Unfortunately his PSA has since risen on three consecutive readings: 3.4 ng/mL on 4/9/23, 6.8 ng/mL on 16/10/23 and 11.2 ng/mL on 20/11/23. He remains on Enantone. I note that no recent testosterone level is available.", "box": [0.08, 0.23, 0.92, 0.33]},
+        {"kind": "Text", "text": "A PSMA PET-CT on 14/11/23 showed new uptake in the right sixth rib and the sacrum, in addition to the known T9 and L2 lesions. There is no visceral disease. The pelvic nodes are smaller than on the CT of 21/2/23.", "box": [0.08, 0.34, 0.92, 0.43]},
+        {"kind": "Text", "text": "He reports mild aching in the lower back, managed with paracetamol, and some fatigue. He is fully independent and still walks his dog daily. I would estimate his ECOG performance status at 1.", "box": [0.08, 0.44, 0.92, 0.52]},
+        {"kind": "Text", "text": "On examination his weight was 82 kg and blood pressure 142/86. There was no spinal tenderness and no neurological deficit in the legs.", "box": [0.08, 0.53, 0.92, 0.59]},
+        {"kind": "Table", "text": "| Test | Result | Date |\n| Haemoglobin | 128 g/L | 20/11/23 |\n| Neutrophils | 3.1 x10^9/L | 20/11/23 |\n| Platelets | 245 x10^9/L | 20/11/23 |\n| Creatinine | 96 umol/L | 20/11/23 |\n| eGFR | 72 mL/min | 20/11/23 |\n| ALT | 24 U/L | 20/11/23 |\n| Bilirubin | 9 umol/L | 20/11/23 |\n| Alkaline phosphatase | 168 U/L | 20/11/23 |", "box": [0.08, 0.60, 0.80, 0.82]},
+        {"kind": "Picture", "text": "||| ||||| || ||| OC.9081726", "box": [0.70, 0.86, 0.93, 0.90]},
+        {"kind": "Page-footer", "text": "Fernhill Cancer Centre, Kestrel Lane, Wexford Green WG4 7TL  Tel 01632 960 418", "box": [0.08, 0.93, 0.92, 0.96]},
+        {"kind": "Page-footer", "text": "Page 2 of 3", "box": [0.80, 0.96, 0.92, 0.98]}
+      ]
+    },
+    {
+      "number": 3,
+      "regions": [
+        {"kind": "Page-header", "text": "Re: HARLOW, DESMOND P482913(4)", "box": [0.08, 0.03, 0.60, 0.06]},
+        {"kind": "Caption", "text": "OC.9081726", "box": [0.74, 0.03, 0.93, 0.06]},
+        {"kind": "Section-header", "text": "Current medication", "box": [0.08, 0.08, 0.40, 0.10]},
+        {"kind": "List-item", "text": "Enantone (leuprorelin) 11.25 mg every 3 months, last given 30/10/23", "box": [0.10, 0.11, 0.85, 0.13]},
+        {"kind": "List-item", "text": "Amlodipine 5 mg once daily", "box": [0.10, 0.13, 0.55, 0.15]},
+        {"kind": "List-item", "text": "Atorvastatin 20 mg at night", "box": [0.10, 0.15, 0.55, 0.17]},
+        {"kind": "List-item", "text": "Paracetamol 1 g up to four times daily as needed", "box": [0.10, 0.17, 0.70, 0.19]},
+        {"kind": "List-item", "text": "Calcium and vitamin D (Adcal-D3) one tablet twice daily", "box": [0.10, 0.19, 0.75, 0.21]},
+        {"kind": "Section-header", "text": "Allergies", "box": [0.08, 0.23, 0.30, 0.25]},
+        {"kind": "Text", "text": "Penicillin (rash)", "box": [0.10, 0.26, 0.45, 0.28]},
+        {"kind": "Section-header", "text": "Social history", "box": [0.08, 0.30, 0.35, 0.32]},
+        {"kind": "Text", "text": "Retired electrician. Lives with his wife. Ex-smoker, stopped in 1998, 20 pack-years. Drinks around 10 units of alcohol a week.", "box": [0.08, 0.33, 0.92, 0.38]},
+        {"kind": "Section-header", "text": "Plan", "box": [0.08, 0.40, 0.25, 0.42]},
+        {"kind": "Text", "text": "Mr Harlow has castration-resistant disease progressing after docetaxel. We discussed enzalutamide and abiraterone, and he is interested in a clinical trial if one is suitable. I have requested a testosterone level and a repeat PSA before his next clinic visit on 8/1/24.", "box": [0.08, 0.43, 0.92, 0.53]},
+        {"kind": "Text", "text": "He is due his next Enantone injection on 29/1/24. Zoledronic acid was discussed but deferred pending a dental review.", "box": [0.08, 0.54, 0.92, 0.59]},
+        {"kind": "Text", "text": "Yours sincerely,", "box": [0.08, 0.62, 0.35, 0.64]},
+        {"kind": "Text", "text": "Dr Rowan Penhallow\nConsultant Medical Oncologist", "box": [0.08, 0.70, 0.55, 0.74]},
+        {"kind": "Text", "text": "cc: Mr Desmond Harlow, 18 Juniper Close, Wexford Green WG7 3RN", "box": [0.08, 0.77, 0.80, 0.79]},
+        {"kind": "Picture", "text": "||| ||||| || ||| OC.9081726", "box": [0.70, 0.86, 0.93, 0.90]},
+        {"kind": "Page-footer", "text": "Fernhill Cancer Centre, Kestrel Lane, Wexford Green WG4 7TL  Tel 01632 960 418", "box": [0.08, 0.93, 0.92, 0.96]},
+        {"kind": "Page-footer", "text": "Page 3 of 3", "box": [0.80, 0.96, 0.92, 0.98]}
+      ]
+    }
+  ]
+}

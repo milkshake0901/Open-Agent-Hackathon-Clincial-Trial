@@ -1,53 +1,53 @@
 "use client";
 
-// A generic renderer for the Intake questionnaire definition served by the backend. No question is
+// The home journey. A generic renderer for the Intake questionnaire definition served by the backend: no question is
 // hard-coded here except the one that says who is answering, whose answer switches "your" / "their".
+//   1. Start from a letter (optional): it is read in the background.
+//   2. The short questionnaire: it skips what the letter's Facts answer, and saves without waiting for the letter.
+//   3. Letter review, when the letter is ready.
+//   4. The Diagnosis check, once the letter's and the questionnaire's Facts are committed.
+//   5. Trials.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ConflictDialog } from "./conflict-dialog";
 import { DiagnosisCheckCard } from "./diagnosis-check";
-import { LetterFill } from "./letter-fill";
+import { LetterProgress, LetterStart, type LetterChoice } from "./letter-start";
+import { LetterReview } from "./letter-review";
 import { ReturnLink } from "./return-link";
 import { AddDocuments } from "./documents";
 import {
-  api, followRun, trialsHref, type Answers, type Question, type Questionnaire, type Respondent, type VersionDiff,
-  type VersionOut,
+  api, followRun, trialsHref, type Answers, type IntakeStatus, type Question, type Questionnaire, type Respondent,
+  type VersionDiff, type VersionOut,
 } from "@/lib/api";
 
 const RESPONDENT_QUESTION = "respondent";
-// Intake reads the answers, and a long referral can take a couple of minutes. The bar approaches 90% on
-// that clock, then the page moves on when the save actually finishes.
-const SAVE_MS = 120_000;
-
-function saveFraction(elapsedMs: number): number {
-  return Math.min(0.9, 0.08 + (elapsedMs / SAVE_MS) * 0.82);
-}
+const POLL_MS = 2000;
 
 type Status =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ready"; definition: Questionnaire };
 
+// The questionnaire's own save, after its 202: recorded once its run commits (it may wait for the letter's reading).
+type Saved = { kind: "recording" } | { kind: "recorded"; version: VersionOut } | { kind: "failed"; reason: string };
+
+const blank = (v: string | undefined) => v === undefined || !v.trim();
+
 export function QuestionnaireForm() {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [answers, setAnswers] = useState<Answers>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [version, setVersion] = useState<VersionOut | null>(null);
+  const [saved, setSaved] = useState<Saved | null>(null);
   const [changes, setChanges] = useState<VersionDiff | null>(null);
   const [patientId, setPatientId] = useState<string | null>(null);
   const [savedVersionId, setSavedVersionId] = useState<string | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [returnToken, setReturnToken] = useState<string | null>(null);
-  const [elapsedMs, setElapsedMs] = useState(0);
-
-  useEffect(() => {
-    if (!submitting) return;
-    const started = performance.now();
-    const id = window.setInterval(() => setElapsedMs(performance.now() - started), 200);
-    return () => window.clearInterval(id);
-  }, [submitting]);
+  const [letter, setLetter] = useState<LetterChoice | null>(null);
+  const [intake, setIntake] = useState<IntakeStatus | null>(null);
 
   useEffect(() => {
     api
@@ -55,6 +55,27 @@ export function QuestionnaireForm() {
       .then((definition) => setStatus({ kind: "ready", definition }))
       .catch((e: Error) => setStatus({ kind: "error", message: e.message }));
   }, []);
+
+  // Where the letters and the questionnaire stand, polled until every Document's Facts are committed.
+  useEffect(() => {
+    if (!patientId || intake?.ready) return;
+    const poll = () => api.intake(patientId).then(setIntake, () => {});
+    poll();
+    const id = window.setInterval(poll, POLL_MS);
+    // A hidden tab's timers are throttled, so look again as soon as the Respondent comes back to it.
+    const onVisible = () => { if (document.visibilityState === "visible") poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", poll);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", poll);
+    };
+  }, [patientId, intake?.ready]);
+
+  const refreshIntake = () => {
+    if (patientId) api.intake(patientId).then(setIntake, () => {});
+  };
 
   if (status.kind === "loading") return <p className="text-muted">Loading the questionnaire…</p>;
   if (status.kind === "error")
@@ -73,33 +94,44 @@ export function QuestionnaireForm() {
       return next;
     });
 
+  // The Respondent's own patient, created on first need: by adding a letter, or by the first save.
+  async function ensurePatient(): Promise<string> {
+    const id = patientId ?? (await api.createPatient("Web respondent")).patient_id;
+    setPatientId(id);
+    return id;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (status.kind !== "ready") return;
     setSubmitting(true);
-    setElapsedMs(0);
     setSubmitError(null);
     try {
       // A correction is a full resubmission for the same patient: a new Profile version.
-      const patient_id = patientId ?? (await api.createPatient("Web respondent")).patient_id;
-      setPatientId(patient_id);
+      const patient_id = await ensurePatient();
       const accepted = await api.submit(patient_id, {
         definition_version: status.definition.version,
         respondent,
         answers,
       });
       setReturnToken((t) => accepted.return_token ?? t); // issued on the first submission only
-      // The answers are checked in the background, like an added letter or report: follow the run.
-      const state = (await followRun(accepted.run_id)).state!;
-      if (state.phase !== "committed" || !state.profile_version_id) {
-        throw new Error(state.reason ?? "Your answers could not be recorded yet.");
-      }
-      const versionId = state.profile_version_id;
-      setVersion(await api.version(patient_id, versionId));
-      setChanges(savedVersionId && savedVersionId !== versionId
-        ? await api.diff(patient_id, versionId, savedVersionId)
-        : null);
-      setSavedVersionId(versionId);
+      setSaved({ kind: "recording" });
+      api.intake(patient_id).then(setIntake, () => {});
+      window.scrollTo({ top: 0 });
+      // Recorded in the background, after any letter still being read: follow the run without waiting here.
+      followRun(accepted.run_id).then(async (run) => {
+        const state = run.state!;
+        if (state.phase !== "committed" || !state.profile_version_id) {
+          setSaved({ kind: "failed", reason: state.reason ?? "Your answers could not be recorded yet." });
+          return;
+        }
+        const versionId = state.profile_version_id;
+        setSaved({ kind: "recorded", version: await api.version(patient_id, versionId) });
+        setChanges(savedVersionId && savedVersionId !== versionId
+          ? await api.diff(patient_id, versionId, savedVersionId)
+          : null);
+        setSavedVersionId(versionId);
+      }, (err: Error) => setSaved({ kind: "failed", reason: err.message }));
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -115,7 +147,7 @@ export function QuestionnaireForm() {
       // Prefill from the latest accepted submission, not from what this page happens to remember.
       const latest = await api.latestAnswers(patientId);
       setAnswers({ ...latest.answers, [RESPONDENT_QUESTION]: latest.respondent });
-      setVersion(null);
+      setSaved(null);
       setChanges(null);
       window.scrollTo({ top: 0 });
     } catch (err) {
@@ -125,28 +157,71 @@ export function QuestionnaireForm() {
     }
   }
 
-  if (version) {
+  // Step 1: a letter, or none.
+  if (letter === null && savedVersionId === null && saved === null) {
+    return <LetterStart ensurePatient={ensurePatient} onChosen={(choice) => {
+      setLetter(choice);
+      refreshIntake();
+    }} />;
+  }
+
+  const letterPhase = letter?.kind === "letter"
+    ? intake?.letters.find((l) => l.run_id === letter.runId)?.phase ?? null
+    : null;
+  const progress = letter?.kind === "letter" && <LetterProgress filename={letter.filename} phase={letterPhase} />;
+
+  if (saved) {
+    const ready = intake?.ready === true && saved.kind === "recorded";
+    const diagnosisKnown = !blank(answers.diagnosis) || (intake?.skip.includes("diagnosis") ?? false);
     return (
       <div className="flex flex-col gap-4">
-        {patientId && answers.diagnosis && <DiagnosisCheckCard key={version.id} patientId={patientId} />}
-        <ProfileSummary version={version} changes={changes} patientId={patientId} />
+        {progress}
+        {saved.kind === "recording" && (
+          <p role="status" className="rounded-xl border border-border bg-surface p-5">
+            Your answers are saved.{" "}
+            {letterPhase === "started" || letterPhase === "drafting"
+              ? "We'll record them once your letter has been read."
+              : "Recording them now…"}
+          </p>
+        )}
+        {saved.kind === "failed" && <p role="alert" className="text-red-700 dark:text-red-400">{saved.reason}</p>}
+        {/* Step 3: Letter review, or a Conflict to answer, for each letter waiting on the Respondent. */}
+        {intake?.letters.map((l) =>
+          l.phase === "awaiting_review"
+            ? <LetterReview key={l.run_id} runId={l.run_id} onDone={refreshIntake} />
+            : l.phase === "awaiting_patient"
+              ? <ConflictDialog key={l.run_id} runId={l.run_id} onDone={refreshIntake} />
+              : null)}
+        {/* Step 4: the Diagnosis check, once every Fact is committed. */}
+        {patientId && ready && diagnosisKnown && <DiagnosisCheckCard key={intake.profile_version_id} patientId={patientId} />}
+        {saved.kind === "recorded" && (
+          <ProfileSummary version={saved.version} changes={changes} patientId={patientId}
+                          trialsVersionId={ready ? intake.profile_version_id : null} />
+        )}
         {returnToken && <ReturnLink token={returnToken} />}
-        {patientId && <AddDocuments patientId={patientId} />}
+        {patientId && ready && <AddDocuments patientId={patientId} />}
         {editError && <p role="alert" className="text-red-700 dark:text-red-400">{editError}</p>}
-        <button type="button" onClick={onEdit} disabled={loadingEdit}
-                className="min-h-12 self-start rounded-lg border border-border px-5 text-base font-semibold disabled:opacity-60">
-          {loadingEdit ? "Opening your answers…" : "Edit answers"}
-        </button>
+        {saved.kind !== "recording" && (
+          <button type="button" onClick={onEdit} disabled={loadingEdit}
+                  className="min-h-12 self-start rounded-lg border border-border px-5 text-base font-semibold disabled:opacity-60">
+            {loadingEdit ? "Opening your answers…" : "Edit answers"}
+          </button>
+        )}
       </div>
     );
   }
 
+  // Step 2: the short questionnaire. A question the letter answers is set aside unless it was answered here.
+  const skip = new Set(intake?.skip ?? []);
+  const shown = (q: Question) => !q.review_only && !(skip.has(q.id) && blank(answers[q.id]));
+  const setAside = status.definition.sections.flatMap((s) => s.questions).filter((q) => !q.review_only && !shown(q));
+  const field = (q: Question) => (
+    <QuestionField key={q.id} question={q} respondent={respondent} value={answers[q.id]}
+                   onChange={(v) => set(q.id, v)} onClear={() => clear(q.id)} />
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
-      <LetterFill onFill={(letter) => {
-        setPatientId(letter.patient_id);
-        setAnswers((current) => ({ ...current, ...letter.answers }));
-      }} />
+      {progress}
       <p className="text-muted">Every question can be skipped. We never ask for a name or a street address.</p>
       {savedVersionId && (
         <p className="text-muted">
@@ -154,35 +229,23 @@ export function QuestionnaireForm() {
           Your postcode and contact details are not shown again; leave them blank to keep what you gave before.
         </p>
       )}
-      {status.definition.sections.map((section) => (
+      {setAside.length > 0 && (
+        <details className="rounded-xl border border-border bg-surface p-5">
+          <summary className="cursor-pointer font-medium">
+            Your letter answers {setAside.length === 1 ? "one question" : `${setAside.length} questions`}, so we
+            skip {setAside.length === 1 ? "it" : "them"}. Answer anyway
+          </summary>
+          <div className="mt-4 flex flex-col gap-5">{setAside.map(field)}</div>
+        </details>
+      )}
+      {status.definition.sections.filter((section) => section.questions.some(shown)).map((section) => (
         <section key={section.id} aria-labelledby={`section-${section.id}`}
                  className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-5">
           <h2 id={`section-${section.id}`} className="text-lg font-semibold">{section.title}</h2>
-          {section.questions.map((q) => (
-            <QuestionField key={q.id} question={q} respondent={respondent} value={answers[q.id]}
-                           onChange={(v) => set(q.id, v)} onClear={() => clear(q.id)} />
-          ))}
+          {section.questions.filter(shown).map(field)}
         </section>
       ))}
       {submitError && <p role="alert" className="text-red-700 dark:text-red-400">{submitError}</p>}
-      {submitting && (
-        <div className="flex flex-col gap-2">
-          <div
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(saveFraction(elapsedMs) * 100)}
-            aria-valuetext={`Saving your answers, ${Math.floor(elapsedMs / 1000)} seconds`}
-            className="h-1.5 overflow-hidden rounded-full bg-border"
-          >
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-200 ease-linear"
-              style={{ width: `${saveFraction(elapsedMs) * 100}%` }}
-            />
-          </div>
-          <p className="text-sm text-muted">Saving your answers, {Math.floor(elapsedMs / 1000)}s</p>
-        </div>
-      )}
       <button type="submit" disabled={submitting}
               className="min-h-12 rounded-lg bg-accent px-5 text-base font-semibold text-white dark:text-black disabled:opacity-60">
         {submitting ? "Saving your answers…" : "Save answers"}
@@ -247,18 +310,19 @@ export function QuestionField({ question: q, respondent, value, onChange, onClea
   );
 }
 
-function ProfileSummary({ version, changes, patientId }: {
+function ProfileSummary({ version, changes, patientId, trialsVersionId }: {
   version: VersionOut;
   changes: VersionDiff | null;
   patientId: string | null;
+  trialsVersionId: string | null; // the latest version, once every Fact is committed; Trials wait until then
 }) {
   return (
     <section aria-labelledby="profile-heading" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-4">
       <h2 id="profile-heading" className="text-lg font-semibold">Thank you. Your answers are saved as version {version.number}.</h2>
-      {patientId && (
+      {patientId && trialsVersionId && (
         <div className="flex flex-col gap-2">
-          <p>We are checking your answers against trials now. The list fills in as each trial is checked.</p>
-          <Link href={trialsHref(patientId, version.id)}
+          <p>We are checking your record against trials now. The list fills in as each trial is checked.</p>
+          <Link href={trialsHref(patientId, trialsVersionId)}
                 className="self-start min-h-12 inline-flex items-center rounded-lg bg-accent px-5 font-semibold text-white dark:text-black">
             See trials that might fit
           </Link>

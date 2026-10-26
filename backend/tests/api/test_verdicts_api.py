@@ -11,6 +11,7 @@ from app.main import app
 from tests.api.questionnaire_http import submit
 from tests.condition_term import tick_condition_term
 from app.llm.nightshift import FakeLLM
+from tests.review import use_all_as_read
 
 SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "trials_snapshot"
 
@@ -68,13 +69,14 @@ async def test_an_added_document_that_commits_a_new_version_rescans_it(clean_db,
     from app import record
     from app.config import Settings
     from tests.conftest import ADMIN_DSN, make_ctx
-    from tests.record.test_adding_documents import REFERRAL, REFERRAL_FACTS
+    from tests.fixtures.letters import intake_reading, recorded
+    from tests.record.test_adding_documents import PARSE, REFERRAL, REFERRAL_FACTS
 
-    judge = matcher_citing({})
+    judge, intake = matcher_citing({}), intake_reading(REFERRAL_FACTS)
 
     def respond(lane, system, user):
-        return {"facts": REFERRAL_FACTS} if lane == "fast" else judge(lane, system, user)
-    ctx = make_ctx(clean_db, FakeLLM(respond))
+        return intake(lane, system, user) if lane == "fast" else judge(lane, system, user)
+    ctx = make_ctx(clean_db, FakeLLM(respond), parser=recorded(*PARSE))
     ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
     await trials.load_snapshot(ctx, SNAPSHOT)
     app.state.ctx = ctx
@@ -87,7 +89,7 @@ async def test_an_added_document_that_commits_a_new_version_rescans_it(clean_db,
 
         added = await http.post(f"/api/patients/{patient}/documents",
                                  files={"file": ("referral.pdf", REFERRAL, "application/pdf")})
-        run = (await http.get(f"/api/runs/{added.json()['run_id']}")).json()
+        run = await use_all_as_read(http, added.json()["run_id"])
         assert run["state"]["version_number"] == 2
         v2 = run["state"]["profile_version_id"]
 

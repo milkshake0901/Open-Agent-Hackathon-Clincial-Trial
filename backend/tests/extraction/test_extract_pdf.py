@@ -8,7 +8,7 @@ import pypdfium2 as pdfium
 import pytest
 from langchain_core.messages import AIMessage
 
-from app.extraction import extract_pdf
+from app.extraction import NemotronParse, extract_pdf
 from app.extraction.client import MissingNvidiaKey, parse_client
 from app.extraction.parse import _as_blocks, _text_from_tool_calls
 from app.config import Settings
@@ -61,3 +61,9 @@ def test_tool_call_blocks_are_read_top_to_bottom():
 def test_parse_client_refuses_a_missing_key():
     with pytest.raises(MissingNvidiaKey):
         parse_client(Settings(nvidia_parse_api_key=""))
+
+
+def test_the_production_parser_needs_its_key_only_when_it_reads():
+    parser = NemotronParse(Settings(_env_file=None, nvidia_parse_api_key=""))   # what startup builds: no error
+    with pytest.raises(MissingNvidiaKey):
+        parser.read(_blank_pdf(1))

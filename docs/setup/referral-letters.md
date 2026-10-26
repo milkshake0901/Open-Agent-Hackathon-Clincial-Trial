@@ -1,32 +1,38 @@
 # Referral letters and trial questions
 
-A scanned referral can fill the home questionnaire, and the record page can ask one stored Australian trial a question against that letter. Zetaris reads the trial criteria and the letter regions. The model answers from those words and has to cite a region that is actually on the letter.
+A referral letter or report added on the home page is read into Regions. On the Trials page each recruiting trial takes a free-form question about it, for any condition. Zetaris reads the trial criteria and the patient's Regions. The model answers from those words and has to cite a Region that is actually in one of the patient's documents.
 
-This does not save a Verdict. The Matcher still judges Facts through the usual Re-scan once a Condition term is ticked.
+The answer is not saved and never changes a Verdict. The Matcher still judges Facts through the usual Re-scan once a Condition term is ticked.
 
 ## What you can do in the app
 
 The frontend is `http://localhost:3001`. The API is `http://127.0.0.1:8000`.
 
-**Home (`/`).** "Start from a referral letter" takes a PDF. "Fill answers from this letter" parses it and fills who is answering, sex, when diagnosed, the diagnosis, treatments, and medicines now. Birth month, postcode, travel, allergies, and contact stay blank. Check the fields, then save. Saving still runs Intake and can take a few minutes; the bar on the button is only a clock. A letter already parsed is listed under "Already read" and fills the form without parsing again.
+**Home (`/`).** One journey, in five steps:
 
-**Record (`/record`).** This lists stored Australian trials whose condition name matches metastatic castration-resistant prostate cancer, including the short form mCRPC. Open trials are still taking people. Past trials are under the disclosure. On each open trial:
+1. **Start from a letter (optional).** A PDF is added to the Respondent's own record and read in the background: page by page into Regions, then the Intake agent drafts its Facts, each citing the Region it quotes. "I don't have a letter" goes straight on.
+2. **The short questionnaire.** It skips what the letter's Facts answer (the diagnosis, when diagnosed, medicines now) once the letter is read; birth month, postcode, travel, allergies and contact are always asked. "Answer anyway" shows the skipped ones. Saving doesn't wait for the letter. A skipped question, and the Letter review corrections (Q16), keep their earlier answers when a later save leaves them blank.
+3. **Letter review**, when the letter is ready: keep or drop each drafted Fact beside its Region, or use them all as read.
+4. **Diagnosis check**, once the letter's and the questionnaire's Facts are committed. It reads the questionnaire's diagnosis answer, otherwise the letter's Condition Fact quotes. The Respondent still ticks the Condition labels.
+5. **Trials.**
+
+**Trials (`/trials?patient=<id>&version=<id>`).** Opened from the home page once the answers are saved and the diagnosis step is done. Under each recruiting trial, **Ask a question of this trial** opens the question:
 
 - **Am I eligible?** and **What should I gather before applying?** send that question.
 - The box under them sends whatever you type. One trial at a time. A call is often about 40 seconds and can fail around 60 seconds if Nightshift returns `502 Load failed`.
-- **Exclusion criteria the letter shows** lists an exclusion only when two things are true: the quoted line is copied from that trial's stored exclusion, and the letter region it names is real. A line the model invents is dropped.
-- **Show on the letter** loads the page image and draws a box on each cited region. Clicking an exclusion line opens that page.
+- **Exclusion criteria your documents show** lists an exclusion only when two things are true: the quoted line is copied from that trial's stored exclusion, and the Region it names is real. A line the model invents is dropped.
+- **Where your documents say this** lists each cited Region. Clicking one, or an exclusion line, opens the side panel with that page and every cited Region on it boxed.
 
-The record page uses patient `pt_referral_20260209` unless the URL is `/record?patient=<id>`.
+The question needs at least one document read into Regions; without one the page asks you to add a letter or report first.
 
 ## How a question is answered
 
 1. Zetaris reads the trial, its criteria, and this patient's `document_span` rows (`ctx.agent_reader`). The page image is read from Postgres, and the PDF bytes never go to Zetaris.
-2. One Nightshift call on the deep lane (Nemotron 3 Ultra) sees the question, the criteria, and the letter's Text regions.
-3. The reply is checked in code. A region id that is not on the letter is dropped. An exclusion is kept only when its clause is a verbatim excerpt of the stored criterion and its region is real. A firm eligible or excluded answer with no real region becomes "More information is needed".
+2. One Nightshift call on the deep lane (Nemotron 3 Ultra) sees the question, the criteria, and the patient's Regions of the kinds Intake reads: Text, Title, Section-header, List-item, Table and Caption. Page headers, page footers and pictures are letterhead, never shown. A structured report's findings are often List-items or a Table.
+3. The reply is checked in code. A Region id that is not one of the patient's Regions is dropped. An exclusion is kept only when its clause is a verbatim excerpt of the stored criterion and its region is real. A firm eligible or excluded answer with no real region becomes "More information is needed".
 4. A clock tool measures washouts. When an exclusion says a treatment must not have been given within N days, weeks, or months, the tool reads the dates on the letter and subtracts them from today. If the latest date is outside that window, that exclusion is not listed. The page shows the date, the number of days, and the window. An exclusion with no time window is left as written.
 
-`fact.span_id` is there for a Fact that quotes a region. Questionnaire Facts leave it null. The trial question reads the regions directly. It does not wait for Intake to commit Facts.
+`fact.span_id` is set for a Fact Intake read from a letter's Region. Questionnaire Facts leave it null. The trial question reads the Regions directly. It does not wait for Intake to commit Facts.
 
 ## Run it
 
@@ -47,14 +53,14 @@ cd frontend && npm install && npm run dev
 
 There is no `--reload`. Restart the API after a schema or code change. Restart it after `REGISTER DATASOURCE TABLES` as well: column types are read once at startup.
 
-To parse one PDF from the command line instead of the form:
+To parse one PDF from the command line instead of the form (for `screen_referral.py`, which reads that patient):
 
 ```bash
 doppler run --project open-agent-hackathon --config dev_personal -- \
-  backend/.venv/bin/python scripts/load_referral.py path/to/referral.pdf
+  backend/.venv/bin/python backend/scripts/load_referral.py path/to/referral.pdf
 ```
 
-That script stores the letter on patient `pt_referral_20260209`. The form upload gives a new patient id from the file bytes. The PDF is kept under `data/raw/`, which is gitignored. Do not commit it.
+That script stores the letter on patient `pt_referral_20260209`. The form upload adds it to the Respondent's own patient instead. The PDF is kept under `data/raw/`, which is gitignored. Do not commit it.
 
 ## Doppler
 
@@ -95,7 +101,6 @@ Re-run that after any new table or column. `document_span` has to be visible or 
 |---|---|
 | Parse a PDF into regions | `backend/app/extraction/parse.py` |
 | Store the letter and its regions | `backend/app/record/referral.py` |
-| Fill questionnaire fields from regions | `backend/app/record/prefill.py`, `POST /api/referrals` |
-| Stored mCRPC list | `GET /api/trials/matching` |
-| One question about one trial | `backend/app/matching/letter.py` `ask_trial`, `POST /api/patients/{id}/trials/{nct}/ask` |
-| Page image and boxes | `GET /api/documents/{hash}/pages/{n}/image`, `frontend/src/app/record/matching.tsx` |
+| What the short questionnaire skips, and when the letter is ready | `backend/app/record/__init__.py` `intake_status`, `GET /api/patients/{id}/intake` |
+| One question about one trial | `backend/app/matching/letter.py` `ask_trial`, `POST /api/patients/{id}/trials/{nct}/ask`, `frontend/src/app/trials/trial-question.tsx` |
+| Page image and boxes | `GET /api/documents/{hash}/pages/{n}/image`, `GET /api/documents/{hash}/regions`, `frontend/src/app/region-page.tsx` |

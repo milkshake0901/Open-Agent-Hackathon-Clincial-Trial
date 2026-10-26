@@ -16,7 +16,7 @@ from app.llm import Lane, complete
 from app.matching.clock import Washout, clock_text, measure
 from app.matching.types import CriterionResult, Outcome, ValidatedResults
 from app.matching.verdict import derive_outcome
-from app.record import LetterSpan, PatientId, letter_spans
+from app.record import INTAKE_KINDS, LetterSpan, PatientId, letter_spans
 from app.trials import Criterion, NctId
 from app import trials
 
@@ -208,9 +208,11 @@ def _cite(span: LetterSpan) -> TrialCitation:
 
 def ask_prompt(question: str, title: str, criteria: tuple[Criterion, ...], spans: tuple[LetterSpan, ...],
                today: date) -> str:
-    """Text regions only. Captions and footers are letterhead, not evidence. The clock is already calculated."""
+    """The Regions the Intake agent reads (INTAKE_KINDS): a report's findings are often List-items or a Table, so
+    reading only Text would hide them. Page headers, page footers and pictures are letterhead, not evidence.
+    The clock is already calculated for today."""
     criteria_lines = [f"[{c.id}] {c.kind}: {' '.join(c.text.split())}" for c in criteria] or ["(no criteria stored)"]
-    regions = _regions(tuple(span for span in spans if span.kind == "Text"))
+    regions = _regions(tuple(span for span in spans if span.kind in INTAKE_KINDS))
     return (f"Question: {question}\n\n{clock_text(criteria, spans, today)}\n\nTrial: {title}\n\nCriteria:\n"
             + "\n".join(criteria_lines) + f"\n\nRegions:\n{regions}")
 

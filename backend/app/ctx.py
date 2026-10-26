@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Callable
 
 from app.config import Settings
+from app.extraction import Parser
 from app.llm import LLM
 from app.sql.reader import SqlReader
 from app.sql.writer import PgWriter
@@ -25,6 +26,7 @@ class Ctx:
     agent_reader: SqlReader   # ZetarisReader in prod; PgReader in tests
     ui_reader: SqlReader      # PgReader
     llm: LLM                  # Nightshift in prod; FakeLLM in tests
+    parser: Parser            # Nemotron Parse in prod; RecordedParse (tests/fixtures/letters.py) in tests
     wm: WorldModel            # Meterless World Model; PgEventStore in prod, InMemoryEventStore in tests.
                               # The only writer of facts, profile versions, trials and verdicts (ADR 0001).
     settings: Settings        # loop bounds, concurrency, lane models (config.py is the one place)

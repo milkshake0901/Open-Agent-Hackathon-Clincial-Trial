@@ -1,5 +1,6 @@
 """app/main.py — FastAPI app. The lifespan builds one Ctx: Postgres pool and writer, PgReader (UI),
-ZetarisReader (agents), the Nightshift client, and the World Model with PgEventStore (replayed from wm_event)."""
+ZetarisReader (agents), the Nightshift client, Nemotron Parse, and the World Model with PgEventStore (replayed from
+wm_event)."""
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -12,7 +13,8 @@ from app import logfile, trials
 from app.api import EXCEPTION_HANDLERS, router
 from app.config import Settings
 from app.ctx import Ctx
-from app.llm.nightshift import Nightshift
+from app.extraction import NemotronParse
+from app.llm.direct import connect
 from app.sql.reader import PgReader, ZetarisReader, pg_column_types
 from app.sql.writer import PgWriter
 from app.worldmodel import PgEventStore, WorldModel
@@ -33,8 +35,7 @@ async def lifespan(app: FastAPI):
     reader = PgReader(pool)
     wm = WorldModel(namespace=WORLD_MODEL_NAMESPACE, store=PgEventStore(writer, WORLD_MODEL_NAMESPACE))
     await wm.replay()
-    llm = Nightshift(settings.meterless_base_url, settings.meterless_runtime_token, settings.meterless_app_id,
-                     settings.lane_models, default_model=settings.meterless_model)
+    llm = connect(settings)   # Nightshift, with DIRECT_LANES on NVIDIA's API when NVIDIA_API_KEY is set
     await llm.models()   # warns, never fails: a missing runtime turns model calls into LlmUnavailable
     zetaris_http = httpx.AsyncClient()
     if settings.zetaris_api_key:
@@ -43,10 +44,11 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("ZETARIS_API_KEY is not set: agents read Postgres directly, not through Zetaris (ADR 0001)")
         agent_reader = reader
-    app.state.ctx = Ctx(writer=writer, agent_reader=agent_reader, ui_reader=reader, llm=llm, wm=wm,
-                        settings=settings, now=lambda: datetime.now(timezone.utc))
-    # Trials come from the saved snapshot until the Australia-wide ingest (scripts/ingest_trials.py) has run; idempotent
-    # across restarts.
+    app.state.ctx = Ctx(writer=writer, agent_reader=agent_reader, ui_reader=reader, llm=llm,
+                        parser=NemotronParse(settings),   # its client is built on the first read: no key, no crash
+                        wm=wm, settings=settings, now=lambda: datetime.now(timezone.utc))
+    # Trials come from the saved snapshot until the Australia-wide ingest (backend/scripts/ingest_trials.py) has
+    # run; idempotent across restarts.
     await trials.load_snapshot(app.state.ctx, settings.trials_snapshot_dir)
     try:
         yield

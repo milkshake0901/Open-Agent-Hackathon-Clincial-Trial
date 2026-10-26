@@ -2,7 +2,7 @@
 -- trial_outcome, trial_outcome_value and trial_publication, to a database created from an older db/schema.sql.
 -- Additive only. Safe to run twice. New databases don't need it; db/schema.sql already has all of this.
 -- Existing Trials get their Outcomes on the next ingest (the new Outcome fields count as a change), or at once from
--- scripts/rebuild_projections.py for events already recorded with them. Then re-run
+-- backend/scripts/rebuild_projections.py for events already recorded with them. Then re-run
 -- REGISTER DATASOURCE TABLES FROM trialmatch in Zetaris (db/zetaris_register.sql) so agents can read the new tables.
 --
 --   docker exec -i open-agent-hackathon-clincial-trial-postgres-1 \

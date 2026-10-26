@@ -1,34 +1,18 @@
-"""Trials stored from the Australia ingest, and a screen of one letter against a named trial."""
+"""Trials stored from the Australia ingest, a free-form question of one of them, and a screen of one letter against
+named trials (screen_referral.py)."""
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 
 from app import llm, matching, record, trials
 from app.api.deps import get_ctx
 from app.api.schemas import (ClosedTrialListOut, ClosedTrialOut, ContactOut, CriterionMissOut, CriterionScreenOut,
-                             MatchingTrialsOut, OutcomeSummaryOut, OutcomesOut, PublicationOut, ScreenIn,
+                             OutcomeSummaryOut, OutcomesOut, PublicationOut, ScreenIn,
                              TrialAskCitationOut, TrialAskIn, TrialAskOut, TrialDetailOut, TrialScreenOut, TrialSiteOut,
                              WashoutOut)
 from app.ctx import Ctx
 
 router = APIRouter(tags=["trials"])
-
-
-def _listed(t: trials.Trial) -> ClosedTrialOut:
-    return ClosedTrialOut(nct_id=t.nct_id, title=t.title, status=t.status, conditions=list(t.conditions),
-                          closed_on=t.closed_on, url=trials.page_url(t.nct_id))
-
-
-@router.get("/trials/matching", response_model=MatchingTrialsOut)
-async def matching_trials(q: list[str] = Query(), ctx: Ctx = Depends(get_ctx)):
-    """Stored Australian trials whose Condition labels contain one of these phrases as whole words."""
-    phrases = [" ".join(phrase.split()) for phrase in q if phrase.strip()]
-    if not phrases:
-        raise HTTPException(422, "name the condition to search")
-    labels = await trials.search_condition_labels(ctx, phrases, limit=200)
-    open_trials, closed = await trials.trials_for_labels(ctx, tuple(one.label for one in labels))
-    return MatchingTrialsOut(labels=[one.label for one in labels], open=[_listed(t) for t in open_trials],
-                             closed=[_listed(t) for t in closed])
 
 
 @router.get("/patients/{pid}/closed-trials", response_model=ClosedTrialListOut)
@@ -42,7 +26,8 @@ async def closed_trials(pid: str, ctx: Ctx = Depends(get_ctx)):
 
 @router.post("/patients/{pid}/trials/{nct}/ask", response_model=TrialAskOut)
 async def ask_trial(pid: str, nct: str, body: TrialAskIn, ctx: Ctx = Depends(get_ctx)):
-    """One question about one stored trial. Criteria and letter regions are read through the agent reader."""
+    """One question about one stored trial, from its Verdict on the Trials page. Criteria and the patient's Regions are
+    read through the agent reader. The answer is not saved and changes no Verdict."""
     question = " ".join(body.question.split())
     if not question:
         raise HTTPException(422, "the question is empty")

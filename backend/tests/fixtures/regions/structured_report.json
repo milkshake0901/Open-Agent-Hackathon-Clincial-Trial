@@ -1,0 +1,30 @@
+{
+  "about": "Invented, de-identified Region data in the shape of a 1-page structured MRI knee report. No real person, practice or number. Boxes are fractions of the page, origin top left.",
+  "pages": [
+    {
+      "number": 1,
+      "regions": [
+        {"kind": "Page-header", "text": "Lakeshore Imaging", "box": [0.08, 0.03, 0.40, 0.06]},
+        {"kind": "Table", "text": "| Patient | QUINN, Talia Maree |\n| DOB | 09 June 1991 |\n| Patient ID | LKI-5520917 |\n| Referrer | Dr Marcus Ellery |\n| Date of service | 02 October 2026 |", "box": [0.08, 0.08, 0.92, 0.20]},
+        {"kind": "Title", "text": "MRI LEFT KNEE", "box": [0.08, 0.22, 0.45, 0.25]},
+        {"kind": "Section-header", "text": "Clinical history", "box": [0.08, 0.27, 0.35, 0.29]},
+        {"kind": "Text", "text": "Twisting injury playing netball 4 months ago. Ongoing instability and a positive Lachman test. ? ACL tear.", "box": [0.08, 0.30, 0.92, 0.34]},
+        {"kind": "Section-header", "text": "Technique", "box": [0.08, 0.36, 0.30, 0.38]},
+        {"kind": "Text", "text": "Multiplanar multisequence MRI of the left knee on a 3T scanner. No contrast.", "box": [0.08, 0.39, 0.92, 0.42]},
+        {"kind": "Section-header", "text": "Findings", "box": [0.08, 0.44, 0.30, 0.46]},
+        {"kind": "List-item", "text": "Anterior cruciate ligament: complete tear of the proximal fibres, with no intact fibres in continuity.", "box": [0.10, 0.47, 0.92, 0.51]},
+        {"kind": "List-item", "text": "Posterior cruciate ligament: intact.", "box": [0.10, 0.51, 0.70, 0.53]},
+        {"kind": "List-item", "text": "Menisci: No meniscal tear.", "box": [0.10, 0.53, 0.70, 0.55]},
+        {"kind": "List-item", "text": "Collateral ligaments: medial collateral ligament low-grade sprain; lateral collateral ligament intact.", "box": [0.10, 0.55, 0.92, 0.59]},
+        {"kind": "List-item", "text": "Bone: bone marrow oedema in the lateral femoral condyle and posterolateral tibial plateau, in keeping with a pivot-shift injury. No fracture.", "box": [0.10, 0.59, 0.92, 0.64]},
+        {"kind": "List-item", "text": "Cartilage: preserved. Small joint effusion.", "box": [0.10, 0.64, 0.70, 0.66]},
+        {"kind": "Section-header", "text": "Impression", "box": [0.08, 0.68, 0.30, 0.70]},
+        {"kind": "List-item", "text": "1. Complete ACL tear with a pivot-shift bone bruise pattern.", "box": [0.10, 0.71, 0.88, 0.73]},
+        {"kind": "List-item", "text": "2. No meniscal tear.", "box": [0.10, 0.73, 0.55, 0.75]},
+        {"kind": "List-item", "text": "3. Low-grade MCL sprain.", "box": [0.10, 0.75, 0.55, 0.77]},
+        {"kind": "Text", "text": "Reported by Dr Helena Voss, Radiologist, 03 October 2026", "box": [0.08, 0.80, 0.80, 0.82]},
+        {"kind": "Page-footer", "text": "Lakeshore Imaging, 7 Pier Street, Port Calder 3999  Ph 03 9000 4417", "box": [0.08, 0.94, 0.92, 0.97]}
+      ]
+    }
+  ]
+}

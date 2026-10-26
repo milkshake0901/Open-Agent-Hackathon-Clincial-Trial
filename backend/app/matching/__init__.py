@@ -9,7 +9,7 @@ from app import record, trace, trials
 from app.ctx import Ctx
 from app.matching import distance, loop, repo
 from app.matching.types import (
-    Citation, CriterionResult, DoctorQuestion, ListedVerdicts, Outcome, RescanReport, RespondentQuestion,
+    Citation, CitedRegion, CriterionResult, DoctorQuestion, ListedVerdicts, Outcome, RescanReport, RespondentQuestion,
     TrialSiteDistance, Verdict, VerdictChange, VerdictOutcome,
 )
 from app.record import ProfileVersionId
@@ -21,7 +21,7 @@ from app.matching.letter import CriterionScreen, TrialAsk, TrialScreen, ask_tria
 __all__ = ["rescan", "km", "CLOSED_SITE", "verdict", "verdicts_for_version", "change_between", "questions_for_version",
            "respondent_questions_for_version", "screen_letter", "ask_trial", "TrialAsk", "TrialScreen", "CriterionScreen",
            "ListedVerdicts", "Verdict", "DoctorQuestion", "RespondentQuestion",
-           "RescanReport", "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation",
+           "RescanReport", "VerdictChange", "VerdictOutcome", "Outcome", "CriterionResult", "Citation", "CitedRegion",
            "TrialSiteDistance"]
 
 # Distance from a coarse location point to a Trial site, and the site statuses that will never take a patient; for

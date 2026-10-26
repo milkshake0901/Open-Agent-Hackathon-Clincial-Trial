@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path, PurePath
 
+from app.config import REPO_ROOT
 from app.record.types import DocumentHash, PatientId
 
 
@@ -23,6 +24,10 @@ def filename(raw: str) -> str:
 
 
 def keep_raw(directory: str, h: DocumentHash, content: bytes) -> None:
+    """A relative directory is under the repo root, where page images are read from (ground.page_png), whatever
+    folder the server runs from."""
     raw = Path(directory)
+    if not raw.is_absolute():
+        raw = REPO_ROOT / raw
     raw.mkdir(parents=True, exist_ok=True)
     (raw / f"{h}.pdf").write_bytes(content)

@@ -7,7 +7,7 @@ from app import llm, matching, record
 from app.api.deps import get_ctx
 from app.api.documents import start_ingest
 from app.api.schemas import (
-    DiagnosisAnswerIn, DiagnosisCheckOut, LatestAnswersOut, NoneOfTheseIn, NotSureIn, QuestionnaireAccepted,
+    DiagnosisAnswerIn, DiagnosisCheckOut, IntakeStatusOut, LatestAnswersOut, LetterStatusOut, NoneOfTheseIn, NotSureIn, QuestionnaireAccepted,
     QuestionnaireOut, QuestionnaireSubmission, RescanSummary, TickedIn,
 )
 from app.ctx import Ctx
@@ -21,7 +21,8 @@ async def definition():
     return {"version": d.version, "sections": [
         {"id": s.id, "title": s.title, "questions": [
             {"id": q.id, "number": q.number, "label": q.label, "label_other": q.label_other, "kind": q.kind,
-             "options": [asdict(o) for o in q.options], "required": q.required, "help": q.help}
+             "options": [asdict(o) for o in q.options], "required": q.required, "help": q.help,
+             "review_only": q.review_only}
             for q in s.questions]}
         for s in d.sections]}
 
@@ -34,6 +35,17 @@ async def latest(pid: str, ctx: Ctx = Depends(get_ctx)):
         raise HTTPException(404, f"no accepted questionnaire for patient {pid}")
     return LatestAnswersOut(definition_version=record.questionnaire_definition().version,
                             document_hash=found.document_hash, respondent=found.respondent, answers=found.answers)
+
+
+@router.get("/patients/{pid}/intake", response_model=IntakeStatusOut)
+async def intake(pid: str, ctx: Ctx = Depends(get_ctx)):
+    """record.intake_status: the patient's letters with their runs' phases, the questions their Facts answer (the short
+    questionnaire skips them), and whether every Document is committed (the Diagnosis check and Trials wait for it)."""
+    status = await record.intake_status(ctx, record.PatientId(pid))
+    return IntakeStatusOut(letters=[LetterStatusOut(**asdict(one)) for one in status.letters],
+                           skip=sorted(status.skip), ready=status.ready,
+                           profile_version_id=status.current and status.current.id,
+                           version_number=status.current and status.current.number)
 
 
 @router.post("/patients/{pid}/questionnaire", status_code=202, response_model=QuestionnaireAccepted)
@@ -78,10 +90,13 @@ def _check_out(c: record.DiagnosisCheck, rescan: RescanSummary | None = None) ->
 @router.post("/patients/{pid}/questionnaire/diagnosis-check", status_code=201, response_model=DiagnosisCheckOut)
 async def diagnosis_check(pid: str, ctx: Ctx = Depends(get_ctx)):
     """record.check_diagnosis: a shortlist of Condition labels for the Respondent to tick (empty when none fit), for
-    the latest diagnosis answer. 404: unknown patient or no diagnosis answer yet; 503: model unavailable (nothing
+    the latest diagnosis answer, otherwise the letters' Condition Facts. 404: unknown patient or no diagnosis yet; 409: a
+    Document's Facts are not committed yet (still read, or waiting for Letter review); 503: model unavailable (nothing
     stored)."""
     try:
         return _check_out(await record.check_diagnosis(ctx, record.PatientId(pid)))
+    except record.NotReady as e:
+        raise HTTPException(409, str(e))
     except llm.LlmUnavailable as e:
         raise HTTPException(503, str(e))
 

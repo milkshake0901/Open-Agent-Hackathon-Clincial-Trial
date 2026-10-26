@@ -34,6 +34,7 @@ class QuestionOut(BaseModel):
     options: list[OptionOut]
     required: bool
     help: str | None
+    review_only: bool = False   # answered in Letter review, not on the form: keep its answer when saving the form
 
 
 class SectionOut(BaseModel):
@@ -148,12 +149,60 @@ class QuestionnaireAccepted(DocumentAccepted):
 
 class IngestOutcomeOut(BaseModel):
     run_id: str
-    outcome: Literal["committed", "awaiting_patient", "rejected"]
+    outcome: Literal["committed", "awaiting_patient", "awaiting_review", "rejected"]
     document_hash: str | None = None
     profile_version_id: str | None = None
     version_number: int | None = None
     reason: str | None = None
     rescan: RescanSummary | None = None   # set on "committed"
+    correction_run_id: str | None = None  # a Letter review's commit: the run making its corrections Patient-reported
+
+
+class ReviewRegionOut(BaseModel):
+    """The Region a drafted Fact was read from: its box is fractions of GET /documents/{hash}/pages/{page}/image."""
+    span_id: str
+    kind: str
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class ReviewFactOut(BaseModel):
+    index: int                  # names this Fact in POST /runs/{run_id}/review/facts/{index}
+    resource: str
+    subject: str
+    value: str
+    unit: str | None
+    observed_on: date | None
+    page: int
+    quote: str
+    region: ReviewRegionOut | None
+    flags: list[str]            # ambiguous_date, estimated_date, document_date
+    flagged: bool               # an ambiguous or estimated date: listed first
+    decision: Literal["keep", "drop"] | None   # "Looks right" / "Not right"; None: not answered
+    correction: str | None      # what a dropped Fact should be
+
+
+class LetterReviewOut(BaseModel):
+    run_id: str
+    document_hash: str
+    filename: str
+    page_count: int
+    document_date: date | None
+    document_date_corrected: bool
+    date_order: Literal["day_first", "month_first"] | None
+    facts: list[ReviewFactOut]  # flagged first, then in reading order
+
+
+class ReviewAnswerIn(BaseModel):
+    decision: Literal["keep", "drop"]
+    correction: str | None = None   # only with "drop": what it should be
+
+
+class DocumentDateIn(BaseModel):
+    document_date: date
 
 
 class SearchPreferencesIn(BaseModel):
@@ -189,7 +238,9 @@ class CitationOut(BaseModel):
     document_hash: str
     page: int
     quote: str
+    span_id: str | None = None  # the Region of a letter the quote was read from (GET /documents/{hash}/regions)
     label: str                  # "Patient-reported, intake questionnaire, Q3" or "page 2"
+    checked: bool | None = None # a letter Fact: whether the Respondent checked it in Letter review; None otherwise
 
 
 class FactOut(BaseModel):
@@ -200,6 +251,8 @@ class FactOut(BaseModel):
     unit: str | None
     observed_on: date
     citation: CitationOut
+    flags: list[str] = []       # how observed_on was settled: ambiguous_date, estimated_date, document_date
+    flagged: bool = False       # the date is ambiguous or an estimate: Letter review shows it first
 
 
 class VersionOut(BaseModel):
@@ -217,6 +270,28 @@ class VerdictCitationOut(BaseModel):
     quote: str
     question: str | None        # "Q13" for a Patient-reported Fact: the web page links to that question
     label: str                  # "Patient-reported, intake questionnaire, Q13" or "page 2"
+    filename: str | None = None # the Document's de-identified filename
+    region: "CitationRegionOut | None" = None   # a letter Fact's Region: the page image with this box opens it
+    answer: "CitationAnswerOut | None" = None   # a Patient-reported Fact's answer: shown instead of a page image
+    checked: bool | None = None # a letter Fact: true "checked by you", false "not checked"; None for any other Fact
+
+
+class CitationAnswerOut(BaseModel):
+    """The Intake questionnaire answer a Patient-reported Fact quotes. quote_start/quote_end are character offsets of
+    the quote in `text` (highlight text[quote_start:quote_end]); both null when the quote is not verbatim in it."""
+    wording: str                # the question as the Respondent saw it; its number is the Citation's `question`
+    text: str                   # the whole answer, as the Document shows it
+    quote_start: int | None
+    quote_end: int | None
+
+
+class CitationRegionOut(BaseModel):
+    """A Region's span_id and box: fractions of GET /documents/{hash}/pages/{page}/image, origin top left."""
+    span_id: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
 
 
 class CriterionResultOut(BaseModel):
@@ -226,6 +301,7 @@ class CriterionResultOut(BaseModel):
     outcome: Literal["met", "not_met", "unknown"]
     rationale: str
     citation: VerdictCitationOut | None
+    context_facts: list[VerdictCitationOut] = []   # unknown only: Facts it considered that don't settle it
 
 
 class DoctorQuestionOut(BaseModel):
@@ -401,22 +477,20 @@ class ClosedTrialListOut(BaseModel):
     trials: list[ClosedTrialOut]  # newest first by closed_on
 
 
-class LetterOut(BaseModel):
-    patient_id: str
+class LetterStatusOut(BaseModel):
     document_hash: str
     filename: str
-    answers: dict[str, str] = {}
+    run_id: str
+    phase: str      # its latest ingest run's: started, drafting, awaiting_patient, awaiting_review, committed, rejected
 
 
-class LetterListOut(BaseModel):
-    letters: list[LetterOut]
-
-
-class MatchingTrialsOut(BaseModel):
-    """Stored trials whose Condition labels contain one of the search phrases, open first."""
-    labels: list[str]
-    open: list[ClosedTrialOut]
-    closed: list[ClosedTrialOut]
+class IntakeStatusOut(BaseModel):
+    """Where the patient's letters and questionnaire stand (GET /patients/{pid}/intake)."""
+    letters: list[LetterStatusOut]
+    skip: list[str]     # question ids the letters' Facts answer; the short questionnaire does not ask them
+    ready: bool         # every Document's Facts committed: the Diagnosis check and Trials can go ahead
+    profile_version_id: str | None = None   # the latest Profile version (Trials are listed for it); None before one
+    version_number: int | None = None
 
 
 class RescanOut(BaseModel):
@@ -456,31 +530,25 @@ class VersionDiffOut(BaseModel):
     verdicts_changed: list[VerdictChangeOut] = []   # Trials whose outcome or any Criterion result moved
 
 
-class AskIn(BaseModel):
-    question: str
-
-
-class GroundedCitationOut(BaseModel):
+class RegionOut(BaseModel):
     span_id: str
-    document_hash: str
-    filename: str
     page: int
-    quote: str
+    ordinal: int
+    kind: str
+    text: str
     x0: float
     y0: float
     x1: float
     y1: float
 
 
-class AskOut(BaseModel):
-    answer: Literal["yes", "no", "unknown"]
-    reasoning: str
-    as_of: date
-    patient_label: str
+class DocumentRegionsOut(BaseModel):
     document_hash: str
     filename: str
     page_count: int
-    citations: list[GroundedCitationOut]
+    regions: list[RegionOut]
+    document_date: date | None = None   # the Document date read from its first page (GLOSSARY); None if it gives none
+    date_order: Literal["day_first", "month_first"] | None = None   # how it writes numeric dates; None: not settled
 
 
 class ScreenIn(BaseModel):

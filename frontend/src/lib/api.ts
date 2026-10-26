@@ -12,6 +12,7 @@ export type Question = {
   options: Option[];
   required: boolean;
   help: string | null;
+  review_only: boolean; // answered in Letter review, not on the form: keep its answer when the form is saved
 };
 
 export type Section = { id: string; title: string; questions: Question[] };
@@ -27,15 +28,44 @@ export type QuestionnaireAccepted = {
   return_token: string | null; // first submission only
 };
 
-// The outcome of answering a Conflict (POST /runs/{id}/confirm).
+// The outcome of answering a Conflict (POST /runs/{id}/confirm) or committing a Letter review.
 export type IngestOutcome = {
   run_id: string;
-  outcome: "committed" | "awaiting_patient" | "rejected";
+  outcome: "committed" | "awaiting_patient" | "awaiting_review" | "rejected";
   document_hash: string | null;
   profile_version_id: string | null;
   version_number: number | null;
   reason: string | null;
   rescan: { judged: number; failed: number } | null;
+  correction_run_id?: string | null; // a Letter review's commit: the run saving its corrections as your answers
+};
+
+// Letter review (GET /runs/{id}/review): a letter's drafted Facts, uncommitted, flagged ones first.
+export type ReviewFact = {
+  index: number;
+  resource: string;
+  subject: string;
+  value: string;
+  unit: string | null;
+  observed_on: string | null;
+  page: number;
+  quote: string;
+  region: { span_id: string; kind: string; text: string; x0: number; y0: number; x1: number; y1: number } | null;
+  flags: string[]; // ambiguous_date, estimated_date, document_date
+  flagged: boolean;
+  decision: "keep" | "drop" | null;
+  correction: string | null;
+};
+
+export type LetterReview = {
+  run_id: string;
+  document_hash: string;
+  filename: string;
+  page_count: number;
+  document_date: string | null;
+  document_date_corrected: boolean;
+  date_order: "day_first" | "month_first" | null;
+  facts: ReviewFact[];
 };
 
 export type VerdictCitation = {
@@ -45,6 +75,13 @@ export type VerdictCitation = {
   quote: string;
   question: string | null;
   label: string;
+  filename: string | null;
+  // A letter Fact's Region: open /api/documents/{document_hash}/pages/{page}/image with this box drawn on it.
+  region: { span_id: string; x0: number; y0: number; x1: number; y1: number } | null;
+  // A Patient-reported Fact's answer: the question's wording, the whole answer, and the quote at
+  // text.slice(quote_start, quote_end) (both null when the quote isn't verbatim in it).
+  answer: { wording: string; text: string; quote_start: number | null; quote_end: number | null } | null;
+  checked?: boolean | null; // a letter Fact: true "checked by you", false "not checked"; null for any other Fact
 };
 
 export type CriterionResultOut = {
@@ -54,6 +91,8 @@ export type CriterionResultOut = {
   outcome: "met" | "not_met" | "unknown";
   rationale: string;
   citation: VerdictCitation | null;
+  // Unknown only: Context Facts, Facts it considered that don't settle it. Shaped like a citation, never one.
+  context_facts: VerdictCitation[];
 };
 
 // criterion_id and nct_id are null on the patient-level diagnosis question (subject "diagnosis").
@@ -151,11 +190,14 @@ export type TrialAsk = {
   via: "zetaris" | "postgres";
 };
 
-export type LetterOut = {
-  patient_id: string;
-  document_hash: string;
-  filename: string;
-  answers: Record<string, string>;
+// Where the patient's letters and questionnaire stand: what the short questionnaire skips, and when the Diagnosis
+// check and Trials can go ahead (every Document's Facts committed).
+export type IntakeStatus = {
+  letters: { document_hash: string; filename: string; run_id: string; phase: IngestPhase }[];
+  skip: string[]; // question ids the letters' Facts answer
+  ready: boolean;
+  profile_version_id: string | null; // the latest Profile version, the one Trials are listed for
+  version_number: number | null;
 };
 
 export type ClosedTrialOut = {
@@ -165,12 +207,6 @@ export type ClosedTrialOut = {
   conditions: string[];
   closed_on: string | null; // ISO date: primary completion, else completion, else last update
   url: string;
-};
-
-export type MatchingTrials = {
-  labels: string[];
-  open: ClosedTrialOut[];
-  closed: ClosedTrialOut[];
 };
 
 // Registry fields it does not give are "".
@@ -253,7 +289,7 @@ export type VersionOut = {
 
 export type DocumentAccepted = { document_hash: string; run_id: string; deduplicated: boolean };
 
-export type IngestPhase = "started" | "drafting" | "awaiting_patient" | "committed" | "rejected";
+export type IngestPhase = "started" | "drafting" | "awaiting_patient" | "awaiting_review" | "committed" | "rejected";
 
 export type RunOut = {
   run_id: string;
@@ -322,17 +358,6 @@ export type GroundedCitation = {
   y1: number;
 };
 
-export type AskAnswer = {
-  answer: "yes" | "no" | "unknown";
-  reasoning: string;
-  as_of: string;
-  patient_label: string;
-  document_hash: string;
-  filename: string;
-  page_count: number;
-  citations: GroundedCitation[];
-};
-
 const enquiryPath = (patientId: string, versionId: string, nctId: string) =>
   `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}` +
   `/trials/${encodeURIComponent(nctId)}/enquiry`;
@@ -341,14 +366,7 @@ export const api = {
   definition: () => call<Questionnaire>("/questionnaire/definition"),
   createPatient: (label: string) =>
     call<{ patient_id: string }>("/patients", { method: "POST", body: JSON.stringify({ label }) }),
-  referralLetters: () => call<{ letters: LetterOut[] }>("/referrals"),
-  prefillReferral: (patientId: string) =>
-    call<LetterOut>(`/patients/${encodeURIComponent(patientId)}/referral/prefill`, { method: "POST" }),
-  loadReferral: (file: File) => {
-    const body = new FormData();
-    body.append("file", file);
-    return call<LetterOut>("/referrals", { method: "POST", body });
-  },
+  intake: (patientId: string) => call<IntakeStatus>(`/patients/${encodeURIComponent(patientId)}/intake`),
   submit: (patientId: string, body: { definition_version: string; respondent: Respondent; answers: Answers }) =>
     call<QuestionnaireAccepted>(`/patients/${encodeURIComponent(patientId)}/questionnaire`, {
       method: "POST",
@@ -367,6 +385,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ resolutions }),
     }),
+  review: (runId: string) => call<LetterReview>(`/runs/${encodeURIComponent(runId)}/review`),
+  answerReview: (runId: string, index: number, decision: "keep" | "drop", correction?: string) =>
+    call<LetterReview>(`/runs/${encodeURIComponent(runId)}/review/facts/${index}`, {
+      method: "POST",
+      body: JSON.stringify({ decision, correction: correction || null }),
+    }),
+  correctDocumentDate: (runId: string, documentDate: string) =>
+    call<LetterReview>(`/runs/${encodeURIComponent(runId)}/review/document-date`, {
+      method: "PUT",
+      body: JSON.stringify({ document_date: documentDate }),
+    }),
+  commitReview: (runId: string) =>
+    call<IngestOutcome>(`/runs/${encodeURIComponent(runId)}/review/commit`, { method: "POST" }),
+  useAllAsRead: (runId: string) =>
+    call<IngestOutcome>(`/runs/${encodeURIComponent(runId)}/review/use-all-as-read`, { method: "POST" }),
   latestAnswers: (patientId: string) =>
     call<LatestAnswers>(`/patients/${encodeURIComponent(patientId)}/questionnaire`),
   diff: (patientId: string, versionId: string, fromVersionId: string) =>
@@ -385,10 +418,6 @@ export const api = {
     call<{ condition_term: string[] | null; trials: ClosedTrialOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/closed-trials`,
     ),
-  matchingTrials: (phrases: string[]) => {
-    const q = phrases.map((phrase) => `q=${encodeURIComponent(phrase)}`).join("&");
-    return call<MatchingTrials>(`/trials/matching?${q}`);
-  },
   trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
   outcomeSummary: (nctId: string) => call<OutcomeSummaryOut>(`/trials/${encodeURIComponent(nctId)}/outcomes/summary`),
   enquiryDetails: (patientId: string, versionId: string, nctId: string) =>
@@ -409,11 +438,6 @@ export const api = {
     call<DoctorQuestion[]>(
       `/patients/${encodeURIComponent(patientId)}/questions?version=${encodeURIComponent(versionId)}`,
     ),
-  ask: (patientId: string, question: string) =>
-    call<AskAnswer>(`/patients/${encodeURIComponent(patientId)}/ask`, {
-      method: "POST",
-      body: JSON.stringify({ question }),
-    }),
   askTrial: (patientId: string, nctId: string, question: string) =>
     call<TrialAsk>(
       `/patients/${encodeURIComponent(patientId)}/trials/${encodeURIComponent(nctId)}/ask`,
@@ -429,7 +453,7 @@ export const trialsHref = (patientId: string, versionId: string) =>
   `/trials?patient=${encodeURIComponent(patientId)}&version=${encodeURIComponent(versionId)}`;
 
 const POLL_MS = 1000;
-const ENDED = new Set<IngestPhase>(["committed", "rejected", "awaiting_patient"]);
+const ENDED = new Set<IngestPhase>(["committed", "rejected", "awaiting_patient", "awaiting_review"]);
 
 // Ingest runs in the background after an added Document or a questionnaire submission; poll it until it ends.
 export async function followRun(runId: string): Promise<RunOut> {

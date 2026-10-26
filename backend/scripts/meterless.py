@@ -1,11 +1,11 @@
 """Check the Meterless Nightshift connection by hand. Reads the repo's .env; never prints the token.
 
-    backend/.venv/bin/python scripts/meterless.py status              # online | unauthorized | offline, lane check
-    backend/.venv/bin/python scripts/meterless.py detect              # Auto Detect on the standard ports
-    backend/.venv/bin/python scripts/meterless.py chat "Say pong"     # plain text on METERLESS_MODEL
-    backend/.venv/bin/python scripts/meterless.py lane fast           # JSON through a lane's LangChain model
-    backend/.venv/bin/python scripts/meterless.py media               # which media kinds this box can make
-    backend/.venv/bin/python scripts/meterless.py illustrate "a calm hospital garden, watercolour" [--privacy cloud-ok]
+    backend/.venv/bin/python backend/scripts/meterless.py status              # online | unauthorized | offline, lane check
+    backend/.venv/bin/python backend/scripts/meterless.py detect              # Auto Detect on the standard ports
+    backend/.venv/bin/python backend/scripts/meterless.py chat "Say pong"     # plain text on METERLESS_MODEL
+    backend/.venv/bin/python backend/scripts/meterless.py lane fast           # JSON through a lane's LangChain model
+    backend/.venv/bin/python backend/scripts/meterless.py media               # which media kinds this box can make
+    backend/.venv/bin/python backend/scripts/meterless.py illustrate "a calm hospital garden, watercolour" [--privacy cloud-ok]
 """
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ import asyncio
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from pydantic import BaseModel  # noqa: E402
 
-from app.config import Settings  # noqa: E402
-from app.llm import Lane, LlmUnavailable, Media, MediaFailed, MediaUnavailable  # noqa: E402
+from app.config import REPO_ROOT, Settings  # noqa: E402
+from app.llm import Lane, LlmUnavailable, Media, MediaFailed, MediaUnavailable, json_object  # noqa: E402
+from app.llm.direct import connect as connect_lanes  # noqa: E402
 from app.llm.nightshift import Nightshift, auto_detect  # noqa: E402
 
 
@@ -35,7 +35,7 @@ def connect(s: Settings) -> Nightshift:
 
 
 async def main(args: argparse.Namespace) -> int:
-    s = Settings(_env_file=ROOT / ".env")
+    s = Settings(_env_file=REPO_ROOT / ".env")
     if args.cmd == "detect":
         hit = await auto_detect(s.meterless_runtime_token, s.meterless_app_id)
         print(f"found {hit[0]} ({hit[1]})" if hit else "no runtime on 8088, 8090, 8787 or 11434")
@@ -48,8 +48,12 @@ async def main(args: argparse.Namespace) -> int:
             print(f"{ns.base_url}: {state}")
             if state == "unauthorized":
                 print("  the runtime rejected METERLESS_RUNTIME_TOKEN; paste the token from <stateDir>/proxy-token")
+            direct = getattr(connect_lanes(s), "direct", None)   # lanes on NVIDIA's API when NVIDIA_API_KEY is set
             for lane, model in ns.lanes.items():
-                print(f"  lane {lane:<5} → {model}  {'listed' if model in ids else 'NOT LISTED'}")
+                if direct is not None and lane in direct.lanes:
+                    print(f"  lane {lane:<5} → {direct.lanes[lane]}  NVIDIA API, not Nightshift")
+                else:
+                    print(f"  lane {lane:<5} → {model}  {'listed' if model in ids else 'NOT LISTED'}")
             return 0 if state == "online" else 1
 
         if args.cmd == "chat":
@@ -57,14 +61,18 @@ async def main(args: argparse.Namespace) -> int:
             return 0
 
         if args.cmd == "lane":
-            done = await ns.complete(Lane(args.lane), "You answer oncology questions briefly.",
-                                     "Is EGFR exon 19 deletion an activating mutation?", Ping)
+            lanes = connect_lanes(s)   # the lane's provider, as the app picks it
+            try:
+                done = await lanes.complete(Lane(args.lane), "You answer oncology questions briefly.",
+                                            "Is EGFR exon 19 deletion an activating mutation?", Ping)
+            finally:
+                await lanes.aclose()
             print(f"requested {done.model_requested}, answered {done.model_answered}, "
                   f"{done.latency_ms} ms, {done.prompt_tokens}+{done.completion_tokens} tokens")
-            print(f"  {done.value.model_dump()}")
+            print(f"  {Ping.model_validate_json(json_object(done.text)).model_dump()}")
             return 0
 
-        media = Media(ns, ROOT / s.media_dir)
+        media = Media(ns, REPO_ROOT / s.media_dir)
         if args.cmd == "media":
             for kind in ("image", "speech", "music", "video"):
                 try:
@@ -78,7 +86,7 @@ async def main(args: argparse.Namespace) -> int:
             privacy = args.privacy or s.media_privacy
             print(f"illustrating at privacy floor {privacy} …")
             made = await media.illustrate(args.text, privacy=privacy)
-            print(f"stored {made.path.relative_to(ROOT)} ({made.mime}, {made.size} bytes; "
+            print(f"stored {made.path.relative_to(REPO_ROOT)} ({made.mime}, {made.size} bytes; "
                   f"job {made.job_id}, seq {made.seq}, make {made.make_id}, {made.transform})")
             return 0
     except MediaUnavailable as e:

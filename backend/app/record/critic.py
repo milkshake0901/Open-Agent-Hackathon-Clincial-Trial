@@ -10,14 +10,20 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from app.record import dates
 from app.record.types import Document, DraftFact, Fact, Finding, FindingKind, ProfileVersion
 
 
 def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion | None) -> tuple[Finding, ...]:
     """All findings for a draft set. Per draft, in order:
       MISSING_DATE        no observed-on date (retryable)
+      UNKNOWN_REGION      on a Document read into Regions, the span_id names none it can cite (retryable), else
+      QUOTE_NOT_IN_REGION the quote is not inside that Region (retryable); on a Document without Regions:
       BAD_PAGE            the page is not in the Document (retryable), else
       QUOTE_NOT_ON_PAGE   the quote is not on that page (retryable)
+      NUMBER_NOT_IN_QUOTE on a clinical Document, a number in the value the quote does not have (retryable)
+      DATE_AGAINST_ORDER  on a clinical Document, the observed-on date is a date of the quote read against the
+                          Document's date order (dates.date_order) (retryable)
       UNIT_OUT_OF_RANGE   an implausible lab value for its unit (retryable)
       DUPLICATE_OF_ACCEPTED  the record already says it (duplicate_of_accepted; the loop drops it), else
       CONTRADICTS_ACCEPTED   it cannot be true alongside an accepted Fact (contradicts_accepted; a conflict)
@@ -31,13 +37,28 @@ def review(drafts: tuple[DraftFact, ...], doc: Document, current: ProfileVersion
     def add(kind: FindingKind, i: int, message: str) -> None:
         findings.append(Finding(kind=kind, draft_index=i, message=message, severity=severity_of(kind)))
 
+    order = None if doc.is_questionnaire else dates.date_order(p.text for p in doc.pages)
     for i, d in enumerate(drafts):
         if d.observed_on is None:
             add(FindingKind.MISSING_DATE, i, f"fact {i + 1} ({d.subject}): no observed-on date")
-        if not 1 <= d.page <= len(doc.pages):
+        if doc.regions and not doc.is_questionnaire and (region := doc.region(d.span_id)) is None:
+            add(FindingKind.UNKNOWN_REGION, i, f"fact {i + 1} ({d.subject}): span_id {d.span_id!r} is not one of "
+                                               "the Regions shown for this page")
+        elif doc.regions and not doc.is_questionnaire:
+            if not quote_on_page(d.quote, region.text):
+                add(FindingKind.QUOTE_NOT_IN_REGION, i, f"fact {i + 1} ({d.subject}): the quote is not inside Region "
+                                                        f"{d.span_id}; copy it from that Region's words")
+        elif not 1 <= d.page <= len(doc.pages):
             add(FindingKind.BAD_PAGE, i, f"fact {i + 1} ({d.subject}): page {d.page} is not in the document")
         elif not quote_on_page(d.quote, doc.pages[d.page - 1].text):
             add(FindingKind.QUOTE_NOT_ON_PAGE, i, f"fact {i + 1} ({d.subject}): quote not found on page {d.page}")
+        if not doc.is_questionnaire and (missing := numbers_not_in_quote(d.value, d.quote)):
+            add(FindingKind.NUMBER_NOT_IN_QUOTE, i, f"fact {i + 1} ({d.subject}): the value has "
+                                                    f"{', '.join(missing)}, which the quote does not")
+        if order and d.observed_on is not None and (read := read_against_order(d.observed_on, d.quote, order)):
+            add(FindingKind.DATE_AGAINST_ORDER, i, f"fact {i + 1} ({d.subject}): this document writes dates "
+                                                   f"{order.replace('_', ' ')}, so \"{read.text}\" is "
+                                                   f"{read.on.isoformat()}, not {d.observed_on.isoformat()}")
         if d.unit and not plausible_range(d):
             add(FindingKind.UNIT_OUT_OF_RANGE, i, f"fact {i + 1} ({d.subject}): {d.value} {d.unit} is implausible")
         if current is not None and duplicate_of_accepted(d, doc, current):
@@ -150,6 +171,24 @@ def observed_on(raw: str | None, doc: Document) -> date | None:
         return None
     estimate = date(year, int(month), 15) if month else date(year, 7, 1)
     return min(estimate, doc.uploaded_at)
+
+
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def numbers_not_in_quote(value: str, quote: str) -> tuple[str, ...]:
+    """The numbers written in a value that the quote does not have, as numbers ("1" is not in "11.2")."""
+    have = {float(n) for n in _NUMBER.findall(quote)}
+    return tuple(dict.fromkeys(n for n in _NUMBER.findall(value) if float(n) not in have))
+
+
+def read_against_order(observed_on: date, quote: str, order: dates.DateOrder) -> dates.DateRead | None:
+    """The date of the quote that `observed_on` reads in the opposite order to the Document's, when it is not also
+    one of the quote's dates read the Document's way."""
+    found = dates.dates_in(quote, order)
+    if any(r.on == observed_on for r in found):
+        return None
+    return next((r for r in found if r.other == observed_on), None)
 
 
 def _squash(text: str) -> str:

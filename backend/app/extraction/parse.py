@@ -4,9 +4,11 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
+from typing import Protocol
 
 from langchain_core.messages import HumanMessage
 
+from app.config import Settings
 from app.extraction.client import parse_client
 from app.extraction.pages import render_pages
 
@@ -128,3 +130,23 @@ def extract_pdf(content: bytes, *, client=None) -> ExtractedDocument:
         for text, reasoning, blocks in [_read_page(model, png)]
     )
     return ExtractedDocument(pages=pages)
+
+
+class Parser(Protocol):
+    """What Ctx carries to read a PDF into pages of Regions. Tests replace it with recorded Regions."""
+
+    def read(self, content: bytes) -> ExtractedDocument: ...
+
+
+class NemotronParse:
+    """The production Parser: Nemotron Parse, one call per page. The client is built on the first read,
+    so a missing NVIDIA_PARSE_API_KEY fails that read (MissingNvidiaKey), never startup."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._client = None
+
+    def read(self, content: bytes) -> ExtractedDocument:
+        if self._client is None:
+            self._client = parse_client(self._settings)
+        return extract_pdf(content, client=self._client)

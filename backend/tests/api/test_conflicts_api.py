@@ -11,12 +11,13 @@ from app import record
 from app.config import Settings
 from app.main import app
 from tests.conftest import ADMIN_DSN, make_ctx
-from tests.record.test_conflicts import REFERRAL, REFERRAL_FACTS
+from tests.record.test_conflicts import REFERRAL, REFERRAL_FACTS, parse
 from tests.record.test_adding_documents import by_document
+from tests.review import use_all_as_read
 
 
 async def test_a_parked_document_shows_both_sides_and_confirming_commits_the_choice(clean_db, tmp_path):
-    ctx = make_ctx(clean_db, by_document(referral=REFERRAL_FACTS))
+    ctx = make_ctx(clean_db, by_document(referral=REFERRAL_FACTS), parser=parse())
     app.state.ctx = replace(ctx, settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN, raw_documents_dir=str(tmp_path)))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         patient = (await http.post("/api/patients", json={"label": "Demo patient K"})).json()["patient_id"]
@@ -44,8 +45,9 @@ async def test_a_parked_document_shows_both_sides_and_confirming_commits_the_cho
         done = await http.post(f"/api/runs/{run_id}/confirm",
                                json={"resolutions": [{"conflict_id": c["id"], "choice": "accept_draft"}]})
         assert done.status_code == 202
-        assert (done.json()["outcome"], done.json()["version_number"]) == ("committed", 2)
-        assert done.json()["rescan"] is not None
+        assert done.json()["outcome"] == "awaiting_review", "a letter's Facts then wait for Letter review"
+        run = await use_all_as_read(http, run_id)
+        assert (run["state"]["phase"], run["state"]["version_number"]) == ("committed", 2)
         again = await http.post(f"/api/runs/{run_id}/confirm",
                                 json={"resolutions": [{"conflict_id": c["id"], "choice": "accept_draft"}]})
         assert again.status_code == 409

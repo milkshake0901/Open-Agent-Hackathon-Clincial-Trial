@@ -2,15 +2,17 @@
 
 // Optional clinical Documents (letters, reports) added after the questionnaire. Every file becomes its own Document and Profile
 // version on the server; however many are added at once, this shows one "Checking N documents" state, then
-// one line per file.
+// one line per file. A letter's Facts then wait for Letter review before they are saved.
 
 import { useState } from "react";
-import { api, followRun } from "@/lib/api";
+import { api, followRun, type IngestOutcome } from "@/lib/api";
 import { ConflictDialog } from "./conflict-dialog";
+import { LetterReview } from "./letter-review";
 
 type Result =
-  | { kind: "added"; version: number; already: boolean }
+  | { kind: "added"; version: number; already: boolean; corrections?: "saving" | "saved" | "failed" }
   | { kind: "needs_answer"; runId: string }
+  | { kind: "needs_review"; runId: string }
   | { kind: "failed"; reason: string };
 
 type Batch = { names: string[]; done: number } | null;
@@ -23,10 +25,21 @@ async function check(patientId: string, file: File): Promise<Result> {
     if (state.phase === "committed" && state.version_number !== null)
       return { kind: "added", version: state.version_number, already: accepted.deduplicated };
     if (state.phase === "awaiting_patient") return { kind: "needs_answer", runId: accepted.run_id };
+    if (state.phase === "awaiting_review") return { kind: "needs_review", runId: accepted.run_id };
     return { kind: "failed", reason: state.reason ?? "It could not be checked." };
   } catch (err) {
     return { kind: "failed", reason: (err as Error).message };
   }
+}
+
+// What a Conflict's answer or a Letter review's commit leaves the file at.
+function settled(o: IngestOutcome, before: Result): Result {
+  if (o.outcome === "committed" && o.version_number !== null)
+    return { kind: "added", version: o.version_number, already: false,
+             corrections: o.correction_run_id ? "saving" : undefined };
+  if (o.outcome === "awaiting_review") return { kind: "needs_review", runId: o.run_id };
+  if (o.outcome === "rejected") return { kind: "failed", reason: o.reason ?? "It could not be checked." };
+  return before;
 }
 
 const plural = (n: number) => `${n} document${n === 1 ? "" : "s"}`;
@@ -82,19 +95,23 @@ export function AddDocuments({ patientId }: { patientId: string }) {
           </div>
         )}
       </div>
-      {results.map(({ result }, i) =>
-        result.kind === "needs_answer" ? (
-          <ConflictDialog key={result.runId} runId={result.runId}
-                          onDone={(o) => setResults((rs) => rs.map((r, j) => (j !== i ? r : {
-                            ...r,
-                            result: o.outcome === "committed" && o.version_number !== null
-                              ? { kind: "added", version: o.version_number, already: false }
-                              : o.outcome === "rejected"
-                                ? { kind: "failed", reason: o.reason ?? "It could not be checked." }
-                                : r.result,
-                          })))} />
-        ) : null,
-      )}
+      {results.map(({ result }, i) => {
+        const update = (o: IngestOutcome) => {
+          setResults((rs) => rs.map((r, j) => (j !== i ? r : { ...r, result: settled(o, r.result) })));
+          if (o.correction_run_id) {
+            followRun(o.correction_run_id).then((run) => setResults((rs) => rs.map((r, j) => {
+              if (j !== i || r.result.kind !== "added") return r;
+              const st = run.state!;
+              return st.phase === "committed" && st.version_number !== null
+                ? { ...r, result: { ...r.result, version: st.version_number, corrections: "saved" } }
+                : { ...r, result: { ...r.result, corrections: "failed" } };
+            })));
+          }
+        };
+        if (result.kind === "needs_answer") return <ConflictDialog key={result.runId} runId={result.runId} onDone={update} />;
+        if (result.kind === "needs_review") return <LetterReview key={result.runId} runId={result.runId} onDone={update} />;
+        return null;
+      })}
       {results.length > 0 && (
         <ul className="flex flex-col gap-2">
           {results.map(({ name, result }, i) => (
@@ -104,10 +121,15 @@ export function AddDocuments({ patientId }: { patientId: string }) {
                 {result.kind === "added"
                   ? result.already
                     ? `Already added (version ${result.version}).`
-                    : `Added. Your record is now version ${result.version}.`
+                    : `Added. Your record is now version ${result.version}.` + (
+                      result.corrections === "saving" ? " Saving your corrections as your own answers…"
+                        : result.corrections === "saved" ? " Your corrections are saved as your own answers."
+                          : result.corrections === "failed" ? " Your corrections could not be saved." : "")
                   : result.kind === "needs_answer"
                     ? "Something in it differs from what we have. Please tell us which is right."
-                    : `Not added: ${result.reason}`}
+                    : result.kind === "needs_review"
+                      ? "Read. Please check what we read from it below, or use it all as read."
+                      : `Not added: ${result.reason}`}
               </p>
             </li>
           ))}

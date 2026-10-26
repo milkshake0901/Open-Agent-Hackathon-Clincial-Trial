@@ -5,19 +5,22 @@ from dataclasses import dataclass, field, replace
 from typing import Literal
 
 from app.trace.events import (
-    CriticReviewed, IntakeDrafted, LlmCalled, PatientResolved, ProfileCommitted, RunAwaitingPatient, RunEvent, RunRejected,
+    CriticReviewed, IntakeDrafted, LlmCalled, PatientResolved, ProfileCommitted, ReviewAnswered, RunAwaitingPatient,
+    RunAwaitingReview, RunEvent, RunRejected,
 )
 
 
 @dataclass
 class IngestRunState:
-    phase: Literal["started", "drafting", "awaiting_patient", "committed", "rejected"] = "started"
+    phase: Literal["started", "drafting", "awaiting_patient", "awaiting_review", "committed", "rejected"] = "started"
     attempt: int = 0
     drafts: list[dict] = field(default_factory=list)
     findings: list[dict] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
     accepted_drafts: list[dict] = field(default_factory=list)
     resolved: list[dict] = field(default_factory=list)     # {"conflict": <Conflict dict>, "choice": ...}, in order
+    review: list[dict] = field(default_factory=list)       # Letter review: {"draft", "decision", "correction"} per draft
+    withdrawn: list[str] = field(default_factory=list)     # accepted Fact ids the review's commit leaves out
     profile_version_id: str | None = None
     version_number: int | None = None
     reason: str | None = None              # why the run was rejected
@@ -42,10 +45,11 @@ class RescanRunState:
 
 def reduce_ingest(state: IngestRunState, ev: RunEvent) -> IngestRunState:
     """IntakeDrafted → drafts/attempt (a questionnaire drafts twice per attempt: code, then the Intake agent);
-    CriticReviewed → findings; RunAwaitingPatient → phase+conflicts; PatientResolved → move resolved conflicts (with the choice) to `resolved`;
+    CriticReviewed → findings; RunAwaitingPatient → phase+conflicts; RunAwaitingReview → phase+review; ReviewAnswered → that draft's decision;
+    PatientResolved → move resolved conflicts (with the choice) to `resolved`;
     ProfileCommitted → committed; RunRejected → rejected; LlmCalled → models_answered. Returns a new state."""
     s = replace(state, drafts=list(state.drafts), conflicts=list(state.conflicts), resolved=list(state.resolved),
-                models_answered=list(state.models_answered))
+                review=[dict(r) for r in state.review], models_answered=list(state.models_answered))
     match ev:
         case IntakeDrafted(attempt=attempt, drafts=drafts):
             s.drafts = s.drafts + drafts if attempt == s.attempt else list(drafts)
@@ -58,6 +62,11 @@ def reduce_ingest(state: IngestRunState, ev: RunEvent) -> IngestRunState:
             choices = {r.get("conflict_id"): r.get("choice") for r in resolutions}
             s.resolved += [{"conflict": c, "choice": choices[c.get("id")]} for c in s.conflicts if c.get("id") in choices]
             s.conflicts = [c for c in s.conflicts if c.get("id") not in choices]
+        case RunAwaitingReview(drafts=drafts, withdrawn=withdrawn):
+            s.phase, s.withdrawn = "awaiting_review", list(withdrawn)
+            s.review = [{"draft": d, "decision": None, "correction": None} for d in drafts]
+        case ReviewAnswered(index=index, decision=decision, correction=correction):
+            s.review[index] = {**s.review[index], "decision": decision, "correction": correction}
         case ProfileCommitted(profile_version_id=vid, version_number=number):
             s.phase, s.profile_version_id, s.version_number = "committed", vid, number
         case RunRejected(reason=reason):
