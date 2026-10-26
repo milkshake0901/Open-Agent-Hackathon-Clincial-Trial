@@ -171,7 +171,7 @@ backend/.venv/bin/pytest tests/llm                         # run from backend/: 
 What good looks like:
 
 - `status` prints `online` and `listed` for every lane. `unauthorized` means the token is wrong: copy it again from `<stateDir>/proxy-token`. `offline` means nothing answered `GET /v1/models`.
-- `chat` prints `pong`. `lane fast` prints `requested … answered nvidia/nemotron-3-ultra-550b-a55b`; that line is what proves the Nemotron lane served the call.
+- `chat` prints `pong`. `lane fast` prints `requested … answered nvidia/nemotron-3-ultra-550b-a55b`; that line is what proves the Nemotron lane served the call. With a lane in `DIRECT_LANES` and `NVIDIA_API_KEY` set, `lane <name>` answers from NVIDIA's API.
 - `illustrate` prints `stored data/media/<job>/<seq>-<file>.png` (gitignored). On a runtime without a media engine it prints `Images unavailable: <reason>` and exits 2. The Nightshift web build has no media engine, so seat an image lane (still-sdcpp and weights) first.
 - Media source jobs use `MEDIA_PRIVACY` (default `local-only`). That floor is never widened, so on a box whose only local lane is the in-browser device model, a `local-only` job waits until the Nightshift page is open.
 
@@ -183,7 +183,19 @@ Lanes name a model, never a `meterless/*` routing mode. Checked on 2026-10-24 ag
 |---|---|---|
 | `fast` (Intake, diagnosis check) | Nemotron 3 Ultra 550B | Lightning answers short prompts but fails the Intake prompt at about 60 s (`502 Load failed`) |
 | `deep` (Matcher) | Nemotron 3 Ultra 550B | strongest reasoning, 1M context |
-| `judge` (Evaluator) | Nemotron 3 Ultra 550B, for now | meant to be Lightning 30B, so a different model checks the Matcher (its claims are short); Lightning is switched off in Nightshift's Compute sources, which answers any call naming it with `400 That model is switched off` |
+| `judge` (Evaluator) | Nemotron 3 Ultra 550B | Lightning was meant to judge so a different model checks the Matcher, but it is too slow (below). Nightshift also has Lightning switched off in Compute sources (`400 That model is switched off in Meterless`, rechecked 2026-10-26) |
+
+**Why the judge isn't on Lightning.** Measured 2026-10-26 with the Evaluator's real prompt and three CLAIM lines, two runs each:
+
+| Path | Output tokens | Time per call |
+|---|---|---|
+| Ultra through Nightshift | 150-170 | 2.5-6 s |
+| Ultra directly on NVIDIA's API | ~990 | 13-21 s |
+| Lightning directly on NVIDIA's API | 6,900-8,300 | 85-113 s |
+
+Lightning is a reasoning model and writes thousands of thinking tokens before answering, so every Evaluator attempt would take minutes. It was also stricter: it rejected "chemo ended around March 2025" as support for "no chemotherapy within 4 weeks", which Ultra through Nightshift accepted. Ultra called directly reasoned more and split on that claim, so how much Nightshift trims Ultra's reasoning (or answers from its cache) changes answers too. Untested: Lightning with reasoning turned off.
+
+**Lanes on NVIDIA's API.** `DIRECT_LANES` (default `{}`: none) names lanes that skip Nightshift and call NVIDIA's OpenAI-compatible API with `NVIDIA_API_KEY` (`app/llm/direct.py`), for example `{"judge": "nvidia/nemotron-3.5-lightning-30b-a3b"}`. Every other lane, and every plain-text or media call, stays on Nightshift. Without a key, every lane is on Nightshift whatever `DIRECT_LANES` says. `scripts/meterless.py status` says which lanes go to NVIDIA, and `lane judge` makes one call through whichever provider the app would use. A direct lane sends the same de-identified prompts it would send through Nightshift.
 
 Not usable from this account or build: Nemotron 3 Super 120B and Llama 3.1 Nemotron Ultra 253B (NVIDIA 404), Llama 3.3 Nemotron Super 49B (410, retired), Nemotron 3 Embed 1B (the web build answers `/v1/embeddings` with 501).
 

@@ -20,7 +20,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 from pydantic import BaseModel  # noqa: E402
 
 from app.config import Settings  # noqa: E402
-from app.llm import Lane, LlmUnavailable, Media, MediaFailed, MediaUnavailable  # noqa: E402
+from app.llm import Lane, LlmUnavailable, Media, MediaFailed, MediaUnavailable, json_object  # noqa: E402
+from app.llm.direct import connect as connect_lanes  # noqa: E402
 from app.llm.nightshift import Nightshift, auto_detect  # noqa: E402
 
 
@@ -48,8 +49,12 @@ async def main(args: argparse.Namespace) -> int:
             print(f"{ns.base_url}: {state}")
             if state == "unauthorized":
                 print("  the runtime rejected METERLESS_RUNTIME_TOKEN; paste the token from <stateDir>/proxy-token")
+            direct = getattr(connect_lanes(s), "direct", None)   # lanes on NVIDIA's API when NVIDIA_API_KEY is set
             for lane, model in ns.lanes.items():
-                print(f"  lane {lane:<5} → {model}  {'listed' if model in ids else 'NOT LISTED'}")
+                if direct is not None and lane in direct.lanes:
+                    print(f"  lane {lane:<5} → {direct.lanes[lane]}  NVIDIA API, not Nightshift")
+                else:
+                    print(f"  lane {lane:<5} → {model}  {'listed' if model in ids else 'NOT LISTED'}")
             return 0 if state == "online" else 1
 
         if args.cmd == "chat":
@@ -57,11 +62,15 @@ async def main(args: argparse.Namespace) -> int:
             return 0
 
         if args.cmd == "lane":
-            done = await ns.complete(Lane(args.lane), "You answer oncology questions briefly.",
-                                     "Is EGFR exon 19 deletion an activating mutation?", Ping)
+            lanes = connect_lanes(s)   # the lane's provider, as the app picks it
+            try:
+                done = await lanes.complete(Lane(args.lane), "You answer oncology questions briefly.",
+                                            "Is EGFR exon 19 deletion an activating mutation?", Ping)
+            finally:
+                await lanes.aclose()
             print(f"requested {done.model_requested}, answered {done.model_answered}, "
                   f"{done.latency_ms} ms, {done.prompt_tokens}+{done.completion_tokens} tokens")
-            print(f"  {done.value.model_dump()}")
+            print(f"  {Ping.model_validate_json(json_object(done.text)).model_dump()}")
             return 0
 
         media = Media(ns, ROOT / s.media_dir)

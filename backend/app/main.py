@@ -12,7 +12,7 @@ from app import logfile, trials
 from app.api import EXCEPTION_HANDLERS, router
 from app.config import Settings
 from app.ctx import Ctx
-from app.llm.nightshift import Nightshift
+from app.llm.direct import connect
 from app.sql.reader import PgReader, ZetarisReader, pg_column_types
 from app.sql.writer import PgWriter
 from app.worldmodel import PgEventStore, WorldModel
@@ -33,8 +33,7 @@ async def lifespan(app: FastAPI):
     reader = PgReader(pool)
     wm = WorldModel(namespace=WORLD_MODEL_NAMESPACE, store=PgEventStore(writer, WORLD_MODEL_NAMESPACE))
     await wm.replay()
-    llm = Nightshift(settings.meterless_base_url, settings.meterless_runtime_token, settings.meterless_app_id,
-                     settings.lane_models, default_model=settings.meterless_model)
+    llm = connect(settings)   # Nightshift, with DIRECT_LANES on NVIDIA's API when NVIDIA_API_KEY is set
     await llm.models()   # warns, never fails: a missing runtime turns model calls into LlmUnavailable
     zetaris_http = httpx.AsyncClient()
     if settings.zetaris_api_key:
