@@ -7,16 +7,18 @@ from app.matching.types import (
 from app.record import DocumentHash, FactId, ProfileVersionId
 from app.sql.reader import SqlReader
 from app.trace import RunId
-from app.trials import CriterionId, NctId, Trial, active_filter, trial_columns, trial_from_row
+from app.trials import CriterionId, NctId, Trial, active_filter, listing_filter, trial_columns, trial_from_row
 
 
-async def trials_needing_verdict(reader: SqlReader, version_id: ProfileVersionId, only: set[NctId] | None) -> tuple[list[Trial], list[NctId]]:
-    """The idempotent plan, in one query (see loop.plan): active Trials, each with whether a Verdict exists for
-    (Trial, its current eligibility hash, this version)."""
+async def trials_needing_verdict(reader: SqlReader, version_id: ProfileVersionId, label_keys: list[str],
+                                 only: set[NctId] | None) -> tuple[list[Trial], list[NctId]]:
+    """The idempotent plan, in one query (see loop.plan): active Trials listing a label with one of these keys
+    (trials.label_keys), each with whether a Verdict exists for (Trial, its current eligibility hash, this version)."""
     rows = await reader.fetch(
         f"SELECT {trial_columns('t')}, v.nct_id AS judged FROM {reader.table('trial')} t "
         f"LEFT JOIN {reader.table('verdict')} v ON v.nct_id = t.nct_id AND v.eligibility_hash = t.eligibility_hash "
-        f"AND v.profile_version_id = $1 WHERE {active_filter('t')} ORDER BY t.nct_id", (version_id,))
+        f"AND v.profile_version_id = $1 WHERE {active_filter('t')} "
+        f"AND {listing_filter(reader, label_keys, alias='t', start=2)} ORDER BY t.nct_id", (version_id, *label_keys))
     rows = [r for r in rows if only is None or r["nct_id"] in only]
     return ([trial_from_row(r) for r in rows if r["judged"] is None],
             [NctId(r["nct_id"]) for r in rows if r["judged"] is not None])
@@ -96,32 +98,35 @@ async def verdict(reader: SqlReader, nct_id: NctId, version_id: ProfileVersionId
 
 
 async def verdicts_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[tuple[Verdict, int]]:
-    """Each Verdict (results loaded) with its count of unknown results, unranked."""
+    """Each Verdict (results loaded) with its count of unknown results, unranked; none for a dropped Trial (its
+    Verdicts stay stored as history, ADR 0002)."""
     rows = await reader.fetch(
         f"SELECT {_VERDICT_COLS}, (SELECT count(*) FROM {reader.table('criterion_result')} cr "
         "WHERE cr.nct_id = v.nct_id AND cr.eligibility_hash = v.eligibility_hash "
         "AND cr.profile_version_id = v.profile_version_id AND cr.outcome = 'unknown') AS unknowns "
-        f"{_current(reader)} WHERE v.profile_version_id = $1 ORDER BY v.nct_id", (version_id,))
+        f"{_current(reader)} WHERE v.profile_version_id = $1 AND NOT t.dropped ORDER BY v.nct_id", (version_id,))
     return [(await _verdict(reader, r, True), int(r["unknowns"])) for r in rows]
 
 
 async def questions_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[DoctorQuestion]:
-    """Every Doctor question of the version's current Verdicts, in Trial then Criterion order (not deduplicated)."""
+    """Every Doctor question of the version's current Verdicts on Trials not dropped, in Trial then Criterion order
+    (not deduplicated)."""
     rows = await reader.fetch(
         f"SELECT {_DQ_COLS} FROM {reader.table('doctor_question')} q "
         f"JOIN {reader.table('trial')} t ON t.nct_id = q.nct_id AND t.eligibility_hash = q.eligibility_hash "
         f"JOIN {reader.table('criterion')} c ON c.id = q.criterion_id "
-        "WHERE q.profile_version_id = $1 ORDER BY q.nct_id, c.ordinal", (version_id,))
+        "WHERE q.profile_version_id = $1 AND NOT t.dropped ORDER BY q.nct_id, c.ordinal", (version_id,))
     return [_doctor_question(r) for r in rows]
 
 
 async def respondent_questions_for_version(reader: SqlReader, version_id: ProfileVersionId) -> list[RespondentQuestion]:
-    """Every Respondent question of the version's current Verdicts, in Trial then Criterion order (not deduplicated)."""
+    """Every Respondent question of the version's current Verdicts on Trials not dropped, in Trial then Criterion order
+    (not deduplicated)."""
     rows = await reader.fetch(
         f"SELECT {_RQ_COLS} FROM {reader.table('respondent_question')} q "
         f"JOIN {reader.table('trial')} t ON t.nct_id = q.nct_id AND t.eligibility_hash = q.eligibility_hash "
         f"JOIN {reader.table('criterion')} c ON c.id = q.criterion_id "
-        "WHERE q.profile_version_id = $1 ORDER BY q.nct_id, c.ordinal", (version_id,))
+        "WHERE q.profile_version_id = $1 AND NOT t.dropped ORDER BY q.nct_id, c.ordinal", (version_id,))
     return [_respondent_question(r) for r in rows]
 
 # Verdicts are NOT written here: app.worldmodel.timeline.record_verdict (World Model relate → projector).

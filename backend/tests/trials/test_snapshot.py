@@ -31,3 +31,14 @@ async def test_loading_the_same_snapshot_again_changes_nothing(ctx):
     again = await trials.load_snapshot(ctx, SNAPSHOT)
 
     assert again.new == () and again.changed == () and again.unchanged == (NCT,)
+
+
+async def test_the_snapshot_never_overwrites_trials_the_ingest_recorded(ctx, tmp_path):
+    from tests.trials.test_ingest import AU, save_pages, study
+
+    await trials.ingest(ctx, save_pages(tmp_path, [study(NCT, sites=[AU], conditions=("Lung Cancer",))]))
+
+    report = await trials.load_snapshot(ctx, SNAPSHOT)
+
+    assert report.fetched == 0 and report.new == report.changed == report.unchanged == ()
+    assert (await trials.trial(ctx, NCT)).conditions == ("Lung Cancer",)

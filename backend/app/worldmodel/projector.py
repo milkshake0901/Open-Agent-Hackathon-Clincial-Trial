@@ -7,8 +7,15 @@ truncates the projected tables and replays wm_event through this, which proves t
 Mapping (see timeline.py for how domain operations become these events):
   assertFact  about=patient:*         → fact                     (append-only)
   snapshot    attrs.kind=profile      → profile_version + profile_version_fact
-  upsertEntity type=trial             → trial (upsert) + criterion rows from attrs.criteria (immutable per hash)
+  upsertEntity type=trial             → trial (upsert) + trial_condition rows from attrs.conditions (replaced)
+                                        + criterion rows from attrs.criteria (immutable per hash)
                                         + trial_site rows from attrs.sites (replaced)
+                                        + trial_contact rows from attrs.contacts and each site's contacts (replaced)
+                                        + trial_outcome, trial_outcome_value and trial_publication rows and
+                                          trial.has_results from attrs.outcomes (replaced);
+                                        attrs.dropped → trial flagged dropped, its sites, contacts and Outcomes removed
+  upsertEntity type=criteria          → criterion rows split lazily for one (Trial, eligibility hash)
+  upsertEntity type=outcome_summary   → outcome_summary row written lazily for one (Trial, Outcome content hash)
   relate      type=verdict, open edge → verdict + criterion_result + doctor_question + respondent_question
               (the closing re-emit of a superseded edge changes no row: old Verdicts are history, ADR 0002)
 """
@@ -33,6 +40,10 @@ async def project(tx: "Tx", event: "WorldEvent") -> None:
         await _profile_version(tx, p)
     elif event.kind == "upsertEntity" and isinstance(p, Entity) and p.type == "trial":
         await _trial(tx, p)
+    elif event.kind == "upsertEntity" and isinstance(p, Entity) and p.type == "criteria":
+        await _criteria(tx, p.attrs["nct_id"], p.attrs["eligibility_hash"], p.attrs["criteria"])
+    elif event.kind == "upsertEntity" and isinstance(p, Entity) and p.type == "outcome_summary":
+        await _outcome_summary(tx, p.attrs)
     elif event.kind == "relate" and isinstance(p, Relationship) and p.type == "verdict" and p.valid_to is None:
         await _verdict(tx, p)
 
@@ -61,18 +72,25 @@ async def _profile_version(tx: "Tx", s) -> None:
 
 async def _trial(tx: "Tx", e) -> None:
     a = e.attrs
+    if a.get("dropped"):
+        await tx.execute("UPDATE trial SET dropped = true WHERE nct_id = $1", (a["external_id"],))
+        await tx.execute("DELETE FROM trial_contact WHERE nct_id = $1", (a["external_id"],))
+        await _clear_outcomes(tx, a["external_id"])
+        await tx.execute("DELETE FROM trial_site WHERE nct_id = $1", (a["external_id"],))
+        return
     await tx.execute(
-        "INSERT INTO trial (nct_id, title, conditions, status, eligibility_text, eligibility_hash, source, fetched_at) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (nct_id) DO UPDATE SET title = EXCLUDED.title, "
+        "INSERT INTO trial (nct_id, title, conditions, status, eligibility_text, eligibility_hash, source, fetched_at, "
+        "primary_completion_date, completion_date, last_update_date) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (nct_id) DO UPDATE SET title = EXCLUDED.title, "
         "conditions = EXCLUDED.conditions, status = EXCLUDED.status, eligibility_text = EXCLUDED.eligibility_text, "
-        "eligibility_hash = EXCLUDED.eligibility_hash, source = EXCLUDED.source, fetched_at = EXCLUDED.fetched_at",
+        "eligibility_hash = EXCLUDED.eligibility_hash, source = EXCLUDED.source, fetched_at = EXCLUDED.fetched_at, "
+        "primary_completion_date = EXCLUDED.primary_completion_date, completion_date = EXCLUDED.completion_date, "
+        "last_update_date = EXCLUDED.last_update_date, dropped = false",
         (a["external_id"], a["title"], list(a["conditions"]), a["status"], a["text"], a["eligibility_hash"],
-         a["source"], _timestamp(a["observed_at"])))
-    for c in a["criteria"]:
-        await tx.execute(
-            "INSERT INTO criterion (id, nct_id, eligibility_hash, kind, ordinal, text) VALUES ($1, $2, $3, $4, $5, $6) "
-            "ON CONFLICT (id) DO NOTHING",
-            (c["id"], a["external_id"], a["eligibility_hash"], c["kind"], c["ordinal"], c["text"]))
+         a["source"], _timestamp(a["observed_at"]), _date(a.get("primary_completion_date")),
+         _date(a.get("completion_date")), _date(a.get("last_update_date"))))
+    await _conditions(tx, a["external_id"], a["conditions"])
+    await _criteria(tx, a["external_id"], a["eligibility_hash"], a["criteria"])
     if "sites" in a:
         await tx.execute("DELETE FROM trial_site WHERE nct_id = $1", (a["external_id"],))
         for i, site in enumerate(a["sites"], 1):
@@ -81,6 +99,80 @@ async def _trial(tx: "Tx", e) -> None:
                 "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
                 (a["external_id"], i, site["facility"], site["city"], site["country"], site["status"],
                  site["lat"], site["lon"]))
+        await tx.execute("DELETE FROM trial_contact WHERE nct_id = $1 AND kind = 'site'", (a["external_id"],))
+        for i, site in enumerate(a["sites"], 1):
+            await _contacts(tx, a["external_id"], "site", site.get("contacts", ()), site_ordinal=i)
+    if "contacts" in a:
+        c = a["contacts"]
+        await tx.execute("DELETE FROM trial_contact WHERE nct_id = $1 AND kind <> 'site'", (a["external_id"],))
+        await _contacts(tx, a["external_id"], "sponsor", [{"name": c["sponsor"]}] if c["sponsor"] else [])
+        await _contacts(tx, a["external_id"], "responsible_party",
+                        [c["responsible_party"]] if c["responsible_party"] else [])
+        await _contacts(tx, a["external_id"], "central", c["central"])
+        await _contacts(tx, a["external_id"], "official", c["officials"])
+    if "outcomes" in a:
+        await _outcomes(tx, a["external_id"], a["outcomes"])
+
+
+async def _conditions(tx: "Tx", nct_id: str, conditions) -> None:
+    from app import trials
+
+    await tx.execute("DELETE FROM trial_condition WHERE nct_id = $1", (nct_id,))
+    for key, label in {trials.label_key(c): c for c in conditions if c.strip()}.items():
+        await tx.execute("INSERT INTO trial_condition (nct_id, label_key, label, words) VALUES ($1, $2, $3, $4)",
+                         (nct_id, key, label, trials.label_words(label)))
+
+
+async def _outcomes(tx: "Tx", nct_id: str, o: dict) -> None:
+    await tx.execute("UPDATE trial SET has_results = $2 WHERE nct_id = $1", (nct_id, o["has_results"]))
+    await _clear_outcomes(tx, nct_id)
+    rows = [(kind, i, m["measure"], m["description"], m["time_frame"], "", "", "")
+            for kind in ("primary", "secondary", "other") for i, m in enumerate(o[kind], 1)]
+    rows += [("result", i, r["title"], r["description"], r["time_frame"], r["type"], r["unit"], r["param_type"])
+             for i, r in enumerate(o["results"], 1)]
+    for row in rows:
+        await tx.execute(
+            "INSERT INTO trial_outcome (nct_id, kind, ordinal, title, description, time_frame, type, unit, param_type) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", (nct_id, *row))
+    for i, r in enumerate(o["results"], 1):
+        for j, v in enumerate(r["values"], 1):
+            await tx.execute(
+                "INSERT INTO trial_outcome_value (nct_id, result_ordinal, ordinal, group_title, label, value, spread, "
+                "lower_limit, upper_limit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                (nct_id, i, j, v["group"], v["label"], v["value"], v["spread"], v["lower"], v["upper"]))
+    for i, p in enumerate(o["publications"], 1):
+        await tx.execute("INSERT INTO trial_publication (nct_id, ordinal, pmid, type, citation) "
+                         "VALUES ($1, $2, $3, $4, $5)", (nct_id, i, p["pmid"], p["type"], p["citation"]))
+
+
+async def _clear_outcomes(tx: "Tx", nct_id: str) -> None:
+    for table in ("trial_outcome_value", "trial_outcome", "trial_publication"):
+        await tx.execute(f"DELETE FROM {table} WHERE nct_id = $1", (nct_id,))
+
+
+async def _contacts(tx: "Tx", nct_id: str, kind: str, contacts, *, site_ordinal: int = 0) -> None:
+    for i, c in enumerate(contacts, 1):
+        await tx.execute(
+            "INSERT INTO trial_contact (nct_id, kind, site_ordinal, ordinal, name, role, email, phone, affiliation, "
+            "title) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+            (nct_id, kind, site_ordinal, i, c["name"], c.get("role", ""), c.get("email", ""), c.get("phone", ""),
+             c.get("affiliation", ""), c.get("title", "")))
+
+
+async def _criteria(tx: "Tx", nct_id: str, eligibility_hash: str, criteria: list[dict]) -> None:
+    for c in criteria:
+        await tx.execute(
+            "INSERT INTO criterion (id, nct_id, eligibility_hash, kind, ordinal, text) VALUES ($1, $2, $3, $4, $5, $6) "
+            "ON CONFLICT (id) DO NOTHING",
+            (c["id"], nct_id, eligibility_hash, c["kind"], c["ordinal"], c["text"]))
+
+
+async def _outcome_summary(tx: "Tx", a: dict) -> None:
+    # Immutable per (Trial, Outcome content hash): if two first opens race, the first summary recorded stays.
+    await tx.execute(
+        "INSERT INTO outcome_summary (nct_id, outcomes_hash, summary, model, written_at) VALUES ($1, $2, $3, $4, $5) "
+        "ON CONFLICT (nct_id, outcomes_hash) DO NOTHING",
+        (a["nct_id"], a["outcomes_hash"], a["text"], a["model"], _timestamp(a["observed_at"])))
 
 
 async def _verdict(tx: "Tx", r) -> None:
@@ -113,3 +205,7 @@ def _timestamp(iso: str):
 
     t = datetime.fromisoformat(iso)
     return t if t.tzinfo else t.replace(tzinfo=UTC)
+
+
+def _date(iso: str | None):
+    return date.fromisoformat(iso) if iso else None

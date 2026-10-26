@@ -15,7 +15,7 @@ match outcome:
     case record.AwaitingPatient(conflicts=cs): ...          # UI asks the patient; record.confirm(...)
     case record.Rejected(reason=r): ...
 
-await trials.sync(ctx, condition="non-small cell lung cancer", location="Sydney")
+await trials.ingest(ctx, trials.LivePages())   # every Australian study (ADR 0004); no model call, no Re-scan
 change = await matching.change_between(ctx, "NCT0123", v3, v4)   # why did the Verdict move?
 log = await trace.read(ctx.ui_reader, run_id)                     # how the system reasoned
 ```
@@ -65,8 +65,8 @@ Two candidate designs were sketched in parallel and scored by a separate judge.
 
 ## Open questions and risks
 
-- Does Lightning SQL accept our query style (array parameters, window functions), or must `ZetarisReader` rewrite them? One-hour spike on day 1.
-- Does Zetaris cache our Postgres reads, and how long? Decides the visibility-wait bound.
+- ~~Does Lightning SQL accept our query style, or must `ZetarisReader` rewrite them?~~ Answered 2026-10-25: every agent query runs unchanged. `ZetarisReader` only inlines `$n` as Spark literals (backslash-escaped: Spark reads `'It''s'` as `Its`) and restores column types, because Zetaris returns every value as a string. `tests/sql/test_zetaris_live.py` checks both readers give the same objects.
+- Does Zetaris cache our Postgres reads, and how long? Decides the visibility-wait bound. So far reads go to Postgres over JDBC on each query (no `CACHE TABLE` on the datasource), and nothing calls `wait_visible` yet.
 - How many parallel requests does local Nightshift serve? Bounds Re-scan time in the demo.
 - Which Nightshift model serves each lane: decided later (`Settings.lane_models`).
 - What the UI shows when a model call fails mid-run (currently: the run ends failed with the reason).

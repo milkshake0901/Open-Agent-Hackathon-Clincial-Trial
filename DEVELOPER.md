@@ -19,7 +19,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 5. **Re-scan.** For a new Profile version, judge every active Trial that lacks a Verdict for (NCT, eligibility hash, version). Running it twice does nothing the second time.
 6. **Matcher ⇄ Evaluator** (max 3 attempts). The Matcher judges each Criterion against the patient's Facts, read through Zetaris, and sees each site as "name, status, km": code computes the distances from the postcode, which no model ever sees. The Evaluator rejects any claim without a valid citation. After 3 attempts, unsupported claims become `unknown`: a Doctor question when it needs clinical records, a Respondent question when it turns on something the Respondent could clarify (a vague date, a medicine name). An uncited "met" is never stored.
 7. **Verdicts + why.** Verdicts ranked by outcome, then nearest recruiting site (distance never changes a Verdict), with Citations back to the Document page, what changed since the last version, and the causal trace of how the system decided.
-8. **Trials** arrive separately: the fetcher pulls ClinicalTrials.gov through Zetaris and records them with World Model `ingest`, keyed by NCT ID. Only new or changed Trials trigger work.
+8. **Trials** arrive separately: the Australia-wide ingest ([ADR 0004](docs/adr/0004-australia-wide-ingest-only-open-trials-judged.md), `scripts/ingest_trials.py`) records every ClinicalTrials.gov study with an Australian site through World Model `ingest`, keyed by NCT ID. It makes no model call and never starts a Re-scan; Criteria are split, and Closed trials' Outcome summaries written, the first time they are needed.
 
 ## Folder structure
 
@@ -38,6 +38,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   ├── main.py               FastAPI app; builds one Ctx at startup
 │   │   ├── config.py             Settings from .env: URLs, tokens, loop bounds, lane models
 │   │   ├── ctx.py                the dependency bundle every facade takes
+│   │   ├── logfile.py            the operator's JSON-lines log file: configure once, then logging.getLogger + step
 │   │   │
 │   │   ├── record/               PATIENT RECORD: Documents, Facts, Profile versions, Conflicts
 │   │   │   ├── __init__.py       public API: register_document, ingest, confirm, versions, diff, ...
@@ -49,10 +50,13 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   ├── loop.py           Intake ⇄ Critic state machine; commit through the World Model
 │   │   │   └── repo.py           SQL reads; writes only documents and pages
 │   │   │
-│   │   ├── trials/               TRIALS: ClinicalTrials.gov, eligibility hash, Criteria
-│   │   │   ├── __init__.py       public API: sync, trial, active_trials, criteria
-│   │   │   ├── ctgov.py          fetch via Zetaris REST table, HTTP fallback
+│   │   ├── trials/               TRIALS: Australian ClinicalTrials.gov studies, Open and Closed trials (ADR 0004)
+│   │   │   ├── __init__.py       public API: ingest, load_snapshot, trial, active_trials, condition_labels,
+│   │   │   │                     search_condition_labels, selection (Selection), closed_trials_with_labels,
+│   │   │   │                     criteria, sites, contacts, outcomes, outcome_summary, page_url
+│   │   │   ├── ctgov.py          study JSON → Trials: saved pages, or the live v2 API paged by pageToken (paced, retried)
 │   │   │   ├── criteria.py       eligibility text → Criteria (deterministic split, model fallback)
+│   │   │   ├── summary.py        a Closed trial's plain-language Outcome summary: prompt and Outcome content hash
 │   │   │   └── repo.py           SQL reads
 │   │   │
 │   │   ├── matching/             MATCHING: Criterion results, Verdicts, Doctor questions, Re-scan
@@ -63,6 +67,14 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   ├── verdict.py        pure rules: outcome from results, questions from unknowns
 │   │   │   ├── loop.py           Matcher ⇄ Evaluator state machine; Re-scan plan and run
 │   │   │   └── repo.py           SQL reads
+│   │   │
+│   │   ├── enquiry/              ENQUIRY: email bodies the Respondent edits, copies and sends themselves
+│   │   │   ├── __init__.py       public API: details (no model call), draft (nothing stored, nothing sent)
+│   │   │   ├── types.py          EnquiryKind, ClinicalDetail, Recipient, Enquiry
+│   │   │   ├── details.py        the de-identified clinical details offered, each untickable
+│   │   │   ├── recipient.py      Open: nearest Australian site contact, else central; Closed: responsible party,
+│   │   │   │                     else an overall official; else blank
+│   │   │   └── templates.py      one prompt per EnquiryKind: Open and Closed
 │   │   │
 │   │   ├── worldmodel/           METERLESS WORLD MODEL (our Python implementation)
 │   │   │   ├── __init__.py       public API: WorldModel, Provenance, timeline, ...
@@ -88,7 +100,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   │   │   └── writer.py         Postgres transactions
 │   │   │
 │   │   └── api/                  thin HTTP routes under /api (see docs/api.md)
-│   │       └── documents.py · patients.py · runs.py · trials.py · verdicts.py · health.py · schemas.py
+│   │       └── documents.py · patients.py · runs.py · trials.py · verdicts.py · enquiries.py · health.py · schemas.py
 │   │
 │   └── tests/
 │       ├── test_boundaries.py    fails on imports of another module's internals
@@ -103,7 +115,8 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 ├── docs/
 │   ├── architecture.md           design, synthesis decision, tradeoffs, open risks
 │   ├── api.md                    HTTP endpoints and response shapes
-│   ├── adr/                      decision records (0001 storage split, 0002 append-only + versioned Verdicts, 0003 questionnaire is a Document)
+│   ├── adr/                      decision records (0001 storage split, 0002 append-only + versioned Verdicts,
+│   │                             0003 questionnaire is a Document, 0004 Australia-wide ingest, only Open trials judged)
 │   ├── diagrams/                 agent-workflow.html / .png and its source .workflow.json
 │   └── setup/                    meterless-provider-prompt.md (Nightshift wiring, not yet applied)
 │
@@ -112,7 +125,7 @@ Interactive version (dark/light, click a box to open its source lines): open [do
 │   ├── demo/                     de-identified demo Documents (committed)
 │   ├── raw/                      real Documents (gitignored; never commit)
 │   └── trials_snapshot/          saved trial results for an offline demo
-└── scripts/                      seed_demo, sync_trials, rebuild_projections (to write)
+└── scripts/                      ingest_trials, rebuild_projections; seed_demo (to write)
 ```
 
 ## Rules that keep it coherent
@@ -158,9 +171,72 @@ backend/.venv/bin/pytest tests/llm                         # run from backend/: 
 What good looks like:
 
 - `status` prints `online` and `listed` for every lane. `unauthorized` means the token is wrong: copy it again from `<stateDir>/proxy-token`. `offline` means nothing answered `GET /v1/models`.
-- `chat` prints `pong`. `lane fast` prints `requested … answered nvidia/nemotron-3.5-lightning-30b-a3b`; that line is what proves the Nemotron lane served the call.
+- `chat` prints `pong`. `lane fast` prints `requested … answered nvidia/nemotron-3-ultra-550b-a55b`; that line is what proves the Nemotron lane served the call.
 - `illustrate` prints `stored data/media/<job>/<seq>-<file>.png` (gitignored). On a runtime without a media engine it prints `Images unavailable: <reason>` and exits 2. The Nightshift web build has no media engine, so seat an image lane (still-sdcpp and weights) first.
 - Media source jobs use `MEDIA_PRIVACY` (default `local-only`). That floor is never widened, so on a box whose only local lane is the in-browser device model, a `local-only` job waits until the Nightshift page is open.
+
+### Which Nemotron serves each lane
+
+Lanes name a model, never a `meterless/*` routing mode. Checked on 2026-10-24 against the Nightshift M1-M4 web build:
+
+| Lane | Model | Why |
+|---|---|---|
+| `fast` (Intake, diagnosis check) | Nemotron 3 Ultra 550B | Lightning answers short prompts but fails the Intake prompt at about 60 s (`502 Load failed`) |
+| `deep` (Matcher) | Nemotron 3 Ultra 550B | strongest reasoning, 1M context |
+| `judge` (Evaluator) | Nemotron 3 Ultra 550B, for now | meant to be Lightning 30B, so a different model checks the Matcher (its claims are short); Lightning is switched off in Nightshift's Compute sources, which answers any call naming it with `400 That model is switched off` |
+
+Not usable from this account or build: Nemotron 3 Super 120B and Llama 3.1 Nemotron Ultra 253B (NVIDIA 404), Llama 3.3 Nemotron Super 49B (410, retired), Nemotron 3 Embed 1B (the web build answers `/v1/embeddings` with 501).
+
+**`meterless/fusion` doesn't give us a race.** Until fusion was switched on in Nightshift's own settings, every fusion request came back as auto (`app_policy.mode_coerced: true`, `bound_mode: auto`, `routing.reason: single-candidate`), whatever the `trialmatch` app rule said. Now it runs as fusion (`provider_model: meterless/fusion`), but Ultra still answers alone and the verifier is skipped as low risk (`cross_check.skip_reason: tier_a_chat`): Ultra is the only enabled Nemotron, and fusion wants a family-diverse panel. The app doesn't need it: the Matcher ⇄ Evaluator loop is our race and check.
+
+## Ingest Australian trials
+
+Postgres must be up (`docker compose up -d`). From the repo root:
+
+```bash
+backend/.venv/bin/python scripts/ingest_trials.py --live          # page the live ClinicalTrials.gov v2 API, Australia only
+backend/.venv/bin/python scripts/ingest_trials.py --pages <dir>   # or: saved GET /api/v2/studies pages, one per file
+backend/.venv/bin/pytest tests/trials                             # run from backend/: recorded pages, no network
+```
+
+`--live` requests `GET /api/v2/studies?query.locn=Australia&pageSize=1000` and follows `nextPageToken` to the last page (about 13 pages for 12,600 studies), spacing requests to 40 a minute under the API's limit of about 50 and retrying timeouts, 429s and 5xx with back-off. It keeps only studies with an Australian Trial site and drops withdrawn ones (ADR 0004). It prints `N Trials from http: … new, … changed, … unchanged`; a second run reports everything unchanged. If a page still fails after the retries, the run stops and records nothing, so just run it again. It makes no model call and starts no Re-scan.
+
+## Read the log file
+
+The app and `scripts/ingest_trials.py` write every step to one file, `data/logs/trialmatch.jsonl` (gitignored; set `LOG_FILE` to move it). It rotates at 10 MB (`LOG_MAX_BYTES`), keeping five old files (`trialmatch.jsonl.1` … `.5`, `LOG_BACKUPS`). One JSON object per line, each with `at`, `level`, `logger` and `step`:
+
+| `step` | Written when | Fields |
+| --- | --- | --- |
+| `llm.complete` | every model call through `llm.complete`, each attempt, run or not | `lane`, `model_requested`, `model_answered`, `system`, `user`, `raw`, `parsed`, `error`, `duration_ms`, `run_id` (null outside a run) |
+| `zetaris.sql` | every agent query through Zetaris | `sql`, `rows`, `error`, `duration_ms` |
+| `matching.rescan.started` / `matching.trial_judged` / `matching.rescan.finished` | a Re-scan | `run_id`, `profile_version_id`, `to_judge`; `nct_id`, `outcome`; `judged`, `failed` |
+| `matching.rescan.no_condition_term` | a Re-scan for a patient with no Condition term: it judges nothing (ADR 0005) | `run_id`, `profile_version_id`, `patient_id` |
+| `record.diagnosis_check.offered` / `.answered` | a Diagnosis check is offered or answered (`record.check_diagnosis`, `record.answer_diagnosis_check`) | `patient_id`, `check` (its de-identified words, shortlist, ticked labels, status), `answer` (with de-identified `text`) |
+| `enquiry.drafted`, `trials.outcome_summary.drafted` | a draft is written | `nct_id`, ids and `model_answered` (never the recipient or the body) |
+| `trials.ingest.started` / `.finished` | an ingest run | `source`; the report's `fetched`, `new`, `changed`, `unchanged`, `closed`, `dropped` |
+
+Prompts are the de-identified text the model was sent; nothing else about the Respondent (Search preferences, names, contact details) is added. A log file that can't be written never fails a request: logging reports it on stderr. From the repo root:
+
+```bash
+tail -f data/logs/trialmatch.jsonl | jq -c '{at, step, lane, model_answered, duration_ms, error}'
+jq -c 'select(.step == "llm.complete" and .error != null)' data/logs/trialmatch.jsonl   # failed model calls
+jq -c 'select(.run_id == "<run id>")' data/logs/trialmatch.jsonl                         # one Re-scan
+```
+
+## Agents read through Zetaris
+
+With `ZETARIS_API_KEY` set, the app's agent reader is `ZetarisReader` (ADR 0001): agent queries go to `{ZETARIS_REST_URL}/sql-editor/sqls/run` against our Postgres registered as datasource `trialmatch`, and each SQL is logged under `app.zetaris` (a `zetaris.sql` line in the log file). Without the key the app warns and agents read Postgres directly.
+
+Zetaris returns every value as a string; `ZetarisReader` restores Postgres types from the catalog (`pg_column_types`, read at startup) by the columns of the tables each query reads, so restart the app after a migration too.
+
+A Condition term's labels are matched through `trial_condition` (one row per Trial and label key, written by the projector with the trial row): the label counts, the label search and the Trials a Condition term selects (`trials.selection`) are SQL over it, and a Re-scan's plan filters on it (`trials.listing_filter`) in its one query through Zetaris.
+
+After any migration that adds a table or column, refresh Zetaris's copy of the schema, or agent queries fail with `UNRESOLVED_COLUMN` or `TABLE_OR_VIEW_NOT_FOUND`:
+
+```bash
+python3 .scratch/ctgov-discovery/ref/run_sql.py --env-file .env -e "REGISTER DATASOURCE TABLES FROM trialmatch"
+backend/.venv/bin/pytest tests/sql                          # run from backend/: the live test compares both readers
+```
 
 ## Where to start
 

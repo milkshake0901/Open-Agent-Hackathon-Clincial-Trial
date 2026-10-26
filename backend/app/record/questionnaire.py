@@ -20,7 +20,9 @@ from datetime import date
 from typing import Any, Literal
 
 from app.record import postcodes
-from app.record.types import Document, DocumentHash, DraftFact, FactResource, Page, PatientId, Respondent
+from app.record.types import (
+    Document, DocumentHash, DraftFact, FactResource, InvalidAnswers, Page, PatientId, Respondent,
+)
 
 DEFINITION_VERSION = "1"
 DOCUMENT_FILENAME = "Intake questionnaire"
@@ -171,10 +173,6 @@ class SubmittedAnswers:
     document_hash: str
     respondent: Respondent
     answers: dict[str, Any]   # question id → value, in the shape submit_questionnaire takes
-
-
-class InvalidAnswers(ValueError):
-    """An answer that does not fit its question (unknown id, unknown option, malformed month)."""
 
 
 def _by_id() -> dict[str, Question]:

@@ -99,21 +99,46 @@ class Answer(BaseModel):
 
 async def test_lane_completion_goes_through_langchain_pinned_model():
     seen: list[httpx.Request] = []
-    done = await ns(seen, reply='```json\n{"answer": "yes", "confident": true}\n```').complete(Lane.FAST, "sys", "q", Answer)
-    assert done.value == Answer(answer="yes", confident=True)
+    reply = '```json\n{"answer": "yes", "confident": true}\n```'
+    done = await ns(seen, reply=reply).complete(Lane.FAST, "sys", "q", Answer)
+    assert done.text == reply
     assert done.model_requested == done.model_answered == "nvidia/nemotron-3.5-lightning-30b-a3b"
     req = seen[-1]
     assert json.loads(req.content)["response_format"] == {"type": "json_object"}
     assert req.headers["meterless-app"] == "trialmatch" and req.headers["meterless-scope"] == "user"
 
 
+async def test_a_nightshift_reply_with_reasoning_and_a_code_fence_parses_through_the_gateway():
+    reply = 'Thinking.</think>```json\n{"answer": "yes", "confident": true}\n```'
+    done = await llm.complete(SimpleNamespace(llm=ns([], reply=reply)), Lane.FAST, system="s", user="q", out=Answer,
+                              run_id=None)
+    assert done.value == Answer(answer="yes", confident=True)
+    assert done.model_requested == done.model_answered == "nvidia/nemotron-3.5-lightning-30b-a3b"
+    assert (done.prompt_tokens, done.completion_tokens) == (3, 2)
+
+
+async def test_a_nightshift_reply_missing_a_required_field_is_retried_with_the_error_then_gives_up():
+    seen: list[httpx.Request] = []
+    with pytest.raises(LlmUnavailable, match="did not parse twice"):
+        await llm.complete(SimpleNamespace(llm=ns(seen, reply='{"answer": "yes"}')), Lane.FAST, system="s", user="q",
+                           out=Answer, run_id=None)
+    chats = [json.loads(r.content) for r in seen if r.url.path == "/v1/chat/completions"]
+    assert len(chats) == 2
+    assert "did not match the schema" in chats[1]["messages"][-1]["content"]
+    assert "confident" in chats[1]["messages"][-1]["content"]
+
+
 async def test_gateway_retries_once_with_the_validation_error_then_gives_up():
     calls: list[str] = []
 
     class Flaky:
+        def model_for(self, lane):
+            return "flaky"
+
         async def complete(self, lane, system, user, out):
             calls.append(user)
-            return out.model_validate_json('{"answer": 1}')   # always invalid
+            return llm.Reply(text='{"answer": 1}', model_requested="flaky", model_answered="flaky",   # always invalid
+                             prompt_tokens=0, completion_tokens=0, latency_ms=0)
 
     with pytest.raises(LlmUnavailable, match="did not parse twice"):
         await llm.complete(SimpleNamespace(llm=Flaky()), Lane.JUDGE, system="s", user="u", out=Answer, run_id=None)

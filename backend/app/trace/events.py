@@ -6,14 +6,16 @@ from the OpenAPI document. Adding an event kind means editing this file only.
 """
 from __future__ import annotations
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, ClassVar, Literal, Union
 
 from pydantic import BaseModel, Field
 
 
 class _Base(BaseModel):
     """Payload only. The envelope (event_id, actor, causation_id, correlation_id, llm_call_ids)
-    is added by app.trace.append, so events stay plain data."""
+    is added by app.trace.append, so events stay plain data. An event with a `log_step` is also written to the
+    log file (app.logfile) under that step name, with the run id and its payload."""
+    log_step: ClassVar[str | None] = None
     actor: str
 
     def summary(self) -> str:
@@ -64,6 +66,7 @@ class RunRejected(_Base):
 
 # ---- rescan run ------------------------------------------------------------
 class RescanPlanned(_Base):
+    log_step: ClassVar[str | None] = "matching.rescan.started"
     kind: Literal["rescan.planned"] = "rescan.planned"
     profile_version_id: str
     to_judge: list[str]
@@ -95,6 +98,7 @@ class MatcherRetried(_Base):
     attempt: int
 
 class TrialJudged(_Base):
+    log_step: ClassVar[str | None] = "matching.trial_judged"
     kind: Literal["trial.judged"] = "trial.judged"
     nct_id: str
     outcome: str
@@ -105,6 +109,7 @@ class TrialJudged(_Base):
     respondent_questions: int = 0
 
 class RescanFinished(_Base):
+    log_step: ClassVar[str | None] = "matching.rescan.finished"
     kind: Literal["rescan.finished"] = "rescan.finished"
     judged: list[str]
     failed: list[list[str]]

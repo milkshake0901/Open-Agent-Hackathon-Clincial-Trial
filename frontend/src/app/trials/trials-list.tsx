@@ -3,19 +3,29 @@
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
 // first, excluded; then nearest recruiting site). Trials with no recruiting site within the travel limit sit in a
 // collapsed "Further away" group under their outcome, never hidden. Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
-// questionnaire links back to that question. Questions for you (Respondent questions, answered inline) and
-// Questions for your doctor are kept as two separate lists.
+// questionnaire links back to that question. Each Trial offers its contacts and an Enquiry to copy and send (about
+// taking part, or about its results once it is no longer recruiting). Questions for you (Respondent questions, answered inline) and
+// Questions for your doctor are kept as two separate lists. A Trial that stopped recruiting after it was judged keeps
+// its Verdict, shown in its own "No longer recruiting" section after the open ones (ADR 0004). Only Trials listing a
+// Condition label the Respondent ticked are judged and listed, and the page names those labels; until some are ticked
+// (the Condition term, ADR 0005) it asks the Respondent to finish the diagnosis step instead.
 
 import { useEffect, useState } from "react";
 import {
-  api, type CriterionResultOut, type DoctorQuestion, type RespondentQuestion, type SiteOut, type VerdictOut,
+  api, type CriterionResultOut, type Diagnosis, type DoctorQuestion, type RespondentQuestion, type SiteOut,
+  type VerdictOut,
 } from "@/lib/api";
 import { QuestionsForYou } from "./questions-for-you";
+import { Enquiry } from "./enquiry";
+import { TrialContacts } from "./trial-contacts";
 
 type State =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; verdicts: VerdictOut[]; questions: DoctorQuestion[]; asked: RespondentQuestion[] };
+  | {
+      kind: "ready"; term: string[] | null; diagnosis: Diagnosis; verdicts: VerdictOut[]; questions: DoctorQuestion[];
+      asked: RespondentQuestion[];
+    };
 
 const GROUPS: { outcome: VerdictOut["outcome"]; title: string; blurb: string }[] = [
   { outcome: "eligible", title: "Likely a fit", blurb: "Everything we could check matches. The trial team will still confirm." },
@@ -35,71 +45,123 @@ export function TrialsList({ patientId, versionId }: { patientId: string; versio
   useEffect(() => {
     Promise.all([api.verdicts(patientId, versionId), api.doctorQuestions(patientId, versionId),
                  api.respondentQuestions(patientId, versionId)])
-      .then(([v, questions, asked]) => setState({ kind: "ready", verdicts: v.verdicts, questions, asked }))
+      .then(([v, questions, asked]) =>
+        setState({
+          kind: "ready", term: v.condition_term, diagnosis: v.diagnosis, verdicts: v.verdicts, questions, asked,
+        }))
       .catch((e: Error) => setState({ kind: "error", message: e.message }));
   }, [patientId, versionId]);
 
   if (state.kind === "loading") return <p className="text-muted">Checking trials…</p>;
   if (state.kind === "error")
     return <p role="alert" className="text-red-700 dark:text-red-400">Trials could not be loaded: {state.message}</p>;
-  if (state.verdicts.length === 0)
-    return <p>No trials have been checked against these answers yet. Please try again in a few minutes.</p>;
-
-  return (
-    <div className="flex flex-col gap-8">
-      {GROUPS.map((g) => {
-        const verdicts = state.verdicts.filter((v) => v.outcome === g.outcome);
-        if (verdicts.length === 0) return null;
-        const near = verdicts.filter((v) => !v.further_away);
-        const far = verdicts.filter((v) => v.further_away);
-        return (
-          <section key={g.outcome} aria-labelledby={`group-${g.outcome}`} className="flex flex-col gap-3">
-            <h2 id={`group-${g.outcome}`} className="text-lg font-semibold">{g.title}</h2>
-            <p className="text-muted">{g.blurb}</p>
-            {near.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
-            {far.length > 0 && (
-              <details className="flex flex-col gap-3">
-                <summary className="cursor-pointer min-h-11 flex items-center text-accent">
-                  Further away ({far.length})
-                </summary>
-                <p className="text-muted">No site is recruiting within the distance you said you would travel.</p>
-                <div className="flex flex-col gap-3 mt-2">
-                  {far.map((v) => <VerdictCard key={v.nct_id} verdict={v} />)}
-                </div>
-              </details>
-            )}
-          </section>
-        );
-      })}
-      {state.asked.length > 0 && <QuestionsForYou patientId={patientId} questions={state.asked} />}
-      {state.questions.length > 0 && (
-        <section aria-labelledby="doctor-questions" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
-          <h2 id="doctor-questions" className="text-lg font-semibold">Questions for your doctor</h2>
-          <p className="text-muted">These need the patient&apos;s medical records. Take this list to the next appointment.</p>
-          <ol className="flex flex-col gap-2 list-decimal pl-5">
-            {state.questions.map((q) => (
-              <li key={q.criterion_id ?? q.subject}>
-                {q.text}
-                <span className="block text-sm text-muted">
-                  {q.criterion_id === null
-                    ? "Helps us search for the right trials"
-                    : `Helps decide ${q.unblocks.length} trial${q.unblocks.length === 1 ? "" : "s"}`}
-                </span>
-              </li>
-            ))}
-          </ol>
+  if (state.term === null)
+    return (
+      <div className="flex flex-col gap-8">
+        <section aria-labelledby="finish-diagnosis" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
+          <h2 id="finish-diagnosis" className="text-lg font-semibold">First, finish the diagnosis step</h2>
+          <p>
+            We only check trials for the conditions you tick in the diagnosis step, so no trials have been checked yet.
+            {state.diagnosis === "not_sure"
+              ? " You told us you are not sure of the diagnosis: once the GP has confirmed its name, go back and tick the conditions that match it."
+              : " Go back to your answers and tick the conditions that match the diagnosis, as trials name them."}
+          </p>
+          {/* Back, not a link: "/" restores no patient (their id lives only in that page's state, and the return
+              link opens their record, not the diagnosis step), so a link would start a new questionnaire. */}
+          <button type="button" onClick={() => window.history.back()}
+                  className="self-start min-h-12 rounded-lg border border-border px-5 text-base font-semibold">
+            Back to the diagnosis step
+          </button>
         </section>
+        <DoctorQuestions questions={state.questions} />
+      </div>
+    );
+
+  const none = state.verdicts.length === 0;
+  const closed = state.verdicts.filter((v) => v.no_longer_recruiting);
+  return (
+    <div className={`flex flex-col ${none ? "gap-3" : "gap-8"}`}>
+      <p className="text-muted">Trials for {state.term.join(", ")}, the conditions you ticked in the diagnosis step.</p>
+      {none ? (
+        <p>No trials have been checked against these answers yet. Please try again in a few minutes.</p>
+      ) : (
+        <>
+          {GROUPS.map((g) => {
+            const verdicts = state.verdicts.filter((v) => v.outcome === g.outcome && !v.no_longer_recruiting);
+            if (verdicts.length === 0) return null;
+            const near = verdicts.filter((v) => !v.further_away);
+            const far = verdicts.filter((v) => v.further_away);
+            return (
+              <section key={g.outcome} aria-labelledby={`group-${g.outcome}`} className="flex flex-col gap-3">
+                <h2 id={`group-${g.outcome}`} className="text-lg font-semibold">{g.title}</h2>
+                <p className="text-muted">{g.blurb}</p>
+                {near.map((v) => <VerdictCard key={v.nct_id} verdict={v} patientId={patientId} versionId={versionId} />)}
+                {far.length > 0 && (
+                  <details className="flex flex-col gap-3">
+                    <summary className="cursor-pointer min-h-11 flex items-center text-accent">
+                      Further away ({far.length})
+                    </summary>
+                    <p className="text-muted">No site is recruiting within the distance you said you would travel.</p>
+                    <div className="flex flex-col gap-3 mt-2">
+                      {far.map((v) => <VerdictCard key={v.nct_id} verdict={v} patientId={patientId} versionId={versionId} />)}
+                    </div>
+                  </details>
+                )}
+              </section>
+            );
+          })}
+          {closed.length > 0 && (
+            <section aria-labelledby="group-no-longer-recruiting" className="flex flex-col gap-3">
+              <h2 id="group-no-longer-recruiting" className="text-lg font-semibold">No longer recruiting</h2>
+              <p className="text-muted">
+                These trials stopped recruiting after we checked them. Your earlier result is kept so you can see what it
+                was, but they are not checked again.
+              </p>
+              {closed.map((v) => <VerdictCard key={v.nct_id} verdict={v} patientId={patientId} versionId={versionId} />)}
+            </section>
+          )}
+          {state.asked.length > 0 && <QuestionsForYou patientId={patientId} questions={state.asked} />}
+          <DoctorQuestions questions={state.questions} />
+        </>
       )}
     </div>
   );
 }
 
-function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
+function DoctorQuestions({ questions }: { questions: DoctorQuestion[] }) {
+  if (questions.length === 0) return null;
+  return (
+    <section aria-labelledby="doctor-questions" className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
+      <h2 id="doctor-questions" className="text-lg font-semibold">Questions for your doctor</h2>
+      <p className="text-muted">These need the patient&apos;s medical records. Take this list to the next appointment.</p>
+      <ol className="flex flex-col gap-2 list-decimal pl-5">
+        {questions.map((q) => (
+          <li key={q.criterion_id ?? q.subject}>
+            {q.text}
+            <span className="block text-sm text-muted">
+              {q.criterion_id === null
+                ? "Helps us search for the right trials"
+                : `Helps decide ${q.unblocks.length} trial${q.unblocks.length === 1 ? "" : "s"}`}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function VerdictCard({ verdict: v, patientId, versionId }: { verdict: VerdictOut; patientId: string; versionId: string }) {
   const unknown = v.results.filter((r) => r.outcome === "unknown").length;
   return (
     <article className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-3">
       <header className="flex flex-col gap-1">
         <h3 className="font-semibold">{v.title}</h3>
+        {v.no_longer_recruiting && (
+          <p className="text-sm font-medium">
+            No longer recruiting. When we checked, this trial was{" "}
+            {GROUPS.find((g) => g.outcome === v.outcome)?.title.toLowerCase()}.
+          </p>
+        )}
         <p className="text-sm text-muted">
           <a href={`https://clinicaltrials.gov/study/${v.nct_id}`} className="underline" rel="noreferrer" target="_blank">
             {v.nct_id}
@@ -118,6 +180,8 @@ function VerdictCard({ verdict: v }: { verdict: VerdictOut }) {
           {v.results.map((r) => <ResultItem key={r.criterion_id} result={r} />)}
         </ul>
       </details>
+      <TrialContacts nctId={v.nct_id} />
+      <Enquiry patientId={patientId} versionId={versionId} nctId={v.nct_id} open={!v.no_longer_recruiting} />
     </article>
   );
 }

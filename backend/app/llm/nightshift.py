@@ -11,14 +11,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 import logging
-import re
 import time
 from typing import TYPE_CHECKING, Callable, Literal
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
-from app.llm import Completion, Lane, LlmUnavailable, T
+from app.llm import Lane, LlmUnavailable, Reply, T, strip_reasoning
 
 if TYPE_CHECKING:
     from langchain_openai import ChatOpenAI
@@ -57,21 +56,6 @@ def parse_connect_link(link: str) -> tuple[str, str] | None:
         return None
     key = parse_qs(parts.fragment).get("k", [""])[0]
     return (f"{parts.scheme}://{parts.netloc}/v1", key) if key else None
-
-
-def strip_reasoning(text: str) -> str:
-    """Some lanes leak their reasoning, sometimes without the opening tag: keep what follows the last </think>."""
-    return text.rsplit("</think>", 1)[-1].strip()
-
-
-def json_object(text: str) -> str:
-    """The JSON object in a reply, without reasoning or code fences."""
-    text = strip_reasoning(text)
-    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
-    if fenced:
-        text = fenced.group(1)
-    start, end = text.find("{"), text.rfind("}")
-    return text[start : end + 1] if start != -1 and end > start else text
 
 
 class Nightshift:
@@ -171,9 +155,9 @@ class Nightshift:
         body = await self.chat(model or self.default_model, messages)
         return strip_reasoning(body["choices"][0]["message"].get("content") or "")
 
-    async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Completion[T]:
-        """JSON-mode call through the lane's LangChain model, parsed into `out`. A reply that doesn't
-        parse raises pydantic.ValidationError; app.llm.complete owns the one retry."""
+    async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Reply:
+        """JSON-mode call through the lane's LangChain model, asking for `out`'s JSON Schema. The reply text comes
+        back unparsed; app.llm.complete parses it and owns the one retry."""
         from langchain_core.messages import HumanMessage, SystemMessage
 
         model = self.model_for(lane)
@@ -186,10 +170,9 @@ class Nightshift:
         except Exception as e:   # openai.* errors surface through LangChain
             raise LlmUnavailable(f"{lane} lane ({model}) failed: {type(e).__name__}: {str(e)[:200]}") from e
         latency_ms = int((time.monotonic() - started) * 1000)
-        value = out.model_validate_json(json_object(msg.content if isinstance(msg.content, str) else ""))
         usage = msg.usage_metadata or {}
-        return Completion(
-            value=value, model_requested=model,
+        return Reply(
+            text=msg.content if isinstance(msg.content, str) else "", model_requested=model,
             model_answered=msg.response_metadata.get("model_name") or model,
             prompt_tokens=usage.get("input_tokens", 0), completion_tokens=usage.get("output_tokens", 0),
             latency_ms=latency_ms,
@@ -229,9 +212,12 @@ class FakeLLM:
         self.responder = responder
         self.calls: list[FakeCall] = []
 
-    async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Completion[T]:
+    def model_for(self, lane: Lane | None) -> str:
+        return "fake"
+
+    async def complete(self, lane: Lane, system: str, user: str, out: type[T]) -> Reply:
         self.calls.append(FakeCall(lane, system, user))
         if self.responder is None:
             raise LookupError(f"FakeLLM has no response scripted for a {lane} call")
-        return Completion(value=out.model_validate(self.responder(lane, system, user)), model_requested="fake",
-                          model_answered="fake", prompt_tokens=0, completion_tokens=0, latency_ms=0)
+        return Reply(text=json.dumps(self.responder(lane, system, user), default=str), model_requested="fake",
+                     model_answered="fake", prompt_tokens=0, completion_tokens=0, latency_ms=0)

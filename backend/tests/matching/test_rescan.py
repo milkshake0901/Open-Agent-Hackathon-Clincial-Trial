@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app import matching, record, trials
 from app.llm.nightshift import FakeLLM
+from tests.condition_term import tick_condition_term
 
 SNAPSHOT = Path(__file__).resolve().parents[3] / "data" / "trials_snapshot"
 NCT = trials.NctId("NCT07680790")
@@ -30,12 +31,14 @@ def script(fake, matcher, judge=None):
 
 
 async def _setup(clean_db, answers=ANSWERS, snapshot=SNAPSHOT):
-    """Trials loaded from the snapshot and Profile v1 committed from structured answers (no model call yet)."""
+    """Trials loaded from the snapshot, a Condition term selecting all of them, and Profile v1 committed from
+    structured answers (no model call captured yet)."""
     from tests.conftest import make_ctx
     fake = FakeLLM()
     ctx = make_ctx(clean_db, fake)
     await trials.load_snapshot(ctx, snapshot)
     patient = await record.create_patient(ctx, "Demo patient M")
+    await tick_condition_term(ctx, patient)
     outcome = await record.submit_questionnaire(ctx, patient, answers, respondent="other")
     assert isinstance(outcome, record.Committed)
     return ctx, fake, await record.profile_version(ctx, outcome.version.id)
@@ -121,7 +124,7 @@ async def test_a_rescan_is_idempotent_the_second_run_judges_nothing_and_calls_no
 
     assert again.judged == () and again.planned == () and again.skipped_existing == (NCT,)
     assert len(fake.calls) == calls
-    assert len(await matching.verdicts_for_version(ctx, version.id)) == 1
+    assert len((await matching.verdicts_for_version(ctx, version.id)).verdicts) == 1
 
 
 async def test_unknown_results_become_doctor_questions_naming_the_trials_they_would_unblock(clean_db):
@@ -186,7 +189,7 @@ async def test_verdicts_are_ranked_eligible_then_possible_by_fewest_unknowns_the
     report = await matching.rescan(ctx, version.id)
 
     assert "NCT00000004" not in report.planned
-    ranked = await matching.verdicts_for_version(ctx, version.id)
+    ranked = (await matching.verdicts_for_version(ctx, version.id)).verdicts
     assert [(v.nct_id, v.outcome) for v in ranked] == [
         ("NCT00000002", "eligible"), ("NCT00000003", "possible"), (NCT, "possible"), ("NCT00000001", "excluded")]
 
@@ -236,3 +239,25 @@ async def test_change_between_versions_names_the_criteria_whose_result_moved_and
     [moved] = change.criteria_changed
     assert "ECOG" in moved.text and (moved.outcome_from, moved.outcome_to) == ("unknown", "met")
     assert moved.citation.fact_id == v2.current()["daily activity"].id
+
+
+async def test_a_rescan_writes_its_start_each_trial_verdict_and_its_end_to_the_log_file(clean_db, tmp_path):
+    from app import logfile
+    ctx, fake, version = await _setup(clean_db)
+    script(fake, answer_all(await trials.criteria(ctx, NCT)))
+    path = tmp_path / "trialmatch.jsonl"
+    logfile.configure(path)
+    try:
+        report = await matching.rescan(ctx, version.id)
+    finally:
+        logfile.reset()
+
+    steps = [json.loads(x) for x in path.read_text().splitlines()]
+    names = [s["step"] for s in steps if s["step"].startswith("matching.")]
+    assert names == ["matching.rescan.started", "matching.trial_judged", "matching.rescan.finished"]
+    started, judged, finished = (next(s for s in steps if s["step"] == n) for n in names)
+    assert started["run_id"] == report.run_id and started["profile_version_id"] == version.id
+    assert started["to_judge"] == [NCT]
+    assert judged["nct_id"] == NCT and judged["outcome"] == "possible" and judged["run_id"] == report.run_id
+    assert finished["judged"] == [NCT] and finished["failed"] == []
+    assert any(s["step"] == "llm.complete" and s["run_id"] == report.run_id for s in steps)

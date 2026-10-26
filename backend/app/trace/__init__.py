@@ -16,9 +16,12 @@ World Model writes carry the run id in their provenance, so a trace links to the
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, NewType
+
+from app import logfile
 
 if TYPE_CHECKING:
     from app.sql.reader import SqlReader
@@ -28,6 +31,7 @@ if TYPE_CHECKING:
 
 RunId = NewType("RunId", str)
 EventId = NewType("EventId", str)
+log = logging.getLogger(__name__)
 RunKind = Literal["ingest", "rescan"]
 
 
@@ -82,7 +86,8 @@ async def open(writer: "PgWriter", run_id: RunId, kind: RunKind, *, patient_id: 
 async def append(writer: "PgWriter", run_id: RunId, event: "RunEvent", *,
                  caused_by: EventId | None = None, llm_call_ids: tuple[str, ...] = ()) -> EventId:
     """Concurrent appends from parallel Matcher tasks are fine: seq is allocated by the database.
-    The event id is derived from (run, actor, payload, cause), so appending the same event twice is a no-op."""
+    The event id is derived from (run, actor, payload, cause), so appending the same event twice is a no-op.
+    An event with a `log_step` also writes one line to the log file: the run id and the payload's fields."""
     payload = event.model_dump(mode="json")
     body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     event_id = EventId(str(uuid.uuid5(_EVENT_NS, f"{run_id}|{event.actor}|{body}|{caused_by or ''}")))
@@ -91,6 +96,9 @@ async def append(writer: "PgWriter", run_id: RunId, event: "RunEvent", *,
             "INSERT INTO trace_event (event_id, run_id, kind, actor, causation_id, llm_call_ids, payload) "
             "VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) ON CONFLICT (event_id) DO NOTHING",
             (event_id, run_id, payload["kind"], event.actor, caused_by, list(llm_call_ids), body))
+    if event.log_step:
+        logfile.step(log, event.log_step, run_id=run_id,
+                     **{k: v for k, v in payload.items() if k not in ("kind", "actor")})
     return event_id
 
 

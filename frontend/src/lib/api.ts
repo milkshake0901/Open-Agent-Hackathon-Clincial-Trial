@@ -65,15 +65,25 @@ export type DoctorQuestion = {
   unblocks: string[];
 };
 
+// A Condition label as stored Trials list it, with how many Open and Closed trials list it (ADR 0005).
+export type ConditionLabel = { label: string; open: number; closed: number };
+
+// The diagnosis step, as the Trials page sees it: labels ticked (the Condition term), answered not sure (it waits on
+// the GP), or neither yet.
+export type Diagnosis = "ticked" | "not_sure" | "unfinished";
+
+export type DiagnosisAnswer =
+  | { answer: "ticked"; labels: string[] }
+  | { answer: "none_of_these"; text: string } // the diagnosis in other words: returns the new check
+  | { answer: "not_sure" };
+
 export type DiagnosisCheck = {
   id: string;
   text: string;
-  suggested_term: string | null;
-  confidence: number;
-  status: "proposed" | "confirmed" | "rejected" | "not_sure" | "unclear";
-  condition: string | null;
+  shortlist: ConditionLabel[]; // best fit first; empty when no label fits
+  ticked: string[]; // status "ticked": the Condition term, the labels that select Trials
+  status: "proposed" | "ticked" | "not_sure";
   needs_gp: boolean;
-  ask_again: boolean;
   message: string;
   rescan: { judged: number; failed: number } | null;
 };
@@ -93,6 +103,7 @@ export type VerdictOut = {
   nct_id: string;
   title: string;
   status: string;
+  no_longer_recruiting: boolean; // closed after it was judged: the Verdict is kept, never re-judged
   profile_version_id: string;
   outcome: "eligible" | "possible" | "excluded";
   degraded: boolean;
@@ -106,6 +117,70 @@ export type VerdictOut = {
 };
 
 export type SiteOut = { name: string; status: string; km: number | null };
+
+// A Closed trial: it can no longer enrol, so it has no Verdict; shown for what it studied and when it finished.
+export type ClosedTrialOut = {
+  nct_id: string;
+  title: string;
+  status: string;
+  conditions: string[];
+  closed_on: string | null; // ISO date: primary completion, else completion, else last update
+  url: string;
+};
+
+// Registry fields it does not give are "".
+export type ContactOut = { name: string; role: string; email: string; phone: string; affiliation: string; title: string };
+
+// A Trial's Outcomes (#25). Registry fields it does not give are "".
+export type OutcomeMeasureOut = { measure: string; description: string; time_frame: string };
+
+export type PostedResultOut = {
+  type: string; // PRIMARY, SECONDARY, OTHER_PRE_SPECIFIED or POST_HOC
+  title: string;
+  description: string;
+  time_frame: string;
+  unit: string;
+  param_type: string; // e.g. MEDIAN, MEAN, COUNT_OF_PARTICIPANTS
+  values: { group: string; value: string; spread: string; lower: string; upper: string; label: string }[];
+};
+
+export type OutcomesOut = {
+  primary: OutcomeMeasureOut[];
+  secondary: OutcomeMeasureOut[];
+  other: OutcomeMeasureOut[];
+  has_results: boolean;
+  results: PostedResultOut[];
+  publications: { pmid: string; type: string; citation: string; url: string }[]; // url "" without a PubMed id
+};
+
+// A plain-language summary of a Trial's Outcomes (#26), written by the model on first open and cached after.
+export type OutcomeSummaryOut = { nct_id: string; summary: string };
+
+export type TrialDetail = {
+  nct_id: string;
+  title: string;
+  status: string;
+  page_url: string; // the Trial's ClinicalTrials.gov page
+  sponsor: string;
+  responsible_party: ContactOut | null;
+  central_contacts: ContactOut[];
+  overall_officials: ContactOut[];
+  sites: { facility: string; city: string; status: string; contacts: ContactOut[] }[]; // Australian sites only
+  outcomes: OutcomesOut;
+};
+
+// An Enquiry (#28 Open trial, #29 Closed trial): an email body the Respondent edits, copies and sends themselves.
+// Never stored or sent. Its clinical details are fetched first (no model call) and drafted only once confirmed.
+export type ClinicalDetailOut = { id: string; label: string; text: string; included: boolean };
+export type EnquiryOut = {
+  nct_id: string;
+  template: "open" | "closed";
+  subject: string;
+  body: string; // name and contact are placeholders the Respondent fills in
+  recipient: { name: string; email: string; kind: "site" | "central" | "responsible_party" | "official"; facility: string | null } | null; // null: no email listed
+  sponsor: string;
+  details: ClinicalDetailOut[];
+};
 
 export type ReturnOpened = {
   patient_id: string;
@@ -213,6 +288,10 @@ export type AskAnswer = {
   citations: GroundedCitation[];
 };
 
+const enquiryPath = (patientId: string, versionId: string, nctId: string) =>
+  `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}` +
+  `/trials/${encodeURIComponent(nctId)}/enquiry`;
+
 export const api = {
   definition: () => call<Questionnaire>("/questionnaire/definition"),
   createPatient: (label: string) =>
@@ -246,18 +325,28 @@ export const api = {
   version: (patientId: string, versionId: string) =>
     call<VersionOut>(`/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}`),
   verdicts: (patientId: string, versionId: string) =>
-    call<{ profile_version_id: string; verdicts: VerdictOut[] }>(
+    call<{ profile_version_id: string; condition_term: string[] | null; diagnosis: Diagnosis; verdicts: VerdictOut[] }>(
       `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}/verdicts`,
     ),
-  checkDiagnosis: (patientId: string, text?: string) =>
+  closedTrials: (patientId: string) =>
+    call<{ condition_term: string[] | null; trials: ClosedTrialOut[] }>(
+      `/patients/${encodeURIComponent(patientId)}/closed-trials`,
+    ),
+  trial: (nctId: string) => call<TrialDetail>(`/trials/${encodeURIComponent(nctId)}`),
+  outcomeSummary: (nctId: string) => call<OutcomeSummaryOut>(`/trials/${encodeURIComponent(nctId)}/outcomes/summary`),
+  enquiryDetails: (patientId: string, versionId: string, nctId: string) =>
+    call<{ nct_id: string; details: ClinicalDetailOut[] }>(enquiryPath(patientId, versionId, nctId)),
+  enquiry: (patientId: string, versionId: string, nctId: string, include: string[]) =>
+    call<EnquiryOut>(enquiryPath(patientId, versionId, nctId), { method: "POST", body: JSON.stringify({ include }) }),
+  checkDiagnosis: (patientId: string) =>
     call<DiagnosisCheck>(`/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check`, {
       method: "POST",
-      body: JSON.stringify(text ? { text } : {}),
     }),
-  answerDiagnosis: (patientId: string, checkId: string, answer: "yes" | "no" | "not_sure") =>
+  // none_of_these returns the new check made from its new words.
+  answerDiagnosis: (patientId: string, checkId: string, answer: DiagnosisAnswer) =>
     call<DiagnosisCheck>(
       `/patients/${encodeURIComponent(patientId)}/questionnaire/diagnosis-check/${encodeURIComponent(checkId)}`,
-      { method: "POST", body: JSON.stringify({ answer }) },
+      { method: "POST", body: JSON.stringify(answer) },
     ),
   doctorQuestions: (patientId: string, versionId: string) =>
     call<DoctorQuestion[]>(
