@@ -156,6 +156,26 @@ function TrialCard({ trial, patientId, askable }: { trial: ClosedTrialOut; patie
                   </ul>
                 </div>
               )}
+              {answer.washouts.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <p className="font-medium">Time from the letter to today</p>
+                  <ul className="flex flex-col gap-2">
+                    {answer.washouts.map((row) => (
+                      <li key={row.criterion_id}>
+                        <button type="button" onClick={() => { setActive(row.span_id); setShown(true); }}
+                                className={`w-full rounded-md border px-3 py-2 text-left ${row.span_id === active ? "border-accent" : "border-border"}`}>
+                          <span className="block font-medium">{row.clause}</span>
+                          <span className="mt-1 block">
+                            {row.cleared
+                              ? `Last date ${row.last_on}, ${row.days_before} days before today. The window is ${row.window_days} days, so this washout has passed.`
+                              : `Last date ${row.last_on}, ${row.days_before} days before today. That is still inside the ${row.window_days}-day window.`}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {answer.misses.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <p className="font-medium">Exclusion criteria the letter shows</p>

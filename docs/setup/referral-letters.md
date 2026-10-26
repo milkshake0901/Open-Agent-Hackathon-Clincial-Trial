@@ -24,6 +24,7 @@ The record page uses patient `pt_referral_20260209` unless the URL is `/record?p
 1. Zetaris reads the trial, its criteria, and this patient's `document_span` rows (`ctx.agent_reader`). The page image is read from Postgres, and the PDF bytes never go to Zetaris.
 2. One Nightshift call on the deep lane (Nemotron 3 Ultra) sees the question, the criteria, and the letter's Text regions.
 3. The reply is checked in code. A region id that is not on the letter is dropped. An exclusion is kept only when its clause is a verbatim excerpt of the stored criterion and its region is real. A firm eligible or excluded answer with no real region becomes "More information is needed".
+4. A clock tool measures washouts. When an exclusion says a treatment must not have been given within N days, weeks, or months, the tool reads the dates on the letter and subtracts them from today. If the latest date is outside that window, that exclusion is not listed. The page shows the date, the number of days, and the window. An exclusion with no time window is left as written.
 
 `fact.span_id` is there for a Fact that quotes a region. Questionnaire Facts leave it null. The trial question reads the regions directly. It does not wait for Intake to commit Facts.
 

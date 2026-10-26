@@ -7,7 +7,8 @@ from app import llm, matching, record, trials
 from app.api.deps import get_ctx
 from app.api.schemas import (ClosedTrialListOut, ClosedTrialOut, ContactOut, CriterionMissOut, CriterionScreenOut,
                              MatchingTrialsOut, OutcomeSummaryOut, OutcomesOut, PublicationOut, ScreenIn,
-                             TrialAskCitationOut, TrialAskIn, TrialAskOut, TrialDetailOut, TrialScreenOut, TrialSiteOut)
+                             TrialAskCitationOut, TrialAskIn, TrialAskOut, TrialDetailOut, TrialScreenOut, TrialSiteOut,
+                             WashoutOut)
 from app.ctx import Ctx
 
 router = APIRouter(tags=["trials"])
@@ -57,12 +58,18 @@ async def ask_trial(pid: str, nct: str, body: TrialAskIn, ctx: Ctx = Depends(get
         return TrialAskCitationOut(
             span_id=c.span_id, document_hash=c.document_hash, filename=c.filename, page=c.page,
             quote=c.quote, x0=c.x0, y0=c.y0, x1=c.x1, y1=c.y1)
+    by_span = {c.span_id: c for c in asked.citations}
     return TrialAskOut(
         nct_id=asked.nct_id, title=asked.title, question=asked.question, standing=asked.standing,
         answer=asked.answer, to_gather=list(asked.to_gather), via=asked.via,
         citations=[cited(c) for c in asked.citations],
         misses=[CriterionMissOut(criterion_id=m.criterion_id, clause=m.clause, why=m.why, citation=cited(m.citation))
-                for m in asked.misses])
+                for m in asked.misses],
+        washouts=[WashoutOut(
+            criterion_id=w.criterion_id, clause=w.clause, window_days=w.window_days, last_on=w.last_on.isoformat(),
+            days_before=w.days_before, span_id=w.span_id, page=by_span[w.span_id].page, quote=by_span[w.span_id].quote,
+            cleared=w.cleared,
+        ) for w in asked.washouts if w.span_id in by_span])
 
 
 @router.post("/patients/{pid}/trials/screen", response_model=list[TrialScreenOut])

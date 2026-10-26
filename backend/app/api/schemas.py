@@ -532,6 +532,18 @@ class CriterionMissOut(BaseModel):
     citation: TrialAskCitationOut
 
 
+class WashoutOut(BaseModel):
+    criterion_id: str
+    clause: str
+    window_days: int
+    last_on: str
+    days_before: int
+    span_id: str
+    page: int
+    quote: str
+    cleared: bool
+
+
 class TrialAskOut(BaseModel):
     nct_id: str
     title: str
@@ -541,6 +553,7 @@ class TrialAskOut(BaseModel):
     to_gather: list[str]
     citations: list[TrialAskCitationOut]
     misses: list[CriterionMissOut]
+    washouts: list[WashoutOut]
     via: Literal["zetaris", "postgres"]
 
 

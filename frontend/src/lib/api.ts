@@ -126,6 +126,18 @@ export type CriterionMiss = {
   citation: GroundedCitation;
 };
 
+export type Washout = {
+  criterion_id: string;
+  clause: string;
+  window_days: number;
+  last_on: string;
+  days_before: number;
+  span_id: string;
+  page: number;
+  quote: string;
+  cleared: boolean;
+};
+
 export type TrialAsk = {
   nct_id: string;
   title: string;
@@ -135,6 +147,7 @@ export type TrialAsk = {
   to_gather: string[];
   citations: GroundedCitation[];
   misses: CriterionMiss[];
+  washouts: Washout[];
   via: "zetaris" | "postgres";
 };
 
