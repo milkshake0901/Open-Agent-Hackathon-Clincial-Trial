@@ -15,7 +15,7 @@ export default function RecordPage({ searchParams }: PageProps<"/record">) {
         <h1 className="text-2xl font-semibold">mCRPC trials for this referral</h1>
         <p className="text-muted">
           Stored Australian trials whose condition name is metastatic castration-resistant prostate cancer,
-          including the short form mCRPC. The letter below is the Royal Marsden referral.
+          including the short form mCRPC. The letter below is the referral.
         </p>
       </header>
       <Suspense fallback={<p className="text-muted">Opening the letter…</p>}>

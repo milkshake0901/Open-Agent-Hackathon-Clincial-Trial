@@ -49,7 +49,7 @@ The patient's set of accepted Facts after a Document is accepted; each accepted 
 _Avoid_: Profile (unqualified), snapshot, patient state
 
 **De-identification**:
-Removing names, addresses, record numbers and clinician names from a Document's text before any model sees it.
+Removing names, addresses, record numbers, dates of birth and clinician names from a Document's page text, Region text and filename, in one pass over the whole Document, before it is stored or any model sees it. Region boxes are kept.
 _Avoid_: Anonymisation, redaction, masking
 
 **Return link**:

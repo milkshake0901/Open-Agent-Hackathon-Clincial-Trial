@@ -2,18 +2,18 @@
 from app.record.prefill import prefill_answers
 
 LETTER = [
-    ("Title", "Re: BRADLEY, MARTIN Age:55 Sex:M P376054(9)"),
-    ("Text", "Mr Bradley has family history of prostate cancer with his father and brother both diagnosed "
-             "with prostate cancer. Mr Bradley himself was diagnosed of prostate cancer during routine blood "
+    ("Title", "Re: QUENBY, ALDOUS Age:55 Sex:M P900417(2)"),
+    ("Text", "Mr Quenby has family history of prostate cancer with his father and brother both diagnosed "
+             "with prostate cancer. Mr Quenby himself was diagnosed of prostate cancer during routine blood "
              "test which showed raised PSA to 33 in February 2017. TRUS biopsy showed adenocarcinoma in all "
              "subsites, Gleason score 9 (5+4)."),
     ("Text", "He also received ADT with Enantone starting in March 2017."),
     ("Text", "PET in December 2017 showed no abnormal uptake in prostate."),
     ("Text", "He is also on Xgeva and Enantone. His PSA was 147 on 6/2/26."),
     ("Text", "Chemo-immunotherapy was stopped after 3 cycles."),
-    ("Text", "In summary, Mr Bradley has CRPC with extensive bone disease, failed NHA, PARP inhibitor, "
+    ("Text", "In summary, Mr Quenby has CRPC with extensive bone disease, failed NHA, PARP inhibitor, "
              "docetaxel, radioligand treatment and chemo-immunotherapy."),
-    ("Caption", "Hong Kong Sanatorium & Hospital Limited"),
+    ("Caption", "Example Private Hospital Limited"),
 ]
 
 

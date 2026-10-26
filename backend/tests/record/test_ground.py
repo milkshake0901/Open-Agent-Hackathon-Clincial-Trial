@@ -6,13 +6,13 @@ from app.record.ground import citations_for, question_prompt, regions_text
 SPANS = [
     {"id": "abc:p2:b6", "document_hash": "abc", "filename": "letter.pdf", "page": 2, "kind": "Text",
      "text": "Restarted taxotere from 28/11/23 to 20/3/24.", "x0": 0.1, "y0": 0.2, "x1": 0.9, "y1": 0.3,
-     "page_count": 3, "patient_label": "Referral 09 Feb 2026"},
+     "page_count": 3, "patient_label": "Letter uploaded 2026-10-24"},
     {"id": "abc:p1:b2", "document_hash": "abc", "filename": "letter.pdf", "page": 1, "kind": "Caption",
-     "text": "OC.1700520", "x0": 0.1, "y0": 0.05, "x1": 0.4, "y1": 0.07,
-     "page_count": 3, "patient_label": "Referral 09 Feb 2026"},
+     "text": "OC.9000417", "x0": 0.1, "y0": 0.05, "x1": 0.4, "y1": 0.07,
+     "page_count": 3, "patient_label": "Letter uploaded 2026-10-24"},
     {"id": "abc:p3:b1", "document_hash": "abc", "filename": "letter.pdf", "page": 3, "kind": "Page-footer",
      "text": "PAGE 3/3", "x0": 0.4, "y0": 0.95, "x1": 0.6, "y1": 0.98,
-     "page_count": 3, "patient_label": "Referral 09 Feb 2026"},
+     "page_count": 3, "patient_label": "Letter uploaded 2026-10-24"},
 ]
 
 

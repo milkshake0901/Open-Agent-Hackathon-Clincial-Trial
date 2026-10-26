@@ -65,3 +65,11 @@ def test_projection_rebuild_loads_without_running():
 @pytest.mark.xfail(strict=True, raises=ImportError, reason="imports app.trials.sync, which no longer exists")
 def test_referral_screening_loads():
     load("screen_referral.py")
+
+
+@DIRECTORIES
+def test_letter_deidentification_help_offers_a_dry_run(cwd):
+    done = run("deidentify_letters.py", "--help", cwd=cwd)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.startswith("usage: deidentify_letters.py [-h] [--dry-run]")
+    assert "backend/.venv/bin/python backend/scripts/deidentify_letters.py --dry-run" in done.stdout
