@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import NewType
 
-from app.record import DiagnosisState, DocumentHash, FactId, ProfileVersionId
+from app.record import CitedAnswer, DiagnosisState, DocumentHash, FactId, ProfileVersionId
 from app.trials import CriterionId, NctId
 from app.trace import RunId
 
@@ -32,6 +32,7 @@ class Citation:
     question: str | None = None     # "Q13" when the Fact is Patient-reported (intake questionnaire)
     filename: str | None = None     # the Document's de-identified filename, when read back from the store
     region: CitedRegion | None = None   # the letter Region the Fact was read from, with its box
+    answer: CitedAnswer | None = None   # a Patient-reported Fact's question wording and the answer it quotes
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,8 @@ class CriterionResult:
     rationale: str                  # one sentence from the Matcher; shown in UI
     ask: str | None = None          # unknown only: the questionnaire question ("Q8") the Respondent could answer
                                     # more exactly; set → a Respondent question, None → a Doctor question
+    context_facts: tuple[Citation, ...] = ()   # unknown only: Context Facts, Facts of the Profile version it considered
+                                    # that don't settle it (the Evaluator keeps only real ones); never a Citation
 
 
 @dataclass(frozen=True)

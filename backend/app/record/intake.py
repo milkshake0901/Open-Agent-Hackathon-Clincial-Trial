@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from app.ctx import Ctx
 from app.llm import Lane, complete
-from app.record import critic
+from app.record import critic, dates
 from app.record.types import Document, DraftFact, FactResource, Finding, Region
 from app import trace
 from app.trace.events import IntakeDrafted
@@ -46,7 +46,10 @@ patient Document and list the clinical Facts it states. Answer with JSON only:
 - When the page is shown as Regions ("[id] (kind) words"), span_id is the id of the one Region the quote is copied
   from, and the quote lies inside that Region; page may be null. Otherwise span_id is null.
 - observed_on is the date the Fact was true in the patient's life, never the upload date. If the page gives no
-  date, use null.
+  date, use null: code then uses the document's own date. Read a date like 7/2/23 the way the document writes its
+  dates. For a relative date ("4 months ago") use null: code counts it back from the document's date.
+- A finding the page says is absent ("No meniscal tear") is a Fact too: subject is the thing looked for
+  ("meniscal tear") and value is "absent".
 - One Fact per statement. Do not invent Facts the pages do not state."""
 
 QUESTIONNAIRE = """This Document is an Intake questionnaire the Respondent completed on {doc_date}. Each answer
@@ -94,26 +97,33 @@ def _resource(raw: str) -> FactResource:
         return FactResource.OBSERVATION
 
 
-def _to_draft(f: _DraftFactOut, doc: Document, page: int | None = None) -> DraftFact:
+def _to_draft(f: _DraftFactOut, doc: Document, page: int | None = None,
+              dating: dates.Dating | None = None) -> DraftFact:
     """`page` is the page being read into Regions: the draft's page is then its named Region's (or, for a Region not
-    on the Document, the page read, for the Critic to flag), and its span_id that Region's."""
+    on the Document, the page read, for the Critic to flag), and its span_id that Region's. On a clinical Document
+    (`dating` given) the observed-on date follows the Document (dates.observed_on), with its flags."""
     if page is not None:
         region = doc.region(f.span_id)
         at, span_id = (region.page if region else page), (f.span_id or None)
     else:
         at, span_id = (f.page or 0), None
+    quote = f.quote.strip()
+    observed_on, flags = critic.observed_on(f.observed_on, doc), ()
+    if dating is not None:
+        observed_on, flags = dates.observed_on(observed_on, quote, dating)
     return DraftFact(resource=_resource(f.resource), subject=f.subject.strip().lower(), value=f.value.strip(),
-                     unit=f.unit or None, observed_on=critic.observed_on(f.observed_on, doc), page=at,
-                     quote=f.quote.strip(), question=(f.question or None) if doc.is_questionnaire else None,
-                     span_id=span_id)
+                     unit=f.unit or None, observed_on=observed_on, page=at, quote=quote,
+                     question=(f.question or None) if doc.is_questionnaire else None, span_id=span_id, flags=flags)
 
 
 async def extract(ctx: Ctx, doc: Document, feedback: tuple[Finding, ...], run_id: trace.RunId) -> tuple[DraftFact, ...]:
     """One Intake attempt. Feedback from the previous attempt is rendered into the prompt as numbered
     corrections. Unknown resources become Observation; dates are parsed by the Critic's rule (critic.observed_on),
-    so a date the Critic would not accept arrives as None and is flagged MISSING_DATE."""
+    then on a clinical Document follow it (dates.observed_on: the Document date for a Fact with none, an estimate for
+    a relative date); a date still missing arrives as None and is flagged MISSING_DATE."""
     out = await complete(ctx, Lane.FAST, system=SYSTEM, user=_prompt(doc, feedback), out=_IntakeOut, run_id=run_id)
-    drafts = tuple(_to_draft(f, doc) for f in out.value.facts)
+    dating = None if doc.is_questionnaire else dates.dating(doc)
+    drafts = tuple(_to_draft(f, doc, dating=dating) for f in out.value.facts)
     await trace.append(ctx.writer, run_id, IntakeDrafted(
         actor="intake", attempt=1 + bool(feedback), drafts=[asdict(d) for d in drafts],
         model_answered=out.model_answered))
@@ -125,7 +135,8 @@ async def extract_page(ctx: Ctx, doc: Document, page: int, feedback: tuple[Findi
     """One Intake call for one page of a Document read into Regions. Feedback is about this page's earlier drafts."""
     out = await complete(ctx, Lane.FAST, system=SYSTEM, user=page_prompt(doc, page, feedback), out=_IntakeOut,
                          run_id=run_id)
-    drafts = tuple(_to_draft(f, doc, page) for f in out.value.facts)
+    dating = dates.dating(doc)
+    drafts = tuple(_to_draft(f, doc, page, dating) for f in out.value.facts)
     await trace.append(ctx.writer, run_id, IntakeDrafted(
         actor="intake", attempt=attempt, drafts=[asdict(d) for d in drafts], model_answered=out.model_answered))
     return drafts

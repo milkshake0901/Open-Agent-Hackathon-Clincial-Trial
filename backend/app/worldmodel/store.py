@@ -92,7 +92,8 @@ class PgEventStore:
 # them, so they truncate together without CASCADE.
 PROJECTED_TABLES = ("fact", "profile_version", "profile_version_fact", "trial", "trial_condition", "criterion",
                     "trial_site", "trial_contact", "trial_outcome", "trial_outcome_value", "trial_publication",
-                    "outcome_summary", "verdict", "criterion_result", "doctor_question", "respondent_question")
+                    "outcome_summary", "verdict", "criterion_result", "criterion_result_context", "doctor_question",
+                    "respondent_question")
 
 
 async def rebuild_projections(writer: "PgWriter", namespace: str) -> int:

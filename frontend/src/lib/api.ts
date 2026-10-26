@@ -48,6 +48,9 @@ export type VerdictCitation = {
   filename: string | null;
   // A letter Fact's Region: open /api/documents/{document_hash}/pages/{page}/image with this box drawn on it.
   region: { span_id: string; x0: number; y0: number; x1: number; y1: number } | null;
+  // A Patient-reported Fact's answer: the question's wording, the whole answer, and the quote at
+  // text.slice(quote_start, quote_end) (both null when the quote isn't verbatim in it).
+  answer: { wording: string; text: string; quote_start: number | null; quote_end: number | null } | null;
 };
 
 export type CriterionResultOut = {
@@ -57,6 +60,8 @@ export type CriterionResultOut = {
   outcome: "met" | "not_met" | "unknown";
   rationale: string;
   citation: VerdictCitation | null;
+  // Unknown only: Context Facts, Facts it considered that don't settle it. Shaped like a citation, never one.
+  context_facts: VerdictCitation[];
 };
 
 // criterion_id and nct_id are null on the patient-level diagnosis question (subject "diagnosis").

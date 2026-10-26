@@ -5,7 +5,7 @@ outcome/citation consistent) and a judge-lane semantic check (does that Fact sup
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pydantic import BaseModel
 
@@ -73,6 +73,23 @@ def validate_structure(results: tuple[CriterionResult, ...], criteria: tuple[Cri
     return tuple(out)
 
 
+def keep_context_facts(results: tuple[CriterionResult, ...], profile: ProfileVersion) -> tuple[CriterionResult, ...]:
+    """PURE. Context Facts stay only on an unknown result, and only those that are Facts of this Profile version (with
+    the Fact's own provenance, once each); the rest are dropped silently, never sent back as a Rejection."""
+    facts = {f.id: f for f in profile.facts}
+
+    def real(c) -> bool:
+        f = facts.get(c.fact_id)
+        return (f is not None and c.fact_id in profile.fact_ids
+                and (c.document_hash, c.page, c.quote) == (f.document_hash, f.page, f.quote))
+
+    out = []
+    for r in results:
+        kept = {c.fact_id: c for c in r.context_facts if r.outcome == Outcome.UNKNOWN and real(c)}
+        out.append(r if tuple(kept.values()) == r.context_facts else replace(r, context_facts=tuple(kept.values())))
+    return tuple(out)
+
+
 def _claim(r: CriterionResult, c: Criterion, profile: ProfileVersion) -> str:
     f = next(f for f in profile.facts if f.id == r.citation.fact_id)
     unit = f" {f.unit}" if f.unit else ""
@@ -106,7 +123,9 @@ async def validate_support(ctx: Ctx, results: tuple[CriterionResult, ...], crite
 async def review(ctx: Ctx, results: tuple[CriterionResult, ...], criteria: tuple[Criterion, ...],
                  profile: ProfileVersion, run_id: trace.RunId) -> Review:
     """Deterministic structure check first; the judge-lane support check runs only on results that passed it
-    (and only when every Criterion has exactly one result). The loop traces the outcome."""
+    (and only when every Criterion has exactly one result). Context Facts that are not Facts of this Profile version
+    are dropped first (keep_context_facts). The loop traces the outcome."""
+    results = keep_context_facts(results, profile)
     structural = validate_structure(results, criteria, profile)
     rejected = {r.criterion_id for r in structural}
     if any(r.reason.startswith(("no result", "more than one")) for r in structural):
@@ -138,7 +157,8 @@ def downgrade(results: tuple[CriterionResult, ...], rejections: tuple[Rejection,
         if r is None or c.id in reasons:
             reason = reasons.get(c.id, "no result for criterion")
             out.append(CriterionResult(criterion_id=c.id, outcome=Outcome.UNKNOWN, citation=None,
-                                       rationale=f"unsupported after {attempts} attempts: {reason}"))
+                                       rationale=f"unsupported after {attempts} attempts: {reason}",
+                                       context_facts=r.context_facts if r else ()))
         else:
             out.append(r)
     return ValidatedResults(out)

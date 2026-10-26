@@ -3,7 +3,9 @@
 // Ranked Verdicts for one Profile version, as the backend returns them (eligible, possible with fewest unknowns
 // first, excluded; then nearest recruiting site). Trials with no recruiting site within the travel limit sit in a
 // collapsed "Further away" group under their outcome, never hidden. Each Criterion shows its result, the one-line rationale and its Citation; a Citation from the
-// questionnaire links back to that question, and one from a letter opens a side panel with the page and its Region boxed. Each recruiting Trial takes a free-form question, whose cited Regions open in the same kind of side panel. Each Trial offers its contacts and an Enquiry to copy and send (about
+// questionnaire opens a side panel with the question and the answer, the quote highlighted, and one from a letter opens it with the page and its Region boxed
+// (as does each Context Fact listed under an unknown reason). Each recruiting Trial takes a free-form question, whose
+// cited Regions open in the same kind of side panel. Each Trial offers its contacts and an Enquiry to copy and send (about
 // taking part, or about its results once it is no longer recruiting). Questions for you (Respondent questions, answered inline) and
 // Questions for your doctor are kept as two separate lists. A Trial that stopped recruiting after it was judged keeps
 // its Verdict, shown in its own "No longer recruiting" section after the open ones (ADR 0004). Only Trials listing a
@@ -15,7 +17,7 @@ import {
   api, type CriterionResultOut, type Diagnosis, type DoctorQuestion, type RespondentQuestion, type SiteOut,
   type VerdictCitation, type VerdictOut,
 } from "@/lib/api";
-import { RegionPage, type RegionBox } from "@/app/region-page";
+import { CitationSource, hasSource, sourceLabel } from "@/app/citation-source";
 import { QuestionsForYou } from "./questions-for-you";
 import { Enquiry } from "./enquiry";
 import { TrialContacts } from "./trial-contacts";
@@ -209,7 +211,6 @@ function SiteLines({ verdict: v }: { verdict: VerdictOut }) {
 
 function ResultItem({ result: r }: { result: CriterionResultOut }) {
   const [open, setOpen] = useState(false);
-  const region = r.citation?.region ?? null;
   return (
     <li className="rounded-lg border border-border p-3 flex flex-col gap-1">
       <p className="text-sm text-muted">{r.kind === "inclusion" ? "Needed" : "Rules out"}: {r.text}</p>
@@ -218,33 +219,58 @@ function ResultItem({ result: r }: { result: CriterionResultOut }) {
       {r.citation && (
         <p className="text-sm">
           {r.citation.question ? (
-            <a href={`/#${r.citation.question}`} className="text-accent underline">
-              You told us (intake questionnaire, {r.citation.question})
-            </a>
+            <span className="text-muted">You told us (intake questionnaire, {r.citation.question})</span>
           ) : (
             <span className="text-muted">{r.citation.filename ? `${r.citation.filename}, ` : ""}{r.citation.label}</span>
           )}
           : “{r.citation.quote}”
         </p>
       )}
-      {r.citation && region && (
+      {r.citation && hasSource(r.citation) && (
         <button type="button" onClick={() => setOpen(true)}
                 className="min-h-11 self-start rounded-lg border border-border px-4 text-sm font-semibold text-accent">
-          Show where the letter says this
+          {sourceLabel(r.citation)}
         </button>
       )}
-      {r.citation && region && open && (
-        <CitationPanel result={r} citation={r.citation} region={region} onClose={() => setOpen(false)} />
+      {r.citation && hasSource(r.citation) && open && (
+        <CitationPanel result={r} citation={r.citation} onClose={() => setOpen(false)} />
       )}
+      {r.context_facts.length > 0 && <ContextFacts result={r} />}
     </li>
   );
 }
 
-// The side panel a Criterion result opens: the letter page its Citation was read from, with the Region boxed.
-function CitationPanel({ result: r, citation: c, region, onClose }: {
+// Under an unknown reason: the Context Facts it considered, each opening its source in the side panel.
+function ContextFacts({ result: r }: { result: CriterionResultOut }) {
+  const [opened, setOpened] = useState<VerdictCitation | null>(null);
+  return (
+    <div className="mt-1 flex flex-col gap-1">
+      <p className="text-sm font-medium">What we looked at, which doesn't settle it:</p>
+      <ul className="flex flex-col gap-2">
+        {r.context_facts.map((c) => (
+          <li key={c.fact_id} className="text-sm flex flex-col gap-1">
+            <p>
+              <span className="text-muted">{c.filename ? `${c.filename}, ` : ""}{c.label}</span>: “{c.quote}”
+            </p>
+            {hasSource(c) && (
+              <button type="button" onClick={() => setOpened(c)}
+                      className="min-h-11 self-start rounded-lg border border-border px-4 text-sm font-semibold text-accent">
+                {sourceLabel(c)}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {opened && <CitationPanel result={r} citation={opened} onClose={() => setOpened(null)} />}
+    </div>
+  );
+}
+
+// The side panel a Criterion result opens: what its Citation points at, the letter page with the Region boxed or the
+// questionnaire answer with the quote highlighted.
+function CitationPanel({ result: r, citation: c, onClose }: {
   result: CriterionResultOut;
   citation: VerdictCitation;
-  region: RegionBox;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -264,9 +290,7 @@ function CitationPanel({ result: r, citation: c, region, onClose }: {
         </div>
         <p className="text-sm text-muted">{r.kind === "inclusion" ? "Needed" : "Rules out"}: {r.text}</p>
         <p>{r.rationale}</p>
-        <blockquote className="border-l-4 border-accent pl-3">“{c.quote}”</blockquote>
-        <RegionPage documentHash={c.document_hash} page={c.page} filename={c.filename ?? "letter"}
-                    boxes={[region]} active={region.span_id} />
+        <CitationSource citation={c} />
       </aside>
     </div>
   );

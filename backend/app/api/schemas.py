@@ -201,6 +201,8 @@ class FactOut(BaseModel):
     unit: str | None
     observed_on: date
     citation: CitationOut
+    flags: list[str] = []       # how observed_on was settled: ambiguous_date, estimated_date, document_date
+    flagged: bool = False       # the date is ambiguous or an estimate: Letter review shows it first
 
 
 class VersionOut(BaseModel):
@@ -220,6 +222,16 @@ class VerdictCitationOut(BaseModel):
     label: str                  # "Patient-reported, intake questionnaire, Q13" or "page 2"
     filename: str | None = None # the Document's de-identified filename
     region: "CitationRegionOut | None" = None   # a letter Fact's Region: the page image with this box opens it
+    answer: "CitationAnswerOut | None" = None   # a Patient-reported Fact's answer: shown instead of a page image
+
+
+class CitationAnswerOut(BaseModel):
+    """The Intake questionnaire answer a Patient-reported Fact quotes. quote_start/quote_end are character offsets of
+    the quote in `text` (highlight text[quote_start:quote_end]); both null when the quote is not verbatim in it."""
+    wording: str                # the question as the Respondent saw it; its number is the Citation's `question`
+    text: str                   # the whole answer, as the Document shows it
+    quote_start: int | None
+    quote_end: int | None
 
 
 class CitationRegionOut(BaseModel):
@@ -238,6 +250,7 @@ class CriterionResultOut(BaseModel):
     outcome: Literal["met", "not_met", "unknown"]
     rationale: str
     citation: VerdictCitationOut | None
+    context_facts: list[VerdictCitationOut] = []   # unknown only: Facts it considered that don't settle it
 
 
 class DoctorQuestionOut(BaseModel):
@@ -474,6 +487,8 @@ class DocumentRegionsOut(BaseModel):
     filename: str
     page_count: int
     regions: list[RegionOut]
+    document_date: date | None = None   # the Document date read from its first page (GLOSSARY); None if it gives none
+    date_order: Literal["day_first", "month_first"] | None = None   # how it writes numeric dates; None: not settled
 
 
 class ScreenIn(BaseModel):
