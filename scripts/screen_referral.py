@@ -14,8 +14,7 @@ from pathlib import Path
 
 import asyncpg
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app.config import Settings  # noqa: E402
 from app.ctx import Ctx  # noqa: E402

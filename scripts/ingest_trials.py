@@ -13,13 +13,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import asyncpg  # noqa: E402
 
 from app import logfile, trials  # noqa: E402
-from app.config import Settings  # noqa: E402
+from app.config import REPO_ROOT, Settings  # noqa: E402
 from app.ctx import Ctx  # noqa: E402
 from app.llm.nightshift import Nightshift  # noqa: E402
 from app.main import WORLD_MODEL_NAMESPACE  # noqa: E402
@@ -29,7 +28,7 @@ from app.worldmodel import PgEventStore, WorldModel  # noqa: E402
 
 
 async def main(args: argparse.Namespace) -> int:
-    s = Settings(_env_file=ROOT / ".env")
+    s = Settings(_env_file=REPO_ROOT / ".env")
     logfile.configure(s.log_file, max_bytes=s.log_max_bytes, backups=s.log_backups)   # the app's log file too
     pool = await asyncpg.create_pool(s.pg_dsn, min_size=1, max_size=4)
     writer, reader = PgWriter(pool), PgReader(pool)

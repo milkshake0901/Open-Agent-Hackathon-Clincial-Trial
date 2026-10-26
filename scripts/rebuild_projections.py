@@ -12,19 +12,18 @@ import asyncio
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import asyncpg  # noqa: E402
 
-from app.config import Settings  # noqa: E402
+from app.config import REPO_ROOT, Settings  # noqa: E402
 from app.main import WORLD_MODEL_NAMESPACE  # noqa: E402
 from app.sql.writer import PgWriter  # noqa: E402
 from app.worldmodel import rebuild_projections  # noqa: E402
 
 
 async def main() -> int:
-    s = Settings(_env_file=ROOT / ".env")
+    s = Settings(_env_file=REPO_ROOT / ".env")
     pool = await asyncpg.create_pool(s.pg_dsn, min_size=1, max_size=2)
     try:
         replayed = await rebuild_projections(PgWriter(pool), WORLD_MODEL_NAMESPACE)

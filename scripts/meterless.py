@@ -14,12 +14,11 @@ import asyncio
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from pydantic import BaseModel  # noqa: E402
 
-from app.config import Settings  # noqa: E402
+from app.config import REPO_ROOT, Settings  # noqa: E402
 from app.llm import Lane, LlmUnavailable, Media, MediaFailed, MediaUnavailable, json_object  # noqa: E402
 from app.llm.direct import connect as connect_lanes  # noqa: E402
 from app.llm.nightshift import Nightshift, auto_detect  # noqa: E402
@@ -36,7 +35,7 @@ def connect(s: Settings) -> Nightshift:
 
 
 async def main(args: argparse.Namespace) -> int:
-    s = Settings(_env_file=ROOT / ".env")
+    s = Settings(_env_file=REPO_ROOT / ".env")
     if args.cmd == "detect":
         hit = await auto_detect(s.meterless_runtime_token, s.meterless_app_id)
         print(f"found {hit[0]} ({hit[1]})" if hit else "no runtime on 8088, 8090, 8787 or 11434")
@@ -73,7 +72,7 @@ async def main(args: argparse.Namespace) -> int:
             print(f"  {Ping.model_validate_json(json_object(done.text)).model_dump()}")
             return 0
 
-        media = Media(ns, ROOT / s.media_dir)
+        media = Media(ns, REPO_ROOT / s.media_dir)
         if args.cmd == "media":
             for kind in ("image", "speech", "music", "video"):
                 try:
@@ -87,7 +86,7 @@ async def main(args: argparse.Namespace) -> int:
             privacy = args.privacy or s.media_privacy
             print(f"illustrating at privacy floor {privacy} …")
             made = await media.illustrate(args.text, privacy=privacy)
-            print(f"stored {made.path.relative_to(ROOT)} ({made.mime}, {made.size} bytes; "
+            print(f"stored {made.path.relative_to(REPO_ROOT)} ({made.mime}, {made.size} bytes; "
                   f"job {made.job_id}, seq {made.seq}, make {made.make_id}, {made.transform})")
             return 0
     except MediaUnavailable as e:

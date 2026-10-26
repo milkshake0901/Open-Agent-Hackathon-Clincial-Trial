@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-_REPO = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[2]   # holds .env, data/raw, data/media; scripts anchor to it
 NEMOTRON_LIGHTNING = "nvidia/nemotron-3.5-lightning-30b-a3b"   # listed by this box's GET /v1/models
 NEMOTRON_ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"
 
@@ -45,10 +45,10 @@ class Settings(BaseSettings):
     zetaris_visibility_wait_s: float = 5.0
 
     raw_documents_dir: str = "data/raw"       # gitignored
-    trials_snapshot_dir: str = str(_REPO / "data" / "trials_snapshot")   # saved Trials, loaded at start-up (#12)
+    trials_snapshot_dir: str = str(REPO_ROOT / "data" / "trials_snapshot")   # saved Trials, loaded at start-up (#12)
 
     # every pipeline step and model call, one JSON object per line (app/logfile.py, #35); gitignored
-    log_file: str = str(_REPO / "data" / "logs" / "trialmatch.jsonl")
+    log_file: str = str(REPO_ROOT / "data" / "logs" / "trialmatch.jsonl")
     log_max_bytes: int = 10_000_000           # rotated at this size, keeping log_backups old files (.1, .2, ...)
     log_backups: int = 5
 

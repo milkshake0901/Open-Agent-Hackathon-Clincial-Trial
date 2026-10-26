@@ -10,10 +10,9 @@ from pathlib import Path
 
 import asyncpg
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from app.config import Settings  # noqa: E402
+from app.config import REPO_ROOT, Settings  # noqa: E402
 from app.extraction.parse import extract_pdf  # noqa: E402
 from app.record.referral import save_referral  # noqa: E402
 from app.record.storage import keep_raw  # noqa: E402
@@ -36,7 +35,7 @@ async def main(argv: list[str]) -> int:
         digest = await save_referral(
             PgWriter(pool), patient_id=PATIENT_ID, label=LABEL, filename_raw=path.name,
             content=content, parsed=parsed)
-        keep_raw(str(ROOT / settings.raw_documents_dir), digest, content)
+        keep_raw(str(REPO_ROOT / settings.raw_documents_dir), digest, content)
         rows = await pool.fetch(
             "SELECT id, page, kind, y0, text FROM document_span WHERE document_hash = $1 ORDER BY page, ordinal",
             digest)
