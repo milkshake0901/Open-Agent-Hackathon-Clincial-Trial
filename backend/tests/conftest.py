@@ -62,19 +62,21 @@ async def clean_db(pg_pool):
     return pg_pool
 
 
-def make_ctx(pool, llm=None):
-    """A test Ctx: Postgres writer and readers, fake model, World Model on PgEventStore, fixed clock."""
+def make_ctx(pool, llm=None, parser=None):
+    """A test Ctx: Postgres writer and readers, fake model, recorded parse, World Model on PgEventStore, fixed clock."""
     from app.config import Settings
     from app.ctx import Ctx
     from app.llm.nightshift import FakeLLM
     from app.sql.reader import PgReader
     from app.sql.writer import PgWriter
     from app.worldmodel import PgEventStore, WorldModel
+    from tests.fixtures.letters import RecordedParse
 
     writer = PgWriter(pool)
     reader = PgReader(pool)
     wm = WorldModel(namespace="test", store=PgEventStore(writer, "test"), clock=lambda: NOW)
-    return Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm or FakeLLM(), wm=wm,
+    return Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm or FakeLLM(),
+               parser=parser or RecordedParse(), wm=wm,
                settings=Settings(_env_file=None, pg_dsn=ADMIN_DSN), now=lambda: NOW)
 
 

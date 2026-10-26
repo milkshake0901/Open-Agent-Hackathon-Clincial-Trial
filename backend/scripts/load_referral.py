@@ -13,7 +13,7 @@ import asyncpg
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import REPO_ROOT, Settings  # noqa: E402
-from app.extraction.parse import extract_pdf  # noqa: E402
+from app.extraction import NemotronParse  # noqa: E402
 from app.record.referral import save_referral  # noqa: E402
 from app.record.storage import keep_raw  # noqa: E402
 from app.sql.writer import PgWriter  # noqa: E402
@@ -28,8 +28,8 @@ async def main(argv: list[str]) -> int:
         return 2
     path = Path(argv[0])
     content = path.read_bytes()
-    parsed = extract_pdf(content)
     settings = Settings()
+    parsed = NemotronParse(settings).read(content)
     pool = await asyncpg.create_pool(settings.pg_dsn, min_size=1, max_size=2)
     try:
         digest = await save_referral(

@@ -9,7 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.extraction import extract_pdf  # noqa: E402
+from app.config import Settings  # noqa: E402
+from app.extraction import NemotronParse  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
@@ -17,7 +18,7 @@ def main(argv: list[str]) -> int:
         print("usage: extract_document.py FILE.pdf", file=sys.stderr)
         return 2
     path = Path(argv[0])
-    document = extract_pdf(path.read_bytes())
+    document = NemotronParse(Settings()).read(path.read_bytes())
     print(document.text)
     return 0
 

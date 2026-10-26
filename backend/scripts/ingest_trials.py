@@ -20,6 +20,7 @@ import asyncpg  # noqa: E402
 from app import logfile, trials  # noqa: E402
 from app.config import REPO_ROOT, Settings  # noqa: E402
 from app.ctx import Ctx  # noqa: E402
+from app.extraction import NemotronParse  # noqa: E402
 from app.llm.nightshift import Nightshift  # noqa: E402
 from app.main import WORLD_MODEL_NAMESPACE  # noqa: E402
 from app.sql.reader import PgReader  # noqa: E402
@@ -37,8 +38,8 @@ async def main(args: argparse.Namespace) -> int:
     # The ingest never calls a model; the client is only there because every Ctx carries one.
     llm = Nightshift(s.meterless_base_url, s.meterless_runtime_token, s.meterless_app_id, s.lane_models,
                      default_model=s.meterless_model)
-    ctx = Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm, wm=wm, settings=s,
-              now=lambda: datetime.now(timezone.utc))
+    ctx = Ctx(writer=writer, agent_reader=reader, ui_reader=reader, llm=llm, parser=NemotronParse(s), wm=wm,
+              settings=s, now=lambda: datetime.now(timezone.utc))
     try:
         source = trials.LivePages() if args.live else trials.SavedPages(Path(args.pages))
         report = await trials.ingest(ctx, source)
