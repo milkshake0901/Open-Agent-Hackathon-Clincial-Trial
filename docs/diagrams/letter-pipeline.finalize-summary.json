@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "workflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/.archify/workflow-letter-pipeline-20261027/candidate.json",
+    "sha256": "833e0110d63c1e2774e324c9436863d1927cce9a6637a220bc2dd03410184c4f",
+    "bytes": 19257
+  },
+  "artifact": {
+    "path": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/letter-pipeline.html",
+    "sha256": "b7bff4d6bb54ffe19f718113c62a0efba23c88ea50eb4001edab4503a87047dd",
+    "bytes": 870520
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/letter-pipeline.finalize.json",
+    "summaryReceipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/letter-pipeline.finalize-summary.json",
+    "browserCheckReceipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/letter-pipeline.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-26T00:47:24.502Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 58421,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

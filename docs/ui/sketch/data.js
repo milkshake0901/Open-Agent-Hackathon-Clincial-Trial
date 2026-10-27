@@ -27,7 +27,7 @@ window.TM = (() => {
     spots: "How many spots of cancer are there outside the lung?",
   };
   const askYou = {
-    osimertinibStart: { text: "Roughly which month did they start osimertinib (Tagrisso)?", said: "“Tagrisso, since last year”", question: 7 },
+    osimertinibStart: { text: "Which month did they start osimertinib (Tagrisso)?", said: "“Tagrisso, since last year”", question: 7 },
     thinners: { text: "Are they taking a blood thinner, such as warfarin, apixaban or rivaroxaban?", said: "No answer yet", question: 7 },
   };
 

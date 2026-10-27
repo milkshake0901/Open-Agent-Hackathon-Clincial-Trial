@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "workflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/.archify/workflow-llm-calls-20261025-112512/candidate.json",
+    "sha256": "e0a7a96dfe2102245d52ddc162984b26578c6513e2edf3209b87f325340373dd",
+    "bytes": 14962
+  },
+  "artifact": {
+    "path": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/llm-calls.html",
+    "sha256": "d24522e7fded61700feb06eb6951647b7725bcdb32342679beaad8ea805580d8",
+    "bytes": 852535
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/llm-calls.finalize.json",
+    "summaryReceipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/llm-calls.finalize-summary.json",
+    "browserCheckReceipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/llm-calls.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-24T03:28:25.462Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 26005,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

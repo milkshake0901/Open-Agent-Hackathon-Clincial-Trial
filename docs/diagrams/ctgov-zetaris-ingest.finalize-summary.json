@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "workflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/.archify/workflow-ctgov-zetaris-20261026/candidate.json",
+    "sha256": "1d90b26cf35f822749da34d02d1b7430fcffac387e825cd27c8ad61f070751e9",
+    "bytes": 10242
+  },
+  "artifact": {
+    "path": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/ctgov-zetaris-ingest.html",
+    "sha256": "b40a80eece925c44176848e3bc27e6d1b4cc332fed3cbbec711751c56924cd74",
+    "bytes": 841822
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/ctgov-zetaris-ingest.finalize.json",
+    "summaryReceipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/ctgov-zetaris-ingest.finalize-summary.json",
+    "browserCheckReceipt": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/ctgov-zetaris-ingest.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-26T00:47:24.502Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 19368,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

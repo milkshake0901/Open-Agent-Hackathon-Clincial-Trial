@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "3651f574-5555-45e3-b5f2-f9c37b247254",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/.archify/workflow-ctgov-zetaris-20261026/candidate.json",
+  "output": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/ctgov-zetaris-ingest.html",
+  "specification": {
+    "sha256": "1d90b26cf35f822749da34d02d1b7430fcffac387e825cd27c8ad61f070751e9",
+    "bytes": 10242
+  },
+  "artifact": {
+    "sha256": "b40a80eece925c44176848e3bc27e6d1b4cc332fed3cbbec711751c56924cd74",
+    "bytes": 841822
+  }
+}

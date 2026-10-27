@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "053616a3-69e2-4c3b-83e0-d3747027bc3a",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/.archify/workflow-llm-calls-20261025-112512/candidate.json",
+  "output": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/llm-calls.html",
+  "specification": {
+    "sha256": "e0a7a96dfe2102245d52ddc162984b26578c6513e2edf3209b87f325340373dd",
+    "bytes": 14962
+  },
+  "artifact": {
+    "sha256": "d24522e7fded61700feb06eb6951647b7725bcdb32342679beaad8ea805580d8",
+    "bytes": 852535
+  }
+}

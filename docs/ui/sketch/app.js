@@ -244,7 +244,7 @@
     $("#view").innerHTML = `
       <section class="greeting">
         <h1>Find clinical trials that might fit</h1>
-        <p class="sub">Answer some plain questions about the person with cancer. We check them against every recruiting trial on ClinicalTrials.gov, explain each result, and tell you what to ask the doctor.</p>
+        <p class="sub">Answer some plain questions about yourself, or about the person you're helping. We check them against every recruiting trial on ClinicalTrials.gov, explain each result, and tell you what to ask the doctor.</p>
       </section>
       <div class="grid">
         <section class="panel s9" aria-labelledby="h-before">
@@ -283,7 +283,7 @@
       <section class="page-title"><h1>Who is answering?</h1>
         <p class="verdict-note">Family members and carers often fill this in. We'll word every question to suit.</p></section>
       <div class="grid choices" role="radiogroup" aria-label="Who is answering">
-        ${opt("patient", "I'm the patient", "I have cancer and I'm looking for trials for myself.", "“When were you diagnosed?”")}
+        ${opt("patient", "I'm the patient", "I'm looking for trials for myself.", "“When were you diagnosed?”")}
         ${opt("other", "I'm answering for someone else", "I'm a family member, partner, friend or carer helping them.", "“When were they diagnosed?”")}
       </div>
       <div class="grid"><section class="panel s12" aria-labelledby="h-next">

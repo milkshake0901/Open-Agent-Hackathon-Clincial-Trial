@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "de24b296-2c4e-44dd-81ef-15812b2dde8d",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/.archify/workflow-letter-pipeline-20261027/candidate.json",
+  "output": "/Users/wilsonwang/code/Open-Agent-Hackathon-Clincial-Trial/docs/diagrams/letter-pipeline.html",
+  "specification": {
+    "sha256": "c00d3108df9e4e7c6712cd5978868ca36ee8c583e3abbb6bb44bad3316ece670",
+    "bytes": 19473
+  },
+  "artifact": {
+    "sha256": "8e99ffffbd1053623621a380f5e913bb687b6d385a23086d7bd91000ff6d2903",
+    "bytes": 870830
+  }
+}
