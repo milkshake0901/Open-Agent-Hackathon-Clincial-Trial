@@ -1,4 +1,4 @@
-# Martin
+# TrialMatch
 
 Patient-centric clinical trial matching, built for the Open Agent Hackathon 2026, Track 2: The Agent That Can Explain Why.
 
