@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from difflib import SequenceMatcher
 
 from app.record import dates
 from app.record.types import Document, DraftFact, Fact, Finding, FindingKind, ProfileVersion
@@ -195,10 +196,40 @@ def _squash(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
+# Nemotron Parse writes Markdown, so a letter's "<0.01" can come back as "\<0.01"; a model quoting it writes "<0.01".
+_MARKDOWN_ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!<>|~])")
+# How many letters a quote may differ from its text by: a word the parse misread ("paraaotic") that the model wrote
+# as the letter has it ("paraaortic"). Never a digit, and only in a quote long enough to still be that sentence.
+QUOTE_TYPOS = 2
+_FUZZY_MIN_LEN = 20
+
+
+def _plain(text: str) -> str:
+    return _squash(_MARKDOWN_ESCAPE.sub(r"\1", text))
+
+
 def quote_on_page(quote: str, page_text: str) -> bool:
-    """Whitespace/case-insensitive containment; tables flattened. Guards against hallucinated citations."""
-    q = _squash(quote)
-    return bool(q) and q in _squash(page_text)
+    """Whitespace/case-insensitive containment, Markdown escapes ignored; tables flattened. Up to QUOTE_TYPOS
+    letters may differ, none of them a digit. Guards against hallucinated citations."""
+    q, text = _plain(quote), _plain(page_text)
+    return bool(q) and (q in text or _nearly_in(q, text))
+
+
+def _nearly_in(q: str, text: str) -> bool:
+    """`q` is in `text` but for at most QUOTE_TYPOS letters added, dropped or changed, none of them a digit."""
+    if len(q) < _FUZZY_MIN_LEN:
+        return False
+    anchor = SequenceMatcher(None, q, text, autojunk=False).find_longest_match(0, len(q), 0, len(text))
+    start = max(0, anchor.b - anchor.a - QUOTE_TYPOS)
+    window = text[start:anchor.b - anchor.a + len(q) + QUOTE_TYPOS]
+    ops = SequenceMatcher(None, q, window, autojunk=False).get_opcodes()
+    while ops and ops[0][0] == "insert":    # the window's own letters before the quote starts
+        ops = ops[1:]
+    while ops and ops[-1][0] == "insert":   # and after it ends
+        ops = ops[:-1]
+    edits = [(q[i1:i2], window[j1:j2]) for tag, i1, i2, j1, j2 in ops if tag != "equal"]
+    return (sum(max(len(a), len(b)) for a, b in edits) <= QUOTE_TYPOS
+            and not any(c.isdigit() for a, b in edits for c in a + b))
 
 
 def same_subject(a: Fact | DraftFact, b: Fact | DraftFact) -> bool:

@@ -92,6 +92,14 @@ async def test_skipped_and_prefer_not_to_say_answers_make_no_facts(ctx):
     assert [f.subject for f in version.facts] == ["daily activity"]
 
 
+async def test_a_questionnaire_left_blank_is_recorded_with_no_facts(ctx):
+    patient = await record.create_patient(ctx, "Demo patient K")
+    outcome = await record.submit_questionnaire(ctx, patient, {}, respondent="patient")
+
+    assert isinstance(outcome, record.Committed)
+    assert (await record.profile_version(ctx, outcome.version.id)).facts == ()
+
+
 async def test_postcode_and_travel_limit_are_not_facts_and_not_in_the_document(ctx):
     patient = await record.create_patient(ctx, "Demo patient D")
     outcome = await record.submit_questionnaire(

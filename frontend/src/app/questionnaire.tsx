@@ -347,7 +347,9 @@ function ProfileSummary({ version, changes, patientId, trialsVersionId }: {
           )}
         </div>
       )}
-      <p className="text-muted">This is what we recorded, and where each item came from.</p>
+      {version.facts.length === 0
+        ? <p className="text-muted">Your answers added nothing new. If you added a letter, check what we read from it.</p>
+        : <p className="text-muted">This is what we recorded, and where each item came from.</p>}
       <ul className="flex flex-col gap-3">
         {version.facts.filter((f) => version.current[f.subject] === f.id).map((f) => (
           <li key={f.id} className="rounded-lg border border-border p-3">

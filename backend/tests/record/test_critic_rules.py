@@ -58,3 +58,30 @@ def test_with_no_date_order_an_ambiguous_date_is_not_sent_back():
     d = DraftFact(resource=FactResource.PROCEDURE, subject="biopsy", value="done", unit=None,
                   observed_on=date(2023, 7, 2), page=1, quote="biopsy 7/2/23", span_id="d:p1:b0")
     assert critic.review((d,), no_order, None) == ()
+
+
+# The Royal Marsden referral as Nemotron Parse read it: Markdown-escaped "<", and once "paraaortic" misread.
+PARSED = ("His PSA continued to drop to \\<0.01 and Zytiga was stopped in May 2020. PSMA PET in June 2018 showed "
+          "multiple subcentimeter nodes in retrocaval, aortocaval, left paraaotic, mesenteric, and left SCF regions.")
+
+
+def test_a_quote_that_writes_an_escaped_character_plainly_is_in_its_region():
+    assert critic.quote_on_page("His PSA continued to drop to <0.01 and Zytiga was stopped in May 2020.", PARSED)
+
+
+def test_a_quote_that_spells_a_misread_word_right_is_in_its_region():
+    assert critic.quote_on_page("multiple subcentimeter nodes in retrocaval, aortocaval, left paraaortic, mesenteric",
+                                PARSED)
+
+
+def test_a_quote_that_changes_a_digit_is_not_in_its_region():
+    assert not critic.quote_on_page("His PSA continued to drop to <0.02 and Zytiga was stopped in May 2020.", PARSED)
+    assert not critic.quote_on_page("His PSA continued to drop to <0.01 and Zytiga was stopped in May 2021.", PARSED)
+
+
+def test_a_quote_more_than_two_letters_off_is_not_in_its_region():
+    assert not critic.quote_on_page("His PSA continued to fall to <0.01 and Zytiga was stopped in May 2020.", PARSED)
+
+
+def test_a_short_quote_must_match_exactly():
+    assert not critic.quote_on_page("Zytiga was stoped", PARSED)

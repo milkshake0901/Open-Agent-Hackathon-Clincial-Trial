@@ -118,7 +118,7 @@ def region_drafter() -> Drafter:
 
 
 def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt: int, max_attempts: int,
-           current: ProfileVersion | None) -> Step:
+           current: ProfileVersion | None, *, questionnaire: bool = False) -> Step:
     """PURE. The whole loop policy in one function; table-tested.
 
     # TODO pseudocode
@@ -128,7 +128,8 @@ def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt
     #        (conflicts are never retried: re-reading the Document cannot change what it says)
     #   elif retryable and attempt < max_attempts: -> Retry(retryable)
     #   elif retryable:  -> Exhausted(retryable)      # bound reached
-    #   elif not drafts: -> Exhausted(())             # intake found nothing twice
+    #   elif not drafts and not questionnaire: -> Exhausted(())   # intake found nothing twice
+    #        (a questionnaire left blank, its letter answering the rest, is recorded: a version with no new Facts)
     #   else: -> Accept(drafts)
     """
     # A duplicate of an accepted Fact is dropped, not retried: the record already says it (#9).
@@ -146,7 +147,7 @@ def decide(findings: tuple[Finding, ...], drafts: tuple[DraftFact, ...], attempt
             accepted_drafts=tuple(d for i, d in enumerate(drafts) if i not in flagged | duplicates))
     if retryable:
         return Retry(retryable) if attempt < max_attempts else Exhausted(retryable)
-    if not drafts:
+    if not drafts and not questionnaire:
         return Exhausted(())
     # Every draft a duplicate (only free text or the Respondent changed): a new version with no new Facts.
     return Accept(tuple(d for i, d in enumerate(drafts) if i not in duplicates))
@@ -175,7 +176,7 @@ async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts:
     #       drafts = await intake.extract(ctx, doc, feedback, run_id)        # LLM fast lane; emits IntakeDrafted
     #       findings = critic.review(drafts, doc, current)                    # PURE
     #       await trace.append(ctx.writer, run_id, CriticReviewed(attempt, findings))
-    #       match decide(findings, drafts, attempt, max_attempts, current):
+    #       match decide(findings, drafts, attempt, max_attempts, current, questionnaire=doc.is_questionnaire):
     #           case Accept(ds):      return await commit(ctx, doc, ds, run_id)
     #           case Escalate(cs, ok): await trace.append(..., RunAwaitingPatient(cs, ok)); return AwaitingPatient(run_id, cs)
     #           case Retry(fb):       await trace.append(..., IngestRetried(attempt, fb)); feedback = fb
@@ -196,7 +197,7 @@ async def run_ingest(ctx: Ctx, doc: Document, run_id: trace.RunId, max_attempts:
         findings = critic.review(drafts, doc, current)
         await trace.append(ctx.writer, run_id, CriticReviewed(actor="critic", attempt=attempt,
                                                               findings=[asdict(f) for f in findings]))
-        match decide(findings, drafts, attempt, max_attempts, current):
+        match decide(findings, drafts, attempt, max_attempts, current, questionnaire=doc.is_questionnaire):
             case Accept(drafts=ds):
                 return await park_or_commit(ctx, doc, ds, run_id)
             case Escalate(conflicts=cs, accepted_drafts=ok):
