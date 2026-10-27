@@ -17,6 +17,10 @@ Agents in two bounded feedback loops, with a Diagnosis check between them:
 
 Five model calls in all: the Intake agent, two for the diagnosis shortlist, the Matcher and the Evaluator. Everything else, including the Critic, the Re-scan plan and the Verdict rules, is code.
 
+[![Letter-first pipeline: trial data, referral letter, questionnaire, matching and after the verdict, with example inputs and outputs at each step](docs/diagrams/letter-pipeline.png)](docs/diagrams/letter-pipeline.html)
+
+The letter-first pipeline with example inputs and outputs at each step. Open [letter-pipeline.html](docs/diagrams/letter-pipeline.html) locally for the interactive version (click a step for its example and code links).
+
 Diagram: [workflow](https://claude.ai/artifact/4kTc9x5oTqnT1vGj1cXANM). Terms: [GLOSSARY.md](GLOSSARY.md). Decisions: [docs/adr](docs/adr).
 
 ## See it without running it
