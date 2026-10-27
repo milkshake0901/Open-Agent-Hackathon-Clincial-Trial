@@ -7,6 +7,7 @@ so it is only loaded, never run.
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -73,3 +74,51 @@ def test_letter_deidentification_help_offers_a_dry_run(cwd):
     assert done.returncode == 0, done.stderr
     assert done.stdout.startswith("usage: deidentify_letters.py [-h] [--dry-run]")
     assert "backend/.venv/bin/python backend/scripts/deidentify_letters.py --dry-run" in done.stdout
+
+
+def _matcher(at: str, outcome: str, retry_note: str = "") -> dict:
+    return {"at": at, "step": "llm.complete", "run_id": "run_x", "lane": "deep", "model_requested": "nemo",
+            "model_answered": "nemo", "duration_ms": 10, "error": None, "system": "You are the Matcher.",
+            "user": "Trial NCT1: A trial\n\nCriteria:\n- NCT1:h:1 [exclusion] Pregnant\n\nFacts:\n"
+                    '- fact:ab | pregnant: no | observed 2026-10-27 | intake questionnaire, Q14 | quote "No"' + retry_note,
+            "parsed": {"results": [{"criterion_id": "NCT1:h:1", "outcome": outcome,
+                                    "fact_id": "fact:ab" if outcome != "unknown" else None, "rationale": "Says no."}]}}
+
+
+def _evaluator(at: str, supported: bool) -> dict:
+    return {"at": at, "step": "llm.complete", "run_id": "run_x", "lane": "judge", "model_requested": "nemo",
+            "model_answered": "nemo", "duration_ms": 5, "error": None, "system": "You are the Evaluator.",
+            "user": "CLAIM NCT1:h:1 | criterion (exclusion): Pregnant | claimed: not_met",
+            "parsed": {"checks": [{"criterion_id": "NCT1:h:1", "supported": supported, "reason": "Fact says no."}]}}
+
+
+def test_export_run_shows_each_criterion_its_cited_fact_the_evaluator_check_and_the_retry(tmp_path):
+    log = tmp_path / "trialmatch.jsonl"
+    lines = [
+        {"at": "2026-10-27T02:00:00+00:00", "step": "matching.rescan.started", "run_id": "run_x", "to_judge": ["NCT1"]},
+        _matcher("2026-10-27T02:00:01+00:00", "not_met"),
+        _evaluator("2026-10-27T02:00:02+00:00", False),
+        _matcher("2026-10-27T02:00:03+00:00", "unknown",
+                 "\n\nYour previous answer was rejected for these Criteria. Fix them:\n- criterion NCT1:h:1: no."),
+        {"at": "2026-10-27T02:00:04+00:00", "step": "matching.trial_judged", "run_id": "run_x", "nct_id": "NCT1",
+         "outcome": "possible", "attempts": 2},
+        {"at": "2026-10-27T02:00:05+00:00", "step": "zetaris.sql", "sql": "select 1"},   # another run's line
+    ]
+    log.write_text("\n".join(json.dumps(x) for x in lines) + "\n{cut off", encoding="utf-8")
+    out = tmp_path / "run.md"
+
+    assert load("export_run.py").main(["run_x", "--log", str(log), "--out", str(out)]) == 0
+
+    page = out.read_text()
+    assert "answered by `nemo`" in page and "3 model calls" in page
+    assert "**Outcome: possible** · attempts 2" in page
+    assert '| 1 | exclusion | Pregnant | **not_met → unknown** |  | Says no. | ✗ Fact says no. |' in page
+    assert "> Your previous answer was rejected for these Criteria." in page
+    assert "select 1" not in page
+
+
+@DIRECTORIES
+def test_export_run_without_a_run_id_or_list_prints_usage_and_exits_2(cwd):
+    done = run("export_run.py", cwd=cwd)
+    assert done.returncode == 2
+    assert "give a run_id, or --list" in done.stderr
