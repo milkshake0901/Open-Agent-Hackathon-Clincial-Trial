@@ -4,6 +4,11 @@
 
 # real patient documents never leave the laptop
 data/raw/
+backend/data/
+Prostate Cancer/
+
+# editor swap files (a .env swap holds secrets)
+*.swp
 
 # python
 __pycache__/
