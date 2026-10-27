@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from app.extraction import ExtractedDocument, ExtractedPage, Parser
 from app.record.deidentify import deidentify_document
+from app.record.parse_cache import enabled as cache_enabled, load as load_cached, save as save_cached
 from app.record.pdf import UnreadableDocument
 from app.record.repo import insert_document, insert_spans
 from app.record.storage import document_hash, filename
@@ -46,13 +47,19 @@ def read_pdf(parser: Parser, filename_raw: str, content: bytes) -> tuple[Extract
         raise UnreadableDocument("the file is empty")
     if not content.startswith(b"%PDF"):
         raise UnreadableDocument("the file is not a PDF")
+    cached = load_cached(content) if cache_enabled() else None
+    if cached is not None:
+        return cached
     try:
         parsed = parser.read(content)
     except ValueError as e:   # pypdfium2 cannot render a damaged file
         raise UnreadableDocument(f"the PDF could not be read ({e})") from e
     if not any(block.text.strip() and block.kind not in _FURNITURE for page in parsed.pages for block in page.blocks):
         raise UnreadableDocument("no readable text was found in the PDF (a blank page, or a scan too faint to read?)")
-    return deidentify_parsed(parsed, filename_raw)
+    parsed, safe_filename = deidentify_parsed(parsed, filename_raw)
+    if cache_enabled():
+        save_cached(content, parsed, safe_filename)
+    return parsed, safe_filename
 
 
 def as_document(patient_id: PatientId, content: bytes, safe_filename: str, parsed: ExtractedDocument,

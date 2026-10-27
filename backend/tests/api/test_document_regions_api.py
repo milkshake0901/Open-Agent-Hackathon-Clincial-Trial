@@ -106,9 +106,11 @@ async def test_a_pdf_whose_parse_finds_no_readable_text_is_refused_and_nothing_i
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         patient = await new_patient(http)
         added = await http.post(f"/api/patients/{patient}/documents", files={"file": ("scan.pdf", content)})
+        run = await http.get(f"/api/runs/{added.json()['run_id']}")
 
-    assert added.status_code == 422
-    assert "no readable text" in added.json()["detail"]
+    assert added.status_code == 202
+    assert run.json()["state"]["phase"] == "rejected"
+    assert "no readable text" in run.json()["state"]["reason"]
     assert await clean_db.fetch("SELECT hash FROM document") == []
 
 

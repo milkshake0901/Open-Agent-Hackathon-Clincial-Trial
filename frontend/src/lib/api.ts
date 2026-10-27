@@ -193,7 +193,15 @@ export type TrialAsk = {
 // Where the patient's letters and questionnaire stand: what the short questionnaire skips, and when the Diagnosis
 // check and Trials can go ahead (every Document's Facts committed).
 export type IntakeStatus = {
-  letters: { document_hash: string; filename: string; run_id: string; phase: IngestPhase }[];
+  letters: {
+    document_hash: string;
+    filename: string;
+    run_id: string;
+    phase: IngestPhase;
+    pages: number;
+    pages_read: number;
+    details: Record<string, string>; // questionnaire answers, once the letter has been read
+  }[];
   skip: string[]; // question ids the letters' Facts answer
   ready: boolean;
   profile_version_id: string | null; // the latest Profile version, the one Trials are listed for
@@ -362,11 +370,39 @@ const enquiryPath = (patientId: string, versionId: string, nctId: string) =>
   `/patients/${encodeURIComponent(patientId)}/versions/${encodeURIComponent(versionId)}` +
   `/trials/${encodeURIComponent(nctId)}/enquiry`;
 
+export type Course = {
+  diagnosis: string;
+  marker: string | null;
+  treatments: { subject: string; detail: string; on: string | null }[];
+  series: { name: string; points: { on: string; value: string; number: number; unit: string | null }[] }[];
+};
+
+export type CourseComparison = {
+  marker: string | null;
+  summary: string;
+  notes: { treatment: string; on: string; value: string; change: string }[];
+};
+
+export type SavedReferral = {
+  patient_id: string;
+  document_hash: string;
+  filename: string;
+  version_id: string | null;
+};
+
 export const api = {
   definition: () => call<Questionnaire>("/questionnaire/definition"),
+  savedReferral: () => call<SavedReferral>("/saved-referral"),
   createPatient: (label: string) =>
     call<{ patient_id: string }>("/patients", { method: "POST", body: JSON.stringify({ label }) }),
   intake: (patientId: string) => call<IntakeStatus>(`/patients/${encodeURIComponent(patientId)}/intake`),
+  course: (patientId: string, runId?: string) =>
+    call<Course>(`/patients/${encodeURIComponent(patientId)}/course${runId ? `?run=${encodeURIComponent(runId)}` : ""}`),
+  compareCourse: (patientId: string, runId?: string) =>
+    call<CourseComparison>(
+      `/patients/${encodeURIComponent(patientId)}/course/compare${runId ? `?run=${encodeURIComponent(runId)}` : ""}`,
+      { method: "POST" },
+    ),
   submit: (patientId: string, body: { definition_version: string; respondent: Respondent; answers: Answers }) =>
     call<QuestionnaireAccepted>(`/patients/${encodeURIComponent(patientId)}/questionnaire`, {
       method: "POST",

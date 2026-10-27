@@ -9,13 +9,16 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from typing import Any, Literal
 
 from app import logfile, trace
 from app.ctx import Ctx
-from app.record import dates, diagnosis as shortlists, loop, questionnaire, repo, storage
+from app.record import course, dates, diagnosis as shortlists, letter_details, loop, questionnaire, repo, storage
+
+Course = course.Course
+Comparison = course.Comparison
 from app.record.loop import InvalidResolution, NotAwaitingPatient
 from app.record.deidentify import deidentify
 from app.record.ground import LetterSpan, letter_spans, page_png
@@ -77,7 +80,8 @@ __all__ = [
     "IngestOutcome", "Committed", "AwaitingPatient", "AwaitingReview", "Rejected",
     "letter_review", "answer_review", "correct_document_date", "commit_review", "LetterReview", "ReviewItem",
     "ReviewCommitted", "NotAwaitingReview", "InvalidReview",
-    "page_png", "letter_spans", "LetterSpan", "INTAKE_KINDS",
+    "page_png", "letter_spans", "LetterSpan", "INTAKE_KINDS", "saved_letter", "SavedLetter",
+    "treatment_course", "compare_course", "Course", "Comparison",
     "intake_status", "IntakeStatus", "LetterStatus", "NotReady",
     "PatientId", "ConflictId", "DocumentHash", "ProfileVersionId", "FactId", "DiagnosisCheckId",
 ]
@@ -174,11 +178,16 @@ async def register_questionnaire(ctx: Ctx, patient_id: PatientId, answers: dict[
 
 @dataclass(frozen=True)
 class LetterStatus:
-    """One of the patient's letters (a Document read into Regions) and where its latest ingest run stands."""
+    """One of the patient's letters (a Document read into Regions) and where its latest ingest run stands.
+    `pages` is how many pages are being read into Facts. `pages_read` is how many of those have been drafted.
+    `details` is the questionnaire answers those Facts fill, once the read has finished."""
     document_hash: DocumentHash
     filename: str
     run_id: RunId
     phase: str     # the run's phase: started, drafting, awaiting_patient, awaiting_review, committed, rejected
+    pages: int = 0
+    pages_read: int = 0
+    details: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -195,6 +204,23 @@ class IntakeStatus:
 
 
 _UNSETTLED = ("started", "drafting", "awaiting_patient", "awaiting_review")
+_READ = ("awaiting_patient", "awaiting_review", "committed")
+
+
+def _pages_read(state, pages: int) -> int:
+    """How many pages have been drafted. A finished read counts as every page, including one that stated no Facts."""
+    if state.phase in _READ or state.phase == "rejected":
+        return pages
+    seen = {d.get("page") for d in state.drafts if isinstance(d.get("page"), int)}
+    return min(len(seen), pages)
+
+
+def _letter_details(state) -> dict[str, str]:
+    """Questionnaire answers from the letter, once its Facts have been drafted. Empty while it is still being read."""
+    if state.phase not in _READ:
+        return {}
+    drafts = [row["draft"] for row in state.review if row.get("decision") != "drop"] if state.review else state.drafts
+    return letter_details.from_drafts(drafts)
 
 
 async def intake_status(ctx: Ctx, patient_id: PatientId) -> IntakeStatus:
@@ -209,7 +235,11 @@ async def intake_status(ctx: Ctx, patient_id: PatientId) -> IntakeStatus:
         doc = await repo.document(ctx.ui_reader, DocumentHash(h))
         if doc is None or not loop.needs_review(doc):
             continue
-        letters.append(LetterStatus(doc.hash, doc.filename, run_id, "committed" if committed else state.phase))
+        phase = "committed" if committed else state.phase
+        pages = sum(1 for p in doc.pages if doc.intake_regions(p.number)) or len(doc.pages)
+        letters.append(LetterStatus(doc.hash, doc.filename, run_id, phase, pages=pages,
+                                    pages_read=_pages_read(state, pages),
+                                    details=_letter_details(state)))
         if state.phase == "awaiting_review":
             resources |= {loop._draft_from(r["draft"]).resource for r in state.review if r["decision"] != "drop"}
     current = await repo.current_version(ctx.ui_reader, patient_id)
@@ -387,6 +417,26 @@ class Registered:
     deduplicated: bool    # this Document was already stored for this patient; nothing was parsed or stored
 
 
+@dataclass(frozen=True)
+class AcceptedUpload:
+    """A PDF the upload can accept before it is read. `existing` is set when these bytes are already stored, so
+    nothing is parsed again."""
+    document_hash: DocumentHash
+    existing: Document | None
+
+
+async def accept_upload(ctx: Ctx, patient_id: PatientId, content: bytes) -> AcceptedUpload:
+    """Check the file is a PDF and name it, without reading it. The read happens afterwards, off the request.
+    Raises UnreadableDocument (empty, or not a PDF) and NotFound before anything is stored."""
+    await _require_patient(ctx, patient_id)
+    if not content:
+        raise UnreadableDocument("the file is empty")
+    if not content.startswith(b"%PDF"):
+        raise UnreadableDocument("the file is not a PDF")
+    h = storage.document_hash(patient_id, content)
+    return AcceptedUpload(h, await repo.document(ctx.ui_reader, h))
+
+
 async def register_document(ctx: Ctx, patient_id: PatientId, filename: str, content: bytes) -> Registered:
     """Hash content, read its pages into Regions through ctx.parser, de-identify the whole Document, persist the
     document, its pages and its Regions (with boxes). Idempotent on hash (per patient): adding the same bytes twice
@@ -409,6 +459,53 @@ async def register_document(ctx: Ctx, patient_id: PatientId, filename: str, cont
     async with ctx.writer.transaction() as tx:
         await store_document(tx, doc, parsed, now)
     return Registered(doc, deduplicated=False)
+
+
+@dataclass(frozen=True)
+class SavedLetter:
+    """A letter already read into Regions, and the latest record of the patient it belongs to."""
+    patient_id: PatientId
+    document_hash: DocumentHash
+    filename: str
+    version_id: ProfileVersionId | None
+
+
+async def saved_letter(ctx: Ctx) -> SavedLetter | None:
+    """The most recently stored letter that already has Regions. Its parse is saved from those Regions, so adding
+    the same PDF again does not send it to NVIDIA."""
+    reader = ctx.ui_reader
+    rows = await reader.fetch(
+        f"SELECT d.hash FROM {reader.table('document')} d "
+        f"WHERE EXISTS (SELECT 1 FROM {reader.table('document_span')} s WHERE s.document_hash = d.hash) "
+        f"ORDER BY (SELECT count(*) FROM {reader.table('profile_version')} v WHERE v.patient_id = d.patient_id) DESC, "
+        f"(SELECT count(*) FROM {reader.table('document_span')} s WHERE s.document_hash = d.hash) DESC, "
+        "d.uploaded_at DESC LIMIT 1")
+    if not rows:
+        return None
+    doc = await repo.document(reader, DocumentHash(rows[0]["hash"]))
+    if doc is None:
+        return None
+    _remember_parse(ctx, doc)
+    version = await repo.current_version(reader, doc.patient_id)
+    return SavedLetter(patient_id=doc.patient_id, document_hash=doc.hash, filename=doc.filename,
+                       version_id=version.id if version else None)
+
+
+def _remember_parse(ctx: Ctx, doc: Document) -> None:
+    from pathlib import Path
+
+    from app.config import REPO_ROOT
+    from app.record.parse_cache import from_document, save
+
+    raw = Path(ctx.settings.raw_documents_dir)
+    if not raw.is_absolute():
+        raw = REPO_ROOT / raw
+    path = raw / f"{doc.hash}.pdf"
+    if not path.is_file():
+        return
+    content = path.read_bytes()
+    parsed, name = from_document(doc)
+    save(content, parsed, name)
 
 
 @dataclass(frozen=True)
@@ -555,6 +652,117 @@ async def _awaiting_review(ctx: Ctx, run_id: RunId) -> tuple[Any, Document]:
     log = await trace.read(ctx.ui_reader, run_id)
     started = next(e.event for e in log.events if e.event.kind == "ingest.started")
     return state, await repo.document(ctx.ui_reader, DocumentHash(started.document_hash))
+
+
+async def treatment_course(ctx: Ctx, patient_id: PatientId, run_id: RunId | None = None) -> course.Course:
+    """Treatments and the key biomarker readings from a letter being reviewed, or from the letter's committed Facts.
+    Raises NotFound."""
+    await _require_patient(ctx, patient_id)
+    rows = await _course_rows(ctx, patient_id, run_id)
+    diagnosis = " ".join(row.value for row in rows if row.resource == "Condition")
+    built = course.build(rows, diagnosis)
+    return replace(built, treatments=await _collapse_same_day(ctx, built.treatments, run_id))
+
+
+async def compare_course(ctx: Ctx, patient_id: PatientId, run_id: RunId | None = None) -> course.Comparison:
+    """Ask the model to set the treatment timeline beside the key marker. A note that names a treatment or a reading
+    the letter does not have is dropped. Raises NotFound and llm.LlmUnavailable."""
+    from pydantic import BaseModel
+
+    from app.llm import Lane, complete
+
+    found = await treatment_course(ctx, patient_id, run_id)
+    if not found.treatments or not found.series:
+        which = found.marker or "a biomarker"
+        return course.Comparison(found.marker, f"There is no dated treatment and {which} reading to compare yet.", ())
+
+    class _NoteIn(BaseModel):
+        treatment: str
+        on: str
+        value: str
+        change: str
+
+    class _Out(BaseModel):
+        summary: str
+        notes: list[_NoteIn]
+
+    lines = ["Treatments:"]
+    for item in found.treatments:
+        lines.append(f"- {item.subject}: {item.detail}" + (f" on {item.on.isoformat()}" if item.on else " (no date)"))
+    lines.append(f"{found.marker} readings:")
+    for series in found.series:
+        for point in series.points:
+            unit = f" {point.unit}" if point.unit else ""
+            lines.append(f"- {point.on.isoformat()}: {point.value}{unit}")
+    out = await complete(
+        ctx, Lane.FAST, system=(
+            "You compare a patient's treatments with one biomarker. Use only the treatments and readings listed. "
+            "Do not invent a date, a value, or a treatment. Answer with JSON: "
+            '{"summary": "two or three sentences", "notes": [{"treatment": "the subject exactly as listed", '
+            '"on": "YYYY-MM-DD of one reading", "value": "that reading\'s value", '
+            '"change": "what the reading did around that treatment"}]}'
+        ), user="\n".join(lines), out=_Out, run_id=run_id)
+    return course.ground(found, out.value.summary, [
+        course.Note(note.treatment, note.on, note.value, note.change) for note in out.value.notes])
+
+
+_MERGED: dict[tuple, tuple[course.Treatment, ...]] = {}
+
+
+async def _collapse_same_day(ctx: Ctx, treatments: tuple[course.Treatment, ...],
+                             run_id: RunId | None) -> tuple[course.Treatment, ...]:
+    """The judge groups same-day rows that are one event told twice. Different events on that date stay apart.
+    A failed call leaves the rows unchanged."""
+    from pydantic import BaseModel
+
+    from app.llm import Lane, LlmUnavailable, complete
+
+    key = tuple((item.on, item.subject, item.detail) for item in treatments)
+    if key in _MERGED:
+        return _MERGED[key]
+    local = course.crowded_indexes(treatments)
+    if len(local) < 2:
+        return treatments
+
+    class _Out(BaseModel):
+        groups: list[list[int]]
+
+    lines = ["Same-day treatments. Group indexes that are the same event. Different events stay in their own group."]
+    for n, index in enumerate(local):
+        item = treatments[index]
+        when = item.on.isoformat() if item.on else "no date"
+        lines.append(f"{n}. {when} | {item.subject} | {item.detail}")
+    try:
+        out = await complete(
+            ctx, Lane.JUDGE, system=(
+                "You judge whether clinical events written in different words are the same event. "
+                "They already share a date. Group only rows that describe one treatment or procedure. "
+                "A drug and a biopsy on the same day are different events. "
+                "Every index appears in exactly one group. Do not add events. "
+                'Answer with JSON: {"groups": [[0, 2], [1]]}'
+            ), user="\n".join(lines), out=_Out, run_id=run_id)
+    except LlmUnavailable:
+        log.warning("same-day event judge unavailable; timeline keeps every row")
+        return treatments
+    groups = [[local[i] for i in group if isinstance(i, int) and 0 <= i < len(local)] for group in out.value.groups]
+    merged = course.merge_groups(treatments, groups)
+    _MERGED[key] = merged
+    return merged
+
+
+async def _course_rows(ctx: Ctx, patient_id: PatientId, run_id: RunId | None) -> list[course.Row]:
+    if run_id is not None:
+        try:
+            review = await letter_review(ctx, run_id)
+        except (NotFound, NotAwaitingReview):
+            review = None
+        if review is not None and review.document.patient_id == patient_id:
+            return [course.Row(item.draft.resource, item.draft.subject, item.draft.value, item.draft.unit,
+                               item.draft.observed_on)
+                    for item in review.items if item.decision != "drop"]
+    version = await repo.current_version(ctx.ui_reader, patient_id)
+    return [course.Row(fact.resource, fact.subject, fact.value, fact.unit, fact.observed_on)
+            for fact in (version.facts if version else ())]
 
 
 async def letter_review(ctx: Ctx, run_id: RunId) -> LetterReview:

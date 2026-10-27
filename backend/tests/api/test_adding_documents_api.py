@@ -42,7 +42,10 @@ async def test_several_added_documents_each_get_a_run_that_ends_in_its_own_profi
         assert again.json() == {**added[0].json(), "deduplicated": True}
 
         scan = await http.post(f"/api/patients/{patient}/documents", files={"file": ("scan.pdf", BLANK)})
-        assert scan.status_code == 422
+        assert scan.status_code == 202
+        refused = await http.get(f"/api/runs/{scan.json()['run_id']}")
+        assert refused.json()["state"]["phase"] == "rejected"
+        assert "no readable text" in refused.json()["state"]["reason"]
         missing = await http.post("/api/patients/nope/documents", files={"file": ("a.pdf", REFERRAL)})
         assert missing.status_code == 404
         assert (await http.get("/api/runs/run_nope")).status_code == 404

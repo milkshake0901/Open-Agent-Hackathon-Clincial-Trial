@@ -35,3 +35,8 @@ body {
   color: var(--foreground);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+
+@keyframes letter-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(420%); }
+}

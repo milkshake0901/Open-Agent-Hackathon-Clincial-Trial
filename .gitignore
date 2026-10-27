@@ -4,6 +4,7 @@
 
 # real patient documents never leave the laptop
 data/raw/
+data/parse_cache/
 backend/data/
 Prostate Cancer/
 

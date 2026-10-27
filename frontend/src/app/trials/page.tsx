@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { TreatmentCourse } from "../treatment-course";
 import { ClosedTrials } from "./closed-trials";
 import { TrialsList } from "./trials-list";
 
@@ -29,6 +30,7 @@ async function ForVersion({ searchParams }: Pick<PageProps<"/trials">, "searchPa
     return <p role="alert">This link is missing the patient or version. Start again from the questionnaire.</p>;
   return (
     <>
+      <TreatmentCourse patientId={patient} />
       <TrialsList patientId={patient} versionId={version} />
       <ClosedTrials patientId={patient} versionId={version} />
     </>

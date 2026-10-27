@@ -1,12 +1,13 @@
 """Patients, their Documents, Profile versions and diffs."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app import record
+from app import llm, record
+from app.api.schemas import (
+    ComparisonOut, CourseNoteOut, CourseOut, FactOut, MarkerSeriesOut, PatientCreated, PatientIn, ReadingOut,
+    SearchPreferencesIn, SearchPreferencesOut, TreatmentOut, VersionDiffOut, VersionOut,
+)
 from app.api.deps import get_ctx, patient_version
 from app.api.verdicts import verdicts_changed
-from app.api.schemas import (
-    FactOut, PatientCreated, PatientIn, SearchPreferencesIn, SearchPreferencesOut, VersionDiffOut, VersionOut,
-)
 from app.ctx import Ctx
 
 router = APIRouter(tags=["patients"])
@@ -26,6 +27,39 @@ async def set_search_preferences(pid: str, body: SearchPreferencesIn, ctx: Ctx =
         raise HTTPException(422, str(e))
     return SearchPreferencesOut(postcode_set=p.postcode is not None, location_known=p.location is not None,
                                 max_travel_km=p.max_travel_km, contact_set=p.contact is not None)
+
+
+def _course_out(found: record.Course) -> CourseOut:
+    return CourseOut(
+        diagnosis=found.diagnosis, marker=found.marker,
+        treatments=[TreatmentOut(subject=item.subject, detail=item.detail, on=item.on) for item in found.treatments],
+        series=[MarkerSeriesOut(name=series.name, points=[
+            ReadingOut(on=point.on, value=point.value, number=point.number, unit=point.unit) for point in series.points])
+            for series in found.series])
+
+
+@router.get("/patients/{pid}/course", response_model=CourseOut)
+async def course(pid: str, run: str | None = None, ctx: Ctx = Depends(get_ctx)):
+    """Treatments in date order and the key biomarker (PSA when the diagnosis is prostate cancer), from the letter."""
+    found = await record.treatment_course(ctx, record.PatientId(pid), record_run(run))
+    return _course_out(found)
+
+
+@router.post("/patients/{pid}/course/compare", response_model=ComparisonOut)
+async def compare_course(pid: str, run: str | None = None, ctx: Ctx = Depends(get_ctx)):
+    """The model sets the timeline beside the key marker. 503 when the model is unavailable."""
+    try:
+        compared = await record.compare_course(ctx, record.PatientId(pid), record_run(run))
+    except llm.LlmUnavailable as err:
+        raise HTTPException(503, str(err))
+    return ComparisonOut(marker=compared.marker, summary=compared.summary, notes=[
+        CourseNoteOut(treatment=note.treatment, on=note.on, value=note.value, change=note.change)
+        for note in compared.notes])
+
+
+def record_run(run: str | None):
+    from app.trace import RunId
+    return RunId(run) if run else None
 
 
 @router.get("/patients/{pid}/documents")

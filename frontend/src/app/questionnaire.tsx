@@ -10,14 +10,17 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ConflictDialog } from "./conflict-dialog";
 import { DiagnosisCheckCard } from "./diagnosis-check";
 import { LetterProgress, LetterStart, type LetterChoice } from "./letter-start";
 import { LetterReview } from "./letter-review";
 import { ReturnLink } from "./return-link";
 import { AddDocuments } from "./documents";
+import { TreatmentCourse } from "./treatment-course";
 import {
   api, followRun, trialsHref, type Answers, type IntakeStatus, type Question, type Questionnaire, type Respondent,
+  type SavedReferral,
   type VersionDiff, type VersionOut,
 } from "@/lib/api";
 
@@ -35,6 +38,7 @@ type Saved = { kind: "recording" } | { kind: "recorded"; version: VersionOut } |
 const blank = (v: string | undefined) => v === undefined || !v.trim();
 
 export function QuestionnaireForm() {
+  const router = useRouter();
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [answers, setAnswers] = useState<Answers>({});
   const [submitting, setSubmitting] = useState(false);
@@ -48,6 +52,7 @@ export function QuestionnaireForm() {
   const [returnToken, setReturnToken] = useState<string | null>(null);
   const [letter, setLetter] = useState<LetterChoice | null>(null);
   const [intake, setIntake] = useState<IntakeStatus | null>(null);
+  const [filled, setFilled] = useState(false);
 
   useEffect(() => {
     api
@@ -56,9 +61,14 @@ export function QuestionnaireForm() {
       .catch((e: Error) => setStatus({ kind: "error", message: e.message }));
   }, []);
 
-  // Where the letters and the questionnaire stand, polled until every Document's Facts are committed.
+  // Where the letters and the questionnaire stand. Keep asking while a letter is still being read: an earlier
+  // answer can say ready before that letter exists, and stopping then left the bar spinning after the read finished.
+  const letterPhaseNow = letter?.kind === "letter"
+    ? intake?.letters.find((l) => l.run_id === letter.runId)?.phase ?? "pending"
+    : "none";
+  const letterStillReading = letterPhaseNow === "pending" || letterPhaseNow === "started" || letterPhaseNow === "drafting";
   useEffect(() => {
-    if (!patientId || intake?.ready) return;
+    if (!patientId || (intake?.ready && !letterStillReading)) return;
     const poll = () => api.intake(patientId).then(setIntake, () => {});
     poll();
     const id = window.setInterval(poll, POLL_MS);
@@ -71,7 +81,7 @@ export function QuestionnaireForm() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", poll);
     };
-  }, [patientId, intake?.ready]);
+  }, [patientId, intake?.ready, letterStillReading]);
 
   const refreshIntake = () => {
     if (patientId) api.intake(patientId).then(setIntake, () => {});
@@ -162,13 +172,35 @@ export function QuestionnaireForm() {
     return <LetterStart ensurePatient={ensurePatient} onChosen={(choice) => {
       setLetter(choice);
       refreshIntake();
+    }} onUseSaved={(saved: SavedReferral) => {
+      setPatientId(saved.patient_id);
+      if (saved.version_id) router.push(trialsHref(saved.patient_id, saved.version_id));
     }} />;
   }
 
-  const letterPhase = letter?.kind === "letter"
-    ? intake?.letters.find((l) => l.run_id === letter.runId)?.phase ?? null
+  const letterRun = letter?.kind === "letter"
+    ? intake?.letters.find((l) => l.run_id === letter.runId) ?? null
     : null;
-  const progress = letter?.kind === "letter" && <LetterProgress filename={letter.filename} phase={letterPhase} />;
+  const letterPhase = letterRun?.phase ?? null;
+  const fillFromLetter = (details: Record<string, string>) => {
+    setAnswers((current) => {
+      const next = { ...current };
+      for (const [id, value] of Object.entries(details)) {
+        if (blank(next[id])) next[id] = value;
+      }
+      return next;
+    });
+    setFilled(true);
+  };
+  const progress = letter?.kind === "letter" && (
+    <LetterProgress filename={letter.filename} phase={letterPhase} pages={letterRun?.pages ?? 0}
+                    pagesRead={letterRun?.pages_read ?? 0} details={letterRun?.details ?? {}}
+                    onFill={saved ? undefined : fillFromLetter} />
+  );
+  const letterReady = letterPhase === "awaiting_review" || letterPhase === "awaiting_patient" || letterPhase === "committed";
+  const timeline = patientId && letter?.kind === "letter" && letterReady
+    ? <TreatmentCourse patientId={patientId} runId={letter.runId} />
+    : null;
 
   if (saved) {
     const ready = intake?.ready === true && saved.kind === "recorded";
@@ -176,6 +208,7 @@ export function QuestionnaireForm() {
     return (
       <div className="flex flex-col gap-4">
         {progress}
+        {timeline}
         {saved.kind === "recording" && (
           <p role="status" className="rounded-xl border border-border bg-surface p-5">
             Your answers are saved.{" "}
@@ -222,6 +255,8 @@ export function QuestionnaireForm() {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
       {progress}
+      {timeline}
+      {filled && <p role="status">Filled from the letter. Change anything before you save.</p>}
       <p className="text-muted">Every question can be skipped. We never ask for a name or a street address.</p>
       {savedVersionId && (
         <p className="text-muted">

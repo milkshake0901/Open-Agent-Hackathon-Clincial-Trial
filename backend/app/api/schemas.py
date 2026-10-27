@@ -16,6 +16,13 @@ class DocumentAccepted(BaseModel):
     deduplicated: bool
 
 
+class SavedLetterOut(BaseModel):
+    patient_id: str
+    document_hash: str
+    filename: str
+    version_id: str | None
+
+
 class RunAccepted(BaseModel):
     run_id: str
 
@@ -203,6 +210,44 @@ class ReviewAnswerIn(BaseModel):
 
 class DocumentDateIn(BaseModel):
     document_date: date
+
+
+class TreatmentOut(BaseModel):
+    subject: str
+    detail: str
+    on: date | None
+
+
+class ReadingOut(BaseModel):
+    on: date
+    value: str
+    number: float
+    unit: str | None
+
+
+class MarkerSeriesOut(BaseModel):
+    name: str
+    points: list[ReadingOut]
+
+
+class CourseOut(BaseModel):
+    diagnosis: str
+    marker: str | None
+    treatments: list[TreatmentOut]
+    series: list[MarkerSeriesOut]
+
+
+class CourseNoteOut(BaseModel):
+    treatment: str
+    on: str
+    value: str
+    change: str
+
+
+class ComparisonOut(BaseModel):
+    marker: str | None
+    summary: str
+    notes: list[CourseNoteOut]
 
 
 class SearchPreferencesIn(BaseModel):
@@ -482,6 +527,9 @@ class LetterStatusOut(BaseModel):
     filename: str
     run_id: str
     phase: str      # its latest ingest run's: started, drafting, awaiting_patient, awaiting_review, committed, rejected
+    pages: int = 0
+    pages_read: int = 0
+    details: dict[str, str] = {}   # questionnaire answers the letter fills, once the read has finished
 
 
 class IntakeStatusOut(BaseModel):
